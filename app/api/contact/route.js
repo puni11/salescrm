@@ -1,0 +1,295 @@
+import clientPromise from "@/lib/mongodb";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/authOptions";
+
+export async function GET(req) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session || session.user.role !== "admin") {
+      return Response.json({ unauthorized: true }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+
+    const page = parseInt(searchParams.get("page")) || 1;
+    const limit = parseInt(searchParams.get("limit")) || 20;
+    const search = searchParams.get("search") || "";
+
+    const sort = searchParams.get("sort");
+    const fromDate = searchParams.get("fromDate");
+    const toDate = searchParams.get("toDate");
+    const status = searchParams.get("status");
+    const source = searchParams.get("source");
+    const campaign = searchParams.get("campaign");
+    const dateFilter = searchParams.get("dateFilter");
+
+    const skip = (page - 1) * limit;
+
+    const client = await clientPromise;
+    const db = client.db("sales");
+
+    const query = {};
+
+    // Search
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+        { profile: { $regex: search, $options: "i" } },
+        { ip: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // Filters
+    if (status) query.status = status;
+    if (source) query.source = source;
+    if (campaign) query.campaign = campaign;
+
+    // Custom date range
+    if (fromDate || toDate) {
+      query.createdAt = {};
+
+      if (fromDate) {
+        query.createdAt.$gte = new Date(fromDate);
+      }
+
+      if (toDate) {
+        const to = new Date(toDate);
+        to.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = to;
+      }
+    }
+
+    // Quick filters
+    else if (dateFilter && dateFilter !== "All") {
+      const now = new Date();
+      const from = new Date();
+
+      if (dateFilter === "Today") {
+        from.setHours(0, 0, 0, 0);
+      } else if (dateFilter === "Last3") {
+        from.setDate(now.getDate() - 3);
+      } else if (dateFilter === "Last7") {
+        from.setDate(now.getDate() - 7);
+      } else if (dateFilter === "Last30") {
+        from.setDate(now.getDate() - 30);
+      }
+
+      query.createdAt = { $gte: from };
+    }
+
+    // Sorting
+    let sortOption = { createdAt: -1 };
+
+    if (sort === "oldest") sortOption = { createdAt: 1 };
+    if (sort === "name") sortOption = { name: 1 };
+
+    const contactsRaw = await db
+      .collection("dm")
+      .find(query)
+      .sort(sortOption)
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    const contacts = contactsRaw.map((item) => ({
+      ...item,
+      profile: item.profile || "",
+      source: item.source || "",
+      medium: item.medium || "",
+      campaign: item.campaign || "",
+      term: item.term || "",
+      content: item.content || "",
+      gclid: item.gclid || "",
+      status: item.status || "New Lead",
+    }));
+
+    const total = await db.collection("dm").countDocuments(query);
+
+    return Response.json({
+      data: contacts,
+      pages: Math.ceil(total / limit),
+      total,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return Response.json(
+      {
+        success: false,
+        error: "Failed to fetch leads",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req) {
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+
+  try {
+    const body = await req.json();
+
+    const {
+      fullName,
+      email,
+      phone,
+      profile,
+      consent,
+
+      source,
+      medium,
+      campaign,
+      term,
+      content,
+      gclid,
+    } = body;
+
+    // Validation
+    const trimmedName = fullName?.trim();
+    const trimmedEmail = email?.trim();
+
+    let cleanedPhone = phone?.replace(/\D/g, "");
+
+    if (cleanedPhone?.startsWith("91") && cleanedPhone.length > 10) {
+      cleanedPhone = cleanedPhone.slice(-10);
+    }
+
+    if (!trimmedName || !trimmedEmail || !cleanedPhone) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Name, Email and Phone are required",
+        }),
+        {
+          status: 400,
+          headers: corsHeaders,
+        }
+      );
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(trimmedEmail)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Invalid email address",
+        }),
+        {
+          status: 400,
+          headers: corsHeaders,
+        }
+      );
+    }
+
+    const phoneRegex = /^[6-9]\d{9}$/;
+
+    if (!phoneRegex.test(cleanedPhone)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Invalid mobile number",
+        }),
+        {
+          status: 400,
+          headers: corsHeaders,
+        }
+      );
+    }
+
+    if (!consent) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Consent is required",
+        }),
+        {
+          status: 400,
+          headers: corsHeaders,
+        }
+      );
+    }
+
+    // Visitor Details
+    const forwarded = req.headers.get("x-forwarded-for");
+
+    const ip = forwarded
+      ? forwarded.split(",")[0]
+      : req.headers.get("x-real-ip") || "Unknown";
+
+    const userAgent = req.headers.get("user-agent") || "Unknown";
+
+    const client = await clientPromise;
+    const db = client.db("sales");
+
+    const leadData = {
+      name: trimmedName,
+      email: trimmedEmail,
+      phone: cleanedPhone,
+
+      profile: profile || "",
+
+      consent: Boolean(consent),
+
+      source: source || "",
+      medium: medium || "",
+      campaign: campaign || "",
+      term: term || "",
+      content: content || "",
+      gclid: gclid || "",
+
+      ip,
+      userAgent,
+
+      status: "New Lead",
+
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const result = await db.collection("dm").insertOne(leadData);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        insertedId: result.insertedId,
+        message: "Lead created successfully",
+      }),
+      {
+        status: 201,
+        headers: corsHeaders,
+      }
+    );
+  } catch (error) {
+    console.error(error);
+
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "Server error. Please try again later.",
+      }),
+      {
+        status: 500,
+        headers: corsHeaders,
+      }
+    );
+  }
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 200,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
+  });
+}
