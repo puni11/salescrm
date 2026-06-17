@@ -248,13 +248,7 @@ export default function App() {
           <p className="text-sm text-gray-500 mt-1">Manage and track your platform inquiries.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button 
-            onClick={() => setIsImportOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
-          >
-            <Upload size={18} />
-            Import CSV
-          </button>
+         
           <button 
             onClick={() => setIsAddLeadOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors shadow-sm"
