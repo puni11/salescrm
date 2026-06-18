@@ -6,9 +6,7 @@ export async function GET(req) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session || session.user.role !== "admin") {
-      return Response.json({ unauthorized: true }, { status: 401 });
-    }
+   
 
     const { searchParams } = new URL(req.url);
 

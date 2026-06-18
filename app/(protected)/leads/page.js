@@ -154,6 +154,7 @@ export default function App() {
       alert("Failed to add comment.");
       fetchLeads();
     }
+    fetchLeads();
   };
 
   // 4. Add New Lead
@@ -345,6 +346,7 @@ export default function App() {
                   <th className="px-6 py-4">Profile & Consent</th>
                   <th className="px-6 py-4">Source & Campaign</th>
                   <th className="px-6 py-4">Created Date</th>
+                  <th className="px-6 py-4">Last Comment</th>
                   <th className="px-6 py-4">Status</th>
                 </tr>
               </thead>
@@ -418,6 +420,34 @@ export default function App() {
                           <div className="text-gray-900">{parsedDate.toLocaleDateString()}</div>
                           <div className="text-gray-500 text-xs mt-1">{parsedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                         </td>
+                        <td className="px-6 py-4">
+  {lead.comments?.length > 0 ? (
+    <>
+      <div className="text-gray-900">
+        {lead.comments[lead.comments.length - 1].text}
+      </div>
+
+      <div className="text-gray-500 text-xs mt-1">
+        {new Date(
+          lead.comments[lead.comments.length - 1].createdAt
+        ).toLocaleString("en-IN", {
+          timeZone: "Asia/Kolkata",
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true,
+        })}
+        {" - "}
+        {lead.comments[lead.comments.length - 1].createdBy?.name}
+      </div>
+    </>
+  ) : (
+    <div className="text-gray-500">No comments</div>
+  )}
+</td>
                         <td className="px-6 py-4">
                           <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(lead.status || "New Lead")}`}>
                             {lead.status || "New Lead"}
