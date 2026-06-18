@@ -637,7 +637,7 @@ export default function App() {
                       <div key={c.id || i} className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm">
                         <p className="text-gray-800 mb-1">{c.text}</p>
                         <p className="text-xs text-gray-400 font-medium">
-                          {new Date(c.date).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                          {new Date(c.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                         </p>
                       </div>
                     ))
