@@ -54,10 +54,12 @@ export default function App() {
   const [selectedLeadId, setSelectedLeadId] = useState(null);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [whatsappMessage, setWhatsappMessage] = useState("");
-  // Modals
+  
+  // Modals & Drawers
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   
   // Filters & Pagination
   const [sort, setSort] = useState("newest"); // newest | oldest | name
@@ -162,7 +164,6 @@ export default function App() {
   // 4. Add New Lead
   const handleAddLead = async (newLeadData) => {
     setLoading(true);
-    // Convert string 'on' to boolean for consent if passing via formData
     const formattedData = {
       ...newLeadData,
       consent: newLeadData.consent === 'on'
@@ -227,6 +228,56 @@ export default function App() {
     }
   };
 
+  // Reusable Filter Render Logic (used in both desktop bar and mobile bottom sheet)
+  const renderFilters = (isMobile = false) => (
+    <>
+      <div className={isMobile ? "flex flex-col gap-1.5" : ""}>
+        {isMobile && <label className="text-xs font-bold text-gray-500 uppercase">Quick Date</label>}
+        <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="All">All Time</option>
+          <option value="Today">Today</option>
+          <option value="Last3">Last 3 Days</option>
+          <option value="Last7">Last 7 Days</option>
+          <option value="Last30">Last 30 Days</option>
+        </select>
+      </div>
+
+      <div className={isMobile ? "flex flex-col gap-1.5" : "flex items-center gap-2"}>
+        {isMobile && <label className="text-xs font-bold text-gray-500 uppercase">Custom Date Range</label>}
+        <div className="flex items-center gap-2 w-full">
+          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+          <span className="text-gray-400 text-sm font-medium">to</span>
+          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+      </div>
+
+      <div className={isMobile ? "flex flex-col gap-1.5 mt-2" : ""}>
+        {isMobile && <label className="text-xs font-bold text-gray-500 uppercase">Sort By</label>}
+        <select value={sort} onChange={(e) => setSort(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="newest">Newest First</option>
+          <option value="oldest">Oldest First</option>
+          <option value="name">Name (A-Z)</option>
+        </select>
+      </div>
+
+      <div className={isMobile ? "flex flex-col gap-1.5 mt-2" : ""}>
+        {isMobile && <label className="text-xs font-bold text-gray-500 uppercase">Status</label>}
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="All">All Statuses</option>
+          {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+
+      <div className={isMobile ? "flex flex-col gap-1.5 mt-2" : ""}>
+        {isMobile && <label className="text-xs font-bold text-gray-500 uppercase">Profile</label>}
+        <select value={profileFilter} onChange={(e) => setProfileFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="All">All Profiles</option>
+          {PROFILES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+        </select>
+      </div>
+    </>
+  );
+
   const selectedLead = leads.find(l => getLeadId(l) === selectedLeadId);
 
   if (unauthorized) {
@@ -242,16 +293,15 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
+    <div className="min-h-screen flex flex-col font-sans text-gray-900 bg-gray-50/50">
       
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-8 py-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <header className="bg-white border-b border-gray-200 px-4 sm:px-8 py-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Leads Management</h1>
           <p className="text-sm text-gray-500 mt-1">Manage and track your platform inquiries.</p>
         </div>
         <div className="flex items-center gap-3">
-         
           <button 
             onClick={() => setIsAddLeadOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors shadow-sm"
@@ -262,83 +312,36 @@ export default function App() {
         </div>
       </header>
 
-      {/* Filters Bar */}
-      <div className="bg-white px-8 py-4 border-b border-gray-200 flex flex-wrap justify-between gap-4 items-center shadow-sm z-10">
-        {/* 🔍 Search */}
-        <div className="relative flex-grow max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <input
-            type="text"
-            placeholder="Search name, email, phone..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-          />
+      {/* Filters Bar (Desktop & Search Combo) */}
+      <div className="bg-white px-4 sm:px-8 py-4 border-b border-gray-200 flex flex-col md:flex-row justify-between gap-4 items-center shadow-sm z-10">
+        {/* 🔍 Search & Mobile Filter Button */}
+        <div className="relative flex-grow w-full md:w-auto md:max-w-md flex items-center gap-2">
+          <div className="relative flex-grow">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              type="text"
+              placeholder="Search name, email, phone..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+          <button
+            onClick={() => setIsMobileFiltersOpen(true)}
+            className="md:hidden flex-shrink-0 p-2.5 bg-gray-50 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 hover:text-blue-600 transition-colors"
+          >
+            <Filter size={20} />
+          </button>
         </div>
 
-        <div className="flex gap-3 flex-wrap items-center">
-          {/* 📅 Quick Date Filter */}
-          <select 
-            value={dateFilter} 
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="All">All Time</option>
-            <option value="Today">Today</option>
-            <option value="Last3">Last 3 Days</option>
-            <option value="Last7">Last 7 Days</option>
-            <option value="Last30">Last 30 Days</option>
-          </select>
-
-          {/* 📆 Custom Date Range */}
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-          />
-          <span className="text-gray-400 text-sm">to</span>
-          <input
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-          />
-
-          {/* 🔽 Sorting */}
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="newest">Newest First</option>
-            <option value="oldest">Oldest First</option>
-            <option value="name">Name (A-Z)</option>
-          </select>
-
-          {/* Existing Filters */}
-          <select 
-            value={statusFilter} 
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="All">All Statuses</option>
-            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-
-          <select 
-            value={profileFilter} 
-            onChange={(e) => setProfileFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="All">All Profiles</option>
-            {PROFILES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
-          </select>
+        {/* Desktop Filters Wrapper */}
+        <div className="hidden md:flex gap-3 flex-wrap items-center">
+          {renderFilters(false)}
         </div>
       </div>
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-auto p-8 relative">
+      <main className="flex-1 overflow-auto p-2 sm:p-8 relative">
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
@@ -379,7 +382,7 @@ export default function App() {
                 ) : leads.length === 0 ? (
                   // Empty State
                   <tr>
-                    <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
                       <div className="flex flex-col items-center justify-center">
                         <Filter className="h-10 w-10 text-gray-300 mb-3" />
                         <p className="text-lg font-medium text-gray-900">No leads found</p>
@@ -425,7 +428,7 @@ export default function App() {
                         <td className="px-6 py-4">
   {lead.comments?.length > 0 ? (
     <>
-      <div className="text-gray-900">
+      <div className="text-gray-900 whitespace-pre-wrap truncate max-w-xs">
         {lead.comments[lead.comments.length - 1].text}
       </div>
 
@@ -493,14 +496,11 @@ export default function App() {
       {/* --- SIDEBAR (Lead Details) --- */}
       {selectedLead && (
         <>
-          {/* Backdrop */}
           <div 
             className="fixed inset-0 bg-gray-900/20 backdrop-blur-sm z-40 transition-opacity"
             onClick={() => setSelectedLeadId(null)}
           />
-          {/* Sidebar Panel */}
           <div className="fixed inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl z-50 transform transition-transform flex flex-col border-l border-gray-200">
-            {/* Sidebar Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50">
               <h2 className="text-xl font-semibold text-gray-900">Lead Details</h2>
               <button 
@@ -511,10 +511,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* Sidebar Scrollable Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
-              
-              {/* Profile Section */}
               <div>
                 <h3 className="text-2xl font-bold text-gray-900">{selectedLead.name}</h3>
                 <div className="mt-3 space-y-2">
@@ -542,7 +539,6 @@ export default function App() {
               <hr className="border-gray-100" />
               
               <div className="grid grid-cols-2 gap-4">
-                {/* SOURCE */}
                 <div className="flex items-center text-sm text-gray-600">
                   <Globe size={16} className="mr-3 text-gray-400" />
                   <span className="flex flex-col">
@@ -553,7 +549,6 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* MEDIUM */}
                 <div className="flex items-center text-sm text-gray-600">
                   <Activity size={16} className="mr-3 text-gray-400" />
                   <span className="flex flex-col">
@@ -564,7 +559,6 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* CAMPAIGN */}
                 <div className="flex items-center text-sm text-gray-600">
                   <TargetIcon size={16} className="mr-3 text-gray-400" />
                   <span className="flex flex-col">
@@ -575,7 +569,6 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* TERM / KEYWORD */}
                 <div className="flex items-center text-sm text-gray-600">
                   <Info size={16} className="mr-3 text-gray-400" />
                   <span className="flex flex-col">
@@ -587,7 +580,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Status Update */}
               <div>
                 <label className="block text-sm font-semibold text-gray-900 mb-2">Lead Status</label>
                 <select 
@@ -603,7 +595,6 @@ export default function App() {
                 </select>
               </div>
 
-              {/* Meta & System Info */}
               <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 space-y-3">
                 <div>
                   <div className="text-xs font-semibold text-blue-600 uppercase tracking-wider flex items-center gap-1 mb-1"><User size={14}/> Profile Type</div>
@@ -625,7 +616,6 @@ export default function App() {
 
               <hr className="border-gray-100" />
 
-              {/* Comments Section */}
               <div>
                 <h4 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
                   <MessageSquare size={16} /> Internal Comments
@@ -646,7 +636,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Add Comment Input */}
                 <form 
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -669,19 +658,19 @@ export default function App() {
                 </form>
   
               </div>
-<div className="flex items-center justify-between text-sm text-gray-600">
-  <div className="flex items-center">
-    <Phone size={16} className="mr-3 text-gray-400" />
-    <a href={`tel:${selectedLead.phone}`} className="hover:text-blue-600">{selectedLead.phone}</a>
-  </div>
-  <button 
-    onClick={() => setIsWhatsAppModalOpen(true)}
-    className="flex items-center gap-1.5 px-3 py-1 bg-green-50 text-green-700 hover:bg-green-100 rounded-md text-xs font-medium transition-colors border border-green-200"
-  >
-    <MessageCircle size={14} />
-    WhatsApp
-  </button>
-</div>
+              <div className="flex items-center justify-between text-sm text-gray-600">
+                <div className="flex items-center">
+                  <Phone size={16} className="mr-3 text-gray-400" />
+                  <a href={`tel:${selectedLead.phone}`} className="hover:text-blue-600">{selectedLead.phone}</a>
+                </div>
+                <button 
+                  onClick={() => setIsWhatsAppModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-green-50 text-green-700 hover:bg-green-100 rounded-md text-xs font-medium transition-colors border border-green-200"
+                >
+                  <MessageCircle size={14} />
+                  WhatsApp
+                </button>
+              </div>
             </div>
           </div>
         </>
@@ -689,7 +678,7 @@ export default function App() {
 
       {/* --- ADD LEAD MODAL --- */}
       {isAddLeadOpen && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex justify-between items-center p-6 border-b border-gray-100">
               <h2 className="text-xl font-bold text-gray-900">Add New Lead</h2>
@@ -760,48 +749,9 @@ export default function App() {
         </div>
       )}
 
-      {/* --- IMPORT CSV MODAL --- */}
-      {isImportOpen && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-gray-900">Import Leads</h2>
-              <button onClick={() => !isImporting && setIsImportOpen(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={24} />
-              </button>
-            </div>
-            
-            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:border-blue-500 hover:bg-blue-50 transition-colors cursor-pointer group">
-              <button
-                onClick={() => window.open("/api/contact/sample-csv")}
-                className="mb-3 text-sm text-blue-600 hover:underline font-medium"
-              >
-                Download Sample CSV
-              </button>
-              {isImporting ? (
-                <div className="flex flex-col items-center justify-center py-4">
-                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div>
-                  <p className="text-sm font-medium text-gray-900">Uploading File...</p>
-                </div>
-              ) : (
-                <>
-                  <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <ArrowDownToLine size={24} />
-                  </div>
-                  <h3 className="text-sm font-semibold text-gray-900 mb-1">Click to upload or drag and drop</h3>
-                  <p className="text-xs text-gray-500">CSV or Excel files only</p>
-                  <input type="file" accept=".csv, .xlsx, .xls" className="hidden" id="fileUpload" onChange={handleImport} />
-                  <button onClick={() => document.getElementById('fileUpload').click()} className="mt-4 px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg shadow-sm group-hover:border-blue-500 transition-colors">
-                    Browse Files
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-{isWhatsAppModalOpen && selectedLead && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+      {/* --- WHATSAPP MODAL --- */}
+      {isWhatsAppModalOpen && selectedLead && (
+        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -814,53 +764,51 @@ export default function App() {
             </div>
             
             <form
-  onSubmit={async (e) => {
-    e.preventDefault();
+              onSubmit={async (e) => {
+                e.preventDefault();
 
-    try {
-      let cleanPhone = selectedLead.phone.replace(/\D/g, "");
+                try {
+                  let cleanPhone = selectedLead.phone.replace(/\D/g, "");
 
-      if (cleanPhone.length === 10) {
-        cleanPhone = `91${cleanPhone}`;
-      }
+                  if (cleanPhone.length === 10) {
+                    cleanPhone = `91${cleanPhone}`;
+                  }
 
-      // Save activity to backend
-      const response = await fetch("/api/whatsapp-log", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          leadId: selectedLead._id,
-          phone: cleanPhone,
-          message: whatsappMessage,
-          sentAt: new Date(),
-        }),
-      });
+                  const response = await fetch("/api/whatsapp-log", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      leadId: selectedLead._id,
+                      phone: cleanPhone,
+                      message: whatsappMessage,
+                      sentAt: new Date(),
+                    }),
+                  });
 
-      const data = await response.json();
+                  const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to save WhatsApp log");
-      }
+                  if (!response.ok) {
+                    throw new Error(data.message || "Failed to save WhatsApp log");
+                  }
 
-      // Open WhatsApp after successful API call
-      const encodedMessage = encodeURIComponent(whatsappMessage);
+                  const encodedMessage = encodeURIComponent(whatsappMessage);
 
-      const whatsappUrl = `https://api.whatsapp.com/send/?phone=${cleanPhone}&text=${encodedMessage}&type=phone_number&app_absent=0`;
+                  const whatsappUrl = `https://api.whatsapp.com/send/?phone=${cleanPhone}&text=${encodedMessage}&type=phone_number&app_absent=0`;
 
-      window.open(whatsappUrl, "_blank");
+                  window.open(whatsappUrl, "_blank");
 
-      setIsWhatsAppModalOpen(false);
-      setWhatsappMessage("");
+                  setIsWhatsAppModalOpen(false);
+                  setWhatsappMessage("");
 
-      toast.success("WhatsApp activity logged");
-    } catch (error) {
-      console.error(error);
-      toast.error(error.message);
-    }
-  }}
->
+                  toast.success("WhatsApp activity logged");
+                } catch (error) {
+                  console.error(error);
+                  toast.error(error.message);
+                }
+              }}
+            >
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Custom Message</label>
                 <textarea 
@@ -893,6 +841,56 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* --- MOBILE FILTERS DRAWER (Bottom Sheet) --- */}
+      <div
+        className={`fixed inset-0 z-[70] md:hidden transition-opacity duration-300 ${
+          isMobileFiltersOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+      >
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"
+          onClick={() => setIsMobileFiltersOpen(false)}
+        />
+
+        {/* Sliding Panel */}
+        <div
+          className={`absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl transition-transform duration-300 transform p-5 pb-8 ${
+            isMobileFiltersOpen ? "translate-y-0" : "translate-y-full"
+          }`}
+        >
+          <div className="flex justify-between items-center mb-5 border-b border-gray-100 pb-4">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <Filter size={20} className="text-blue-600"/>
+              Filters & Sorting
+            </h2>
+            <button
+              onClick={() => setIsMobileFiltersOpen(false)}
+              className="p-2 text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-full transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Filter Content */}
+          <div className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto px-1">
+            {renderFilters(true)}
+          </div>
+
+          {/* Action Button */}
+          <div className="mt-6 pt-4 border-t border-gray-100">
+            <button
+              onClick={() => setIsMobileFiltersOpen(false)}
+              className="w-full py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors shadow-sm flex items-center justify-center gap-2"
+            >
+              <CheckCircle size={18} />
+              Apply Filters
+            </button>
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 }
