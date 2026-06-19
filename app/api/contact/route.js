@@ -253,7 +253,13 @@ export async function POST(req) {
     };
 
     const result = await db.collection("dm").insertOne(leadData);
+try {
+  const whatsappUrl = `${process.env.WHATSAPP_API_URL}?api_key=${process.env.WHATSAPP_API}&templatename=whatsapp_dm_lead_submissions&country=India&is_media=false&camp_name=dm_lead_form_submission&mobile_numbers=${cleanedPhone}&variables=${encodeURIComponent(trimmedName)}`;
 
+  await fetch(whatsappUrl);
+} catch (error) {
+  console.error("WhatsApp API Error:", error);
+}
     return new Response(
       JSON.stringify({
         success: true,
