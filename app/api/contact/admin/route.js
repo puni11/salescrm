@@ -19,7 +19,7 @@ export async function POST(req) {
     } = body
 
     // 1. Core Field Validation
-    if (!name || !email || !phone) {
+    if (!name || !phone) {
       return Response.json({ error: "Missing required contact fields" }, { status: 400 })
     }
 
@@ -34,7 +34,7 @@ export async function POST(req) {
     const now = new Date()
     const newLead = {
       name,
-      email,
+      email: email || "",
       phone,
       profile: profile || "other",
       consent: Boolean(consent),
