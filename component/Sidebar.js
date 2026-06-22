@@ -21,7 +21,9 @@ import {
   MailIcon,
   ListChecks,
   BriefcaseBusiness,
-  X // <-- Added X icon for mobile close button
+  X, // <-- Added X icon for mobile close button
+  User2Icon,
+  ChevronRight
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Image from "next/image";
@@ -81,7 +83,7 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
       <div
         className={`
           fixed inset-y-0 left-0 z-50 h-screen bg-[#05335c] border-r border-gray-200 shadow-[4px_0_24px_rgba(0,0,0,0.02)]
-          transition-transform duration-300 ease-in-out flex flex-col
+           transition-all duration-400 ease-in-out flex flex-col
           md:relative md:translate-x-0 
           ${isMobileOpen ? "translate-x-0 w-64" : "-translate-x-full"} 
           ${collapsed ? "md:w-20" : "md:w-64"}
@@ -91,7 +93,13 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
         <div className={`h-16 flex items-center p-4 border-b border-gray-100 transition-all ${collapsed ? "md:justify-center justify-between" : "justify-between"}`}>
           {/* Always show logo on mobile, hide on desktop if collapsed */}
           <div className={`flex items-center gap-2.5 overflow-hidden pl-2 ${collapsed ? "md:hidden block" : "block"}`}>
-            <Image src={'/logo.avif'} width={150} height={50} alt="logo" className="w-auto h-8" />
+            <Image
+  src="https://openshift.grras.com/frontassets/img/logo.png"
+  width={170}
+  height={70}
+  alt="logo"
+  className="w-auto h-10 filter brightness-0 invert"
+/>
           </div>
 
           {/* Mobile Close Button */}
@@ -105,10 +113,10 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
           {/* Desktop Collapse Toggle */}
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="hidden md:block p-2 rounded-lg text-gray-300 hover:bg-gray-50 hover:text-gray-900 transition-colors shrink-0"
+            className="hidden md:block p-2 rounded-lg text-gray-300 hover:bg-gray-50/20 hover:border hover:text-white border-gray-200/50 hover:text-gray-900 transition-all duration-300 ease-in-out shrink-0"
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {collapsed ? <Menu size={20} /> : <ChevronLeft size={20} />}
+            {collapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
           </button>
         </div>
 
@@ -138,7 +146,7 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             {/* Avatar */}
             <Link href="/profile" className="shrink-0">
                 {session?.user?.role === 'admin' ? (
-                  <Image src={'/own.avif'} height={32} width={32} alt="admin" className="rounded-full" />
+                  <div className="h-12 w-12 bg-[#05335c] rounded-full flex justify-center items-center text-white shadow-2xl"><User2Icon /></div>
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center shadow-inner hover:opacity-90 transition-opacity">
                     <span className="text-amber-50 font-bold text-lg">

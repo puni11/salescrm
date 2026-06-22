@@ -227,32 +227,67 @@ export async function POST(req) {
     const client = await clientPromise;
     const db = client.db("sales");
 
-    const leadData = {
-      name: trimmedName,
-      email: trimmedEmail,
-      phone: cleanedPhone,
+const leadData = {
+  name: trimmedName,
+  email: trimmedEmail,
+  phone: cleanedPhone,
 
-      profile: profile || "",
+  profile: profile || "",
 
-      consent: Boolean(consent),
+  consent: Boolean(consent),
 
-      source: source || "",
-      medium: medium || "",
-      campaign: campaign || "",
-      term: term || "",
-      content: content || "",
-      gclid: gclid || "",
+  source: source || "",
+  medium: medium || "",
+  campaign: campaign || "",
+  term: term || "",
+  content: content || "",
+  gclid: gclid || "",
 
-      ip,
-      userAgent,
+  ip,
+  userAgent,
 
-      status: "New Lead",
+  status: "New Lead",
+};
 
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+const leadsCollection = db.collection("dm");
 
-    const result = await db.collection("dm").insertOne(leadData);
+const existingLead = await leadsCollection.findOne({
+  $or: [
+    { email: trimmedEmail },
+    { phone: cleanedPhone }
+  ]
+});
+
+let leadId;
+let isUpdate = false;
+
+if (existingLead) {
+  await leadsCollection.updateOne(
+    { _id: existingLead._id },
+    {
+      $set: {
+        ...leadData,
+        updatedAt: new Date(),
+      },
+      $inc: {
+        submissionCount: 1,
+      },
+    }
+  );
+
+  leadId = existingLead._id;
+  isUpdate = true;
+} else {
+  const insertResult = await leadsCollection.insertOne({
+    ...leadData,
+    submissionCount: 1,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  leadId = insertResult.insertedId;
+}
+
 try {
   const whatsappUrl = `${process.env.WHATSAPP_API_URL}?api_key=${process.env.WHATSAPP_API}&templatename=whatsapp_dm_lead_submissions&country=India&is_media=false&camp_name=dm_lead_form_submission&mobile_numbers=${cleanedPhone}&variables=${encodeURIComponent(trimmedName)}`;
 
@@ -260,17 +295,20 @@ try {
 } catch (error) {
   console.error("WhatsApp API Error:", error);
 }
-    return new Response(
-      JSON.stringify({
-        success: true,
-        insertedId: result.insertedId,
-        message: "Lead created successfully",
-      }),
-      {
-        status: 201,
-        headers: corsHeaders,
-      }
-    );
+
+return new Response(
+  JSON.stringify({
+    success: true,
+    insertedId: leadId,
+    message: isUpdate
+      ? "Lead updated successfully"
+      : "Lead created successfully",
+  }),
+  {
+    status: isUpdate ? 200 : 201,
+    headers: corsHeaders,
+  }
+);
   } catch (error) {
     console.error(error);
 

@@ -304,7 +304,7 @@ export default function App() {
         <div className="flex items-center gap-3">
           <button 
             onClick={() => setIsAddLeadOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors shadow-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-[#05335c] text-white rounded-lg cursor-pointer hover:bg-[#103758] font-medium transition-colors shadow-sm"
           >
             <Plus size={18} />
             Add Lead
