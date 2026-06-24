@@ -137,9 +137,22 @@ export async function POST(req) {
     const body = await req.json();
 
     const {
-      fullName, email, phone, profile, consent,
-      source, medium, campaign, term, content, gclid,
-    } = body;
+  fullName,
+  email,
+  phone,
+  profile = "",
+  consent = false,
+
+  course = "Azure + Azure DevOps",
+  level = "",
+
+  source = "",
+  medium = "",
+  campaign = "",
+  term = "",
+  content = "",
+  gclid = "",
+} = body || {};
 
     // --- Validation ---
     const trimmedName = fullName?.trim();
@@ -186,6 +199,8 @@ export async function POST(req) {
       source: source || "",
       medium: medium || "",
       campaign: campaign || "",
+      course: course || "",
+      level : level || "",
       term: term || "",
       content: content || "",
       gclid: gclid || "",
@@ -236,7 +251,7 @@ export async function POST(req) {
         console.log("WhatsApp Response [Background]:", whatsappData);
         await sendMail({
       to: trimmedEmail,
-      subject: "Thank You For Your Enquiry for Digital Marketing Course",
+      subject: `Thank You For Your Enquiry for ${course ? course : 'Digital Marekting'} Course`,
       html: welcomeHtml(trimmedName, leadId),
     });
       } catch (error) {
