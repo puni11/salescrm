@@ -147,7 +147,7 @@ export async function POST(req) {
   profile = "",
   consent = false,
 
-  course = "Azure + Azure DevOps",
+  course,
   level = "",
 
   source = "",
