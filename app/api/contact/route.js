@@ -8,14 +8,16 @@ export async function GET(req) {
   try {
     const session = await getServerSession(authOptions);
 
-   
+   if(!session){
+    return Response.json({success:false, message:"You are Not Authorised"}, {status:401})
+   }
 
     const { searchParams } = new URL(req.url);
 
     const page = parseInt(searchParams.get("page")) || 1;
     const limit = parseInt(searchParams.get("limit")) || 20;
     const search = searchParams.get("search") || "";
-
+    const course = searchParams.get("course") || ""
     const sort = searchParams.get("sort");
     const fromDate = searchParams.get("fromDate");
     const toDate = searchParams.get("toDate");
@@ -46,7 +48,9 @@ export async function GET(req) {
     if (status) query.status = status;
     if (source) query.source = source;
     if (campaign) query.campaign = campaign;
-
+if (course) {
+  query.course = course;
+}
     // Custom date range
     if (fromDate || toDate) {
       query.createdAt = {};

@@ -2,149 +2,74 @@
 
 import { useEffect, useState } from "react";
 
-export default function GoogleReviewsPage() {
-  const [token, setToken] = useState("");
-  const [accounts, setAccounts] = useState([]);
-  const [locations, setLocations] = useState([]);
+export default function FacebookReviewsPage() {
   const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const t = params.get("token");
-
-    if (t) {
-      setToken(t);
-      loadAccounts(t);
-    }
+    fetchReviews();
   }, []);
 
-  async function loadAccounts(accessToken) {
-    const res = await fetch(
-      "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+  const fetchReviews = async () => {
+    try {
+      const res = await fetch("/api/test");
+      const data = await res.json();
+
+      if (data.success) {
+        setReviews(data.reviews);
       }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-10 text-center">
+        Loading Facebook Reviews...
+      </div>
     );
-
-    const data = await res.json();
-    setAccounts(data.accounts || []);
-  }
-
-  async function loadLocations(accountName) {
-    const accountId = accountName.split("/")[1];
-
-    const res = await fetch(
-      `https://mybusinessbusinessinformation.googleapis.com/v1/accounts/${accountId}/locations`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    const data = await res.json();
-    setLocations(data.locations || []);
-  }
-
-  async function loadReviews(locationName) {
-    const locationId = locationName.split("/")[1];
-
-    const accountId = accounts[0].name.split("/")[1];
-
-    const res = await fetch(
-      `https://mybusiness.googleapis.com/v4/accounts/${accountId}/locations/${locationId}/reviews`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    const data = await res.json();
-    setReviews(data.reviews || []);
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-8">
-      <h1 className="text-3xl font-bold mb-6">
-        Google Business Reviews
+    <div className="max-w-6xl mx-auto p-8">
+      <h1 className="text-3xl font-bold mb-8">
+        Facebook Reviews
       </h1>
 
-      {!token && (
-        <a
-          href="/api/google/auth"
-          className="bg-blue-600 text-white px-4 py-2 rounded"
-        >
-          Connect Google
-        </a>
-      )}
-
-      {accounts.length > 0 && (
-        <>
-          <h2 className="text-xl mt-8 mb-4">Accounts</h2>
-
-          {accounts.map((account) => (
-            <button
-              key={account.name}
-              onClick={() => loadLocations(account.name)}
-              className="block border p-3 mb-2 rounded w-full text-left"
+      {reviews.length === 0 ? (
+        <div className="bg-white p-6 rounded-xl shadow">
+          No reviews found
+        </div>
+      ) : (
+        <div className="grid gap-6">
+          {reviews.map((review, index) => (
+            <div
+              key={index}
+              className="bg-white p-6 rounded-xl shadow border"
             >
-              {account.accountName}
-            </button>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-semibold text-lg">
+                  {review.reviewer?.name || "Anonymous"}
+                </h3>
+
+                <div className="text-yellow-500">
+                  {"⭐".repeat(review.rating || 0)}
+                </div>
+              </div>
+
+              <p className="text-gray-700 mb-3">
+                {review.review_text || "No review text"}
+              </p>
+
+              <div className="text-sm text-gray-500">
+                {new Date(review.created_time).toLocaleString()}
+              </div>
+            </div>
           ))}
-        </>
-      )}
-
-      {locations.length > 0 && (
-        <>
-          <h2 className="text-xl mt-8 mb-4">Locations</h2>
-
-          {locations.map((location) => (
-            <button
-              key={location.name}
-              onClick={() => loadReviews(location.name)}
-              className="block border p-3 mb-2 rounded w-full text-left"
-            >
-              {location.title}
-            </button>
-          ))}
-        </>
-      )}
-
-      {reviews.length > 0 && (
-        <>
-          <h2 className="text-xl mt-8 mb-4">Reviews</h2>
-
-          <table className="w-full border">
-            <thead>
-              <tr>
-                <th className="border p-2">Reviewer</th>
-                <th className="border p-2">Rating</th>
-                <th className="border p-2">Comment</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {reviews.map((review) => (
-                <tr key={review.reviewId}>
-                  <td className="border p-2">
-                    {review.reviewer?.displayName}
-                  </td>
-
-                  <td className="border p-2">
-                    {review.starRating}
-                  </td>
-
-                  <td className="border p-2">
-                    {review.comment}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
+        </div>
       )}
     </div>
   );

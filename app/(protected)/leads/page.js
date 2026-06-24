@@ -35,7 +35,7 @@ const apiRequest = async (url, options = {}) => {
 };
 
 // --- CONSTANTS ---
-const PROFILES = ["student", "professional", "business", "other"];
+const PROFILES = ["student", "fresher", "professional", "business", "other", ];
 
 const STATUSES = [
   "New Lead", 
@@ -60,7 +60,7 @@ export default function App() {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
-  
+  const [courseFilter, setCourseFilter] = useState("All");
   // Filters & Pagination
   const [sort, setSort] = useState("newest"); // newest | oldest | name
   const [fromDate, setFromDate] = useState("");
@@ -78,7 +78,7 @@ export default function App() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, statusFilter, profileFilter, dateFilter]);
+  }, [debouncedSearch, statusFilter, profileFilter, dateFilter, courseFilter]);
 
   // --- API INTEGRATIONS ---
 
@@ -95,6 +95,7 @@ export default function App() {
         toDate,
         ...(statusFilter !== "All" && { status: statusFilter }),
         ...(profileFilter !== "All" && { profile: profileFilter }),
+          ...(courseFilter !== "All" && { course: courseFilter }),
         ...(dateFilter !== "All" && { dateFilter })
       });
 
@@ -120,7 +121,7 @@ export default function App() {
   useEffect(() => {
     fetchLeads();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, debouncedSearch, statusFilter, profileFilter, dateFilter, sort, fromDate, toDate]);
+  }, [page, debouncedSearch, statusFilter, profileFilter, dateFilter, sort, fromDate, toDate, courseFilter]);
 
   // 2. Update Lead Status
   const updateLeadStatus = async (id, newStatus) => {
@@ -267,7 +268,27 @@ export default function App() {
           {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
+<div className={isMobile ? "flex flex-col gap-1.5 mt-2" : ""}>
+  {isMobile && (
+    <label className="text-xs font-bold text-gray-500 uppercase">
+      Course
+    </label>
+  )}
 
+  <select
+    value={courseFilter}
+    onChange={(e) => setCourseFilter(e.target.value)}
+    className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full outline-none focus:ring-2 focus:ring-blue-500"
+  >
+    <option value="All">All Courses</option>
+    <option value="Digital Marketing">
+      Digital Marketing
+    </option>
+    <option value="Azure + Azure DevOps">
+      Azure + Azure DevOps
+    </option>
+  </select>
+</div>
       <div className={isMobile ? "flex flex-col gap-1.5 mt-2" : ""}>
         {isMobile && <label className="text-xs font-bold text-gray-500 uppercase">Profile</label>}
         <select value={profileFilter} onChange={(e) => setProfileFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full outline-none focus:ring-2 focus:ring-blue-500">
@@ -349,6 +370,7 @@ export default function App() {
                 <tr>
                   <th className="px-6 py-4">Name & Contact</th>
                   <th className="px-6 py-4">Profile & Consent</th>
+                  <th className="px-6 py-4">Course & Level</th>
                   <th className="px-6 py-4">Source & Campaign</th>
                   <th className="px-6 py-4">Created Date</th>
                   <th className="px-6 py-4">Last Comment</th>
@@ -416,6 +438,12 @@ export default function App() {
                           ) : (
                             <div className="text-gray-400 text-xs mt-1 flex items-center gap-1">No Consent given</div>
                           )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="font-medium text-gray-900 capitalize">{lead.course || 'N/A'}</div>
+                          
+                            <div className="text-emerald-600 text-xs mt-1 flex items-center gap-1">{lead.level || lead.profile}</div>
+                         
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-gray-900">{lead.source ? lead.source.charAt(0).toUpperCase() + lead.source.slice(1) : 'Direct'}</div>
@@ -710,7 +738,24 @@ export default function App() {
                   <label className="text-sm font-medium text-gray-700">Phone Number *</label>
                   <input required name="phone" type="tel" className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
-                
+                <div className="space-y-1">
+  <label className="text-sm font-medium text-gray-700">
+    Course *
+  </label>
+  <select
+    required
+    name="course"
+    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+  >
+    <option value="">Select Course...</option>
+    <option value="Digital Marketing">
+      Digital Marketing
+    </option>
+    <option value="Azure + Azure DevOps">
+      Azure + Azure DevOps
+    </option>
+  </select>
+</div>
                 <div className="space-y-1">
                   <label className="text-sm font-medium text-gray-700">Profile Type *</label>
                   <select required name="profile" className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none bg-white">
