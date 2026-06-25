@@ -30,49 +30,33 @@ const fifteenDaysAgo = new Date(
 );
 
 
-    const level0Leads = await db.collection("dm").aggregate([
-      {
-  $match: {
-    status: "New Lead",
-     createdAt: {
-      $gte: fifteenDaysAgo
-    },
-    $or: [
-      { reminderLevel: 0 },
-      { reminderLevel: { $exists: false } }
-    ]
+   const level0Leads = await db.collection("dm").aggregate([
+  {
+    $match: {
+      status: "New Lead",
+
+      createdAt: {
+        $gte: fifteenDaysAgo,
+        $lte: twentyFourHoursAgo
+      },
+
+      $or: [
+        { reminderLevel: 0 },
+        { reminderLevel: { $exists: false } }
+      ],
+
+      $or: [
+        { comments: { $exists: false } },
+        { comments: { $size: 0 } }
+      ]
+    }
+  },
+  {
+    $sort: {
+      createdAt: 1
+    }
   }
-},
-      {
-        $addFields: {
-          lastCommentDate: {
-            $max: "$comments.createdAt",
-          },
-        },
-      },
-      {
-        $addFields: {
-          lastActivity: {
-            $ifNull: [
-              "$lastCommentDate",
-              "$createdAt",
-            ],
-          },
-        },
-      },
-      {
-        $match: {
-          lastActivity: {
-            $lte: twentyFourHoursAgo,
-          },
-        },
-      },
-      {
-        $sort: {
-          createdAt: 1,
-        },
-      },
-    ]).toArray();
+]).toArray();
 
     /**
      * LEVEL 1
