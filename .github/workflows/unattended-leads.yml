@@ -2,7 +2,7 @@ name: Unattended Lead Checker
 
 on:
   schedule:
-    - cron: '0 * * * *' # Every hour
+    - cron: "30 3,15 * * *" # Every hour
 
   workflow_dispatch:
 

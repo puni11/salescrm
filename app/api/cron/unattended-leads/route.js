@@ -22,7 +22,7 @@ export async function GET(req) {
     const now = new Date();
 
     const twentyFourHoursAgo = new Date(
-      now.getTime() - 24 * 60 * 60 * 1000
+      now.getTime() - 60 * 60 * 1000
     );
 
 const fifteenDaysAgo = new Date(
