@@ -247,7 +247,7 @@ ${rows}
 `;
 
         await sendMail({
-      to: process.env.ADMIN_EMAIL,
+      to: "puni199711@gmail.com",
       subject: `🚨 ${leads.length} Unattended Leads Report`,
       html,
     });
