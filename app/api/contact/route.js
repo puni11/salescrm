@@ -139,7 +139,6 @@ export async function POST(req) {
 
   try {
     const body = await req.json();
-
     const {
   fullName,
   email,
@@ -156,6 +155,10 @@ export async function POST(req) {
   term = "",
   content = "",
   gclid = "",
+  fbclid="",
+  landing_page="",
+  page_path="",
+  referrer="",
 } = body || {};
 
     // --- Validation ---
@@ -208,14 +211,19 @@ export async function POST(req) {
       term: term || "",
       content: content || "",
       gclid: gclid || "",
+      fbclid: fbclid || "",
+      landing_page: landing_page || "",
+      page_path: page_path || "",
+      referrer: referrer || "",
       ip,
       userAgent,
       status: "New Lead",
     };
 
     const leadsCollection = db.collection("dm");
-    const existingLead = await leadsCollection.findOne({
-      $or: [{ email: trimmedEmail }, { phone: cleanedPhone }]
+   const existingLead = await leadsCollection.findOne({
+      $or: [{ email: trimmedEmail }, { phone: cleanedPhone }],
+      course: course || ""
     });
 
     let leadId;
@@ -256,7 +264,7 @@ export async function POST(req) {
         await sendMail({
       to: trimmedEmail,
       subject: `Thank You For Your Enquiry for ${course ? course : 'Digital Marekting'} Course`,
-      html: welcomeHtml(trimmedName, leadId),
+      html: welcomeHtml(trimmedName, course, leadId),
     });
       } catch (error) {
         // Errors here won't crash the user's request since it already completed
