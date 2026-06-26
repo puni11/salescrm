@@ -32,6 +32,10 @@ export async function GET(req) {
     /**
      * LEVEL 0
      * New Leads, No comments, No reminders sent yet
+     *
+     * FIX: the two $or clauses were previously separate keys on the same
+     * object literal, so the second one silently overwrote the first.
+     * They're now combined under a single $and so both conditions apply.
      */
     const level0Leads = await db.collection("dm").aggregate([
       {
@@ -41,13 +45,19 @@ export async function GET(req) {
             $gte: fifteenDaysAgo,
             $lte: twentyFourHoursAgo,
           },
-          $or: [
-            { reminderLevel: 0 },
-            { reminderLevel: { $exists: false } },
-          ],
-          $or: [
-            { comments: { $exists: false } },
-            { comments: { $size: 0 } },
+          $and: [
+            {
+              $or: [
+                { reminderLevel: 0 },
+                { reminderLevel: { $exists: false } },
+              ],
+            },
+            {
+              $or: [
+                { comments: { $exists: false } },
+                { comments: { $size: 0 } },
+              ],
+            },
           ],
         },
       },
@@ -92,17 +102,17 @@ export async function GET(req) {
      * Keeps the duplicate with the highest reminder level
      */
     const uniqueLeadsMap = new Map();
-    
+
     rawLeads.forEach((lead) => {
       const uniqueKey = `${lead.phone || lead.email || 'unknown'}-${lead.course || 'none'}`;
-      
+
       if (!uniqueLeadsMap.has(uniqueKey)) {
         uniqueLeadsMap.set(uniqueKey, lead);
       } else {
         const existingLead = uniqueLeadsMap.get(uniqueKey);
         const existingLevel = existingLead.reminderLevel || 0;
         const currentLevel = lead.reminderLevel || 0;
-        
+
         if (currentLevel > existingLevel) {
           uniqueLeadsMap.set(uniqueKey, lead);
         }
@@ -187,6 +197,11 @@ ${rows}
      * BULK UPDATE: Nuke Duplicates
      * We iterate over the unique `leads` array and use updateMany.
      * This forces ALL duplicate rows in the DB to sync to the exact same reminder level.
+     *
+     * FIX: previously this used a binary ternary (=== 1 ? 2 : 1) which would
+     * forcibly reset any lead already at level 2+ back down to level 1.
+     * Now it always increments from whatever level the lead is currently at,
+     * so a lead never moves backwards.
      */
     const bulkOps = leads.map((lead) => {
       // Build conditions to find the person by Phone or Email
@@ -208,7 +223,7 @@ ${rows}
           },
           update: {
             $set: {
-              reminderLevel: lead.reminderLevel === 1 ? 2 : 1,
+              reminderLevel: (lead.reminderLevel || 0) + 1,
               lastReminderSentAt: new Date(),
               updatedAt: new Date(),
             },
