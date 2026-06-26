@@ -21,7 +21,6 @@ export async function GET(req) {
 
     const now = new Date();
 
-    // Fixed math to actually represent 24 hours (24 * 60 * 60 * 1000)
     const twentyFourHoursAgo = new Date(
       now.getTime() - 24 * 60 * 60 * 1000
     );
@@ -62,7 +61,6 @@ export async function GET(req) {
     /**
      * LEVEL 1
      * Reminder already sent once, wait another 24 Hours
-     * Includes comment filter to ignore leads commented on after 1st reminder
      */
     const level1Leads = await db.collection("dm").find({
       status: "New Lead",
@@ -90,7 +88,7 @@ export async function GET(req) {
     ];
 
     /**
-     * Deduplicate Leads (Filters out multiple form submissions)
+     * Deduplicate Leads
      * Keeps the duplicate with the highest reminder level
      */
     const uniqueLeadsMap = new Map();
@@ -101,7 +99,6 @@ export async function GET(req) {
       if (!uniqueLeadsMap.has(uniqueKey)) {
         uniqueLeadsMap.set(uniqueKey, lead);
       } else {
-        // If we have duplicates, keep the one with the HIGHER reminder level
         const existingLead = uniqueLeadsMap.get(uniqueKey);
         const existingLevel = existingLead.reminderLevel || 0;
         const currentLevel = lead.reminderLevel || 0;
@@ -112,7 +109,6 @@ export async function GET(req) {
       }
     });
 
-    // The clean array we will use to build the email table
     const leads = Array.from(uniqueLeadsMap.values());
 
     if (leads.length === 0) {
@@ -140,55 +136,16 @@ export async function GET(req) {
         return `
 <tr>
 <td style="padding:10px;border:1px solid #ddd;">${index + 1}</td>
-
-<td style="padding:10px;border:1px solid #ddd;">
-${lead.name}
-</td>
-
-<td style="padding:10px;border:1px solid #ddd;">
-${lead.phone}
-</td>
-
-<td style="padding:10px;border:1px solid #ddd;">
-${lead.email || "-"}
-</td>
-
-<td style="padding:10px;border:1px solid #ddd;">
-${lead.course || "-"}
-</td>
-
-<td style="padding:10px;border:1px solid #ddd;">
-${lead.source || "-"}
-</td>
-
-<td style="padding:10px;border:1px solid #ddd;">
-${lead.status}
-</td>
-
-<td style="padding:10px;border:1px solid #ddd;">
-${new Date(lead.createdAt).toLocaleString("en-IN")}
-</td>
-
-<td style="padding:10px;border:1px solid #ddd;">
-${
-  lastComment
-    ? new Date(lastComment.createdAt).toLocaleString("en-IN")
-    : "-"
-}
-</td>
-
-<td style="padding:10px;border:1px solid #ddd;">
-${lastComment?.text || "No Comments"}
-</td>
-
-<td style="
-padding:10px;
-font-weight:bold;
-color:${lead.reminderLevel === 1 ? "#dc2626" : "#d97706"};
-">
-${reminderText}
-</td>
-
+<td style="padding:10px;border:1px solid #ddd;">${lead.name}</td>
+<td style="padding:10px;border:1px solid #ddd;">${lead.phone}</td>
+<td style="padding:10px;border:1px solid #ddd;">${lead.email || "-"}</td>
+<td style="padding:10px;border:1px solid #ddd;">${lead.course || "-"}</td>
+<td style="padding:10px;border:1px solid #ddd;">${lead.source || "-"}</td>
+<td style="padding:10px;border:1px solid #ddd;">${lead.status}</td>
+<td style="padding:10px;border:1px solid #ddd;">${new Date(lead.createdAt).toLocaleString("en-IN")}</td>
+<td style="padding:10px;border:1px solid #ddd;">${lastComment ? new Date(lastComment.createdAt).toLocaleString("en-IN") : "-"}</td>
+<td style="padding:10px;border:1px solid #ddd;">${lastComment?.text || "No Comments"}</td>
+<td style="padding:10px;font-weight:bold;color:${lead.reminderLevel === 1 ? "#dc2626" : "#d97706"};">${reminderText}</td>
 </tr>
 `;
       })
@@ -201,58 +158,21 @@ const html = `
 <meta charset="UTF-8" />
 <title>Unattended Leads</title>
 </head>
-
 <body style="font-family:Arial;background:#f4f4f4;padding:30px">
-
 <div style="max-width:1200px;margin:auto;background:#fff;padding:30px;border-radius:10px">
-
-<h2 style="margin-top:0;color:#dc2626">
-🚨 Unattended Leads Report
-</h2>
-
-<p>
-Total unattended leads:
-<b>${leads.length}</b>
-</p>
-
-<table
-width="100%"
-border="1"
-cellspacing="0"
-cellpadding="10"
-style="border-collapse:collapse"
->
-
+<h2 style="margin-top:0;color:#dc2626">🚨 Unattended Leads Report</h2>
+<p>Total unattended leads: <b>${leads.length}</b></p>
+<table width="100%" border="1" cellspacing="0" cellpadding="10" style="border-collapse:collapse">
 <thead>
-
 <tr style="background:#2563eb;color:#fff">
-
-<th>#</th>
-<th>Name</th>
-<th>Phone</th>
-<th>Email</th>
-<th>Course</th>
-<th>Source</th>
-<th>Status</th>
-<th>Created</th>
-<th>Last Activity</th>
-<th>Last Comment</th>
-<th>Reminder</th>
-
+<th>#</th><th>Name</th><th>Phone</th><th>Email</th><th>Course</th><th>Source</th><th>Status</th><th>Created</th><th>Last Activity</th><th>Last Comment</th><th>Reminder</th>
 </tr>
-
 </thead>
-
 <tbody>
-
 ${rows}
-
 </tbody>
-
 </table>
-
 </div>
-
 </body>
 </html>
 `;
@@ -264,27 +184,38 @@ ${rows}
     });
 
     /**
-     * Update reminder level in the database
-     * We use 'rawLeads' here so all database duplicates get updated in sync
+     * BULK UPDATE: Nuke Duplicates
+     * We iterate over the unique `leads` array and use updateMany.
+     * This forces ALL duplicate rows in the DB to sync to the exact same reminder level.
      */
-    const bulkOps = rawLeads.map((lead) => ({
-      updateOne: {
-        filter: {
-          _id: lead._id,
-        },
-        update: {
-          $set: {
-            reminderLevel:
-              lead.reminderLevel === 1
-                ? 2
-                : 1,
+    const bulkOps = leads.map((lead) => {
+      // Build conditions to find the person by Phone or Email
+      const matchConditions = [];
+      if (lead.phone) matchConditions.push({ phone: lead.phone });
+      if (lead.email) matchConditions.push({ email: lead.email });
 
-            lastReminderSentAt: new Date(),
-            updatedAt: new Date(),
+      const baseFilter =
+        matchConditions.length > 0
+          ? { $or: matchConditions }
+          : { _id: lead._id };
+
+      return {
+        updateMany: {
+          filter: {
+            ...baseFilter,
+            // Ensure we only update duplicates for this exact course
+            ...(lead.course ? { course: lead.course } : {}),
+          },
+          update: {
+            $set: {
+              reminderLevel: lead.reminderLevel === 1 ? 2 : 1,
+              lastReminderSentAt: new Date(),
+              updatedAt: new Date(),
+            },
           },
         },
-      },
-    }));
+      };
+    });
 
     if (bulkOps.length) {
       await db.collection("dm").bulkWrite(bulkOps);
@@ -293,7 +224,6 @@ ${rows}
     return NextResponse.json({
       success: true,
       totalSentInEmail: leads.length,
-      totalDocumentsUpdated: rawLeads.length,
       message: "Reminder email sent successfully.",
     });
 
