@@ -7,7 +7,7 @@ import welcomeHtml from "@/lib/emailHtml/welcomeHtml";
 export async function GET(req) {
   try {
     const session = await getServerSession(authOptions);
-
+    console.log(session)
    if(!session){
     return Response.json({success:false, message:"You are Not Authorised"}, {status:401})
    }
