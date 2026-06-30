@@ -1,26 +1,27 @@
 "use client";
 
-export default function FacebookIntegrationPage() {
-  const connectFacebook = () => {
-    window.location.href = "/api/facebook/login";
-  };
+export default function FacebookIntegration() {
+  async function connectFacebook() {
+    window.location.href = "/api/facebook/connect";
+  }
 
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold">
-        Facebook Lead Ads
+    <div className="max-w-3xl mx-auto p-8">
+
+      <h1 className="text-3xl font-bold">
+        Facebook Integration
       </h1>
 
-      <p className="mt-4">
-        Status: Not Connected
+      <p className="mt-3 text-gray-500">
+        Connect your Meta Business account to receive Lead Ads directly in the CRM.
       </p>
 
-      <button
-        onClick={connectFacebook}
-        className="mt-6 rounded bg-blue-600 px-5 py-2 text-white"
-      >
-        Connect Facebook
-      </button>
+     <button
+  onClick={() => (window.location = "/api/facebook/connect")}
+>
+  Connect Facebook
+</button>
+
     </div>
   );
 }
