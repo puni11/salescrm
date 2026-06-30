@@ -23,7 +23,8 @@ import {
   BriefcaseBusiness,
   X, // <-- Added X icon for mobile close button
   User2Icon,
-  ChevronRight
+  ChevronRight,
+  Settings2Icon
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Image from "next/image";
@@ -136,6 +137,15 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
               label="Staff" 
               collapsed={collapsed} 
               active={pathname.includes("/staff")}
+            />
+          )}
+          {session?.user?.role === 'admin' && (
+            <NavItem 
+              href="/settings/integrations" 
+              icon={Settings2Icon} 
+              label="Integrations" 
+              collapsed={collapsed} 
+              active={pathname.includes("/settings/integrations")}
             />
           )}
         </nav>
