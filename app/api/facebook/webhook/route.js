@@ -35,7 +35,9 @@ export async function POST(req) {
 
       try {
         const response = await fetch(
-          `https://graph.facebook.com/v25.0/${leadId}?access_token=${process.env.FACEBOOK_PAGE_ACCESS_TOKEN}`
+           `https://graph.facebook.com/v25.0/${leadId}` +
+  `?fields=id,created_time,field_data,form_id,ad_id` +
+  `&access_token=${process.env.FACEBOOK_PAGE_ACCESS_TOKEN}`
         );
 
         const lead = await response.json();
