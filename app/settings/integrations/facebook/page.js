@@ -2,7 +2,7 @@
 
 export default function FacebookIntegration() {
   async function connectFacebook() {
-    const res = await fetch("/api/facebook/subscribe", {
+    const res = await fetch("/api/facebook/register-webhook", {
       method: "POST",
     });
 
