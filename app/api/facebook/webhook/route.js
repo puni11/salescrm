@@ -1,3 +1,4 @@
+import { saveFacebookLead } from "@/component/saveFacebookLead";
 import { NextResponse } from "next/server";
 
 export async function GET(req) {
@@ -34,10 +35,12 @@ export async function POST(req) {
       const leadId = change.value.leadgen_id;
 
       try {
+        // Fetch lead details from Facebook
         const response = await fetch(
-           `https://graph.facebook.com/v25.0/${leadId}` +
-  `?fields=id,created_time,field_data,form_id,ad_id` +
-  `&access_token=${process.env.FACEBOOK_PAGE_ACCESS_TOKEN}`
+          `https://graph.facebook.com/v25.0/${leadId}?fields=id,created_time,field_data,form_id,ad_id&access_token=${process.env.FACEBOOK_PAGE_ACCESS_TOKEN}`,
+          {
+            cache: "no-store",
+          }
         );
 
         const lead = await response.json();
@@ -46,23 +49,18 @@ export async function POST(req) {
         console.log(JSON.stringify(lead, null, 2));
 
         if (lead.error) {
-          console.log("Facebook Error");
-          console.log(lead.error);
+          console.error("Facebook Error", lead.error);
           continue;
         }
 
-        const mapped = {};
+        // Save lead to CRM
+        const result = await saveFacebookLead(lead, change.value);
 
-        for (const field of lead.field_data || []) {
-          mapped[field.name] = field.values?.[0] ?? "";
-        }
+        console.log("Facebook Lead Saved");
+        console.log(result);
 
-        console.log(mapped);
-
-        // TODO
-        // Save mapped to MongoDB
       } catch (err) {
-        console.error(err);
+        console.error("Webhook Error:", err);
       }
     }
   }
