@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import clientPromise from "@/lib/mongodb";
 
 export async function GET(req) {
   try {
@@ -18,10 +19,10 @@ export async function GET(req) {
       );
     }
 
-    // Exchange code for short-lived user token
+    // Exchange code for User Token
     const tokenResponse = await fetch(
-      `https://graph.facebook.com/v25.0/oauth/access_token?` +
-        `client_id=${process.env.META_APP_ID}` +
+      `https://graph.facebook.com/v25.0/oauth/access_token` +
+        `?client_id=${process.env.META_APP_ID}` +
         `&redirect_uri=${encodeURIComponent(
           `${process.env.APP_URL}/api/facebook/callback`
         )}` +
@@ -31,16 +32,75 @@ export async function GET(req) {
 
     const token = await tokenResponse.json();
 
-    console.log("Short Lived Token");
-    console.log(token);
-
     if (token.error) {
       return NextResponse.json(token, {
         status: 400,
       });
     }
 
-    return NextResponse.json(token);
+    // Fetch all pages
+    const pagesResponse = await fetch(
+      `https://graph.facebook.com/v25.0/me/accounts?access_token=${token.access_token}`
+    );
+
+    const pages = await pagesResponse.json();
+
+    if (pages.error) {
+      return NextResponse.json(pages, {
+        status: 400,
+      });
+    }
+
+    // Find only GRRAS Page
+    const page = pages.data.find(
+      (p) => p.id === "1039043886110312"
+    );
+
+    if (!page) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "GRRAS Facebook Page not found.",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    const client = await clientPromise;
+    const db = client.db("internal");
+
+    const expiresAt = new Date(
+      Date.now() + token.expires_in * 1000
+    );
+
+    await db.collection("facebook_pages").updateOne(
+      {
+        pageId: page.id,
+      },
+      {
+        $set: {
+          pageId: page.id,
+          pageName: page.name,
+          pageAccessToken: page.access_token,
+          userAccessToken: token.access_token,
+          userTokenExpiresAt: expiresAt,
+          connected: true,
+          updatedAt: new Date(),
+        },
+        $setOnInsert: {
+          createdAt: new Date(),
+        },
+      },
+      {
+        upsert: true,
+      }
+    );
+
+    return NextResponse.redirect(
+      `${process.env.APP_URL}/settings/integrations/facebook?success=true`
+    );
   } catch (err) {
     console.error(err);
 
