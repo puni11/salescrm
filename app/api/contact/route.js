@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { after } from "next/server";
 import { sendMail } from "@/lib/sendMail";
+import { ObjectId } from "mongodb";
 import welcomeHtml from "@/lib/emailHtml/welcomeHtml";
 export async function GET(req) {
   try {
@@ -32,7 +33,9 @@ export async function GET(req) {
     const db = client.db("sales");
 
     const query = {};
-
+if (session.user.role !== "admin") {
+  query["assignedTo._id"] = new ObjectId(session.user.id);
+}
     // Search
     if (search) {
       query.$or = [
