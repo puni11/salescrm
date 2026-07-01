@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
-import clientPromise from "@/lib/mongodb";
-import { generateGoogleSheetScript } from "@/lib/googleSheetTemplate";
+import { getSheetsClient } from "@/lib/googleSheets";
+
 export async function POST(req) {
   try {
     const { sheetUrl, sheetName } = await req.json();
@@ -31,45 +30,26 @@ export async function POST(req) {
 
     const spreadsheetId = match[1];
 
-    // Generate Secret
-    const secret = crypto.randomBytes(32).toString("hex");
+    const sheets = await getSheetsClient();
 
-    const companyId = "grras";
-const webhook =
-  `${process.env.APP_URL}/api/integrations/google-sheet/webhook`;
-
-    const db = (await clientPromise).db("internal");
-const script = generateGoogleSheetScript({
-  webhook,
-  secret,
-  sheetName,
-});
-    await db.collection("facebook_integrations").insertOne({
-      companyId,
-      type: "google-sheet",
+    const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      sheetName,
-      secret,
-      webhook,
-      script,
-      active: true,
-      createdAt: new Date(),
+      range: `${sheetName}!A:Z`,
     });
 
     return NextResponse.json({
       success: true,
       spreadsheetId,
-      secret,
-      webhook,
-      script,
+      rows: response.data.values || [],
     });
-  } catch (err) {
-    console.error(err);
+
+  } catch (error) {
+    console.error(error);
 
     return NextResponse.json(
       {
         success: false,
-        message: "Something went wrong",
+        message: error.message,
       },
       { status: 500 }
     );
