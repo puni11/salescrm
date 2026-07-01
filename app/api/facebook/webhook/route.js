@@ -1,4 +1,5 @@
 import { saveFacebookLead } from "@/component/saveFacebookLead";
+import { getPageAccessToken } from "@/lib/facebook/getPageAccessToken";
 import { NextResponse } from "next/server";
 
 export async function GET(req) {
@@ -32,12 +33,18 @@ export async function POST(req) {
     for (const change of entry.changes || []) {
       if (change.field !== "leadgen") continue;
 
-      const leadId = change.value.leadgen_id;
-
       try {
-        // Fetch lead details from Facebook
+        const leadId = change.value.leadgen_id;
+        const pageId = change.value.page_id;
+
+        // Get Page Access Token from MongoDB
+        const pageAccessToken = await getPageAccessToken(pageId);
+
+        // Fetch lead details
         const response = await fetch(
-          `https://graph.facebook.com/v25.0/${leadId}?fields=id,created_time,field_data,form_id,ad_id&access_token=${process.env.FACEBOOK_PAGE_ACCESS_TOKEN}`,
+          `https://graph.facebook.com/v25.0/${leadId}` +
+            `?fields=id,created_time,field_data,form_id,ad_id` +
+            `&access_token=${pageAccessToken}`,
           {
             cache: "no-store",
           }
@@ -53,7 +60,6 @@ export async function POST(req) {
           continue;
         }
 
-        // Save lead to CRM
         const result = await saveFacebookLead(lead, change.value);
 
         console.log("Facebook Lead Saved");

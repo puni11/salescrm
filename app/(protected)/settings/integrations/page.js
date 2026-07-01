@@ -48,46 +48,122 @@ export default function IntegrationsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         
         {/* 1. Facebook Lead Ads Card (Dynamic) */}
-        <div className="flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden">
-          <div className="p-6 flex-grow">
-            <div className="flex justify-between items-start mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Facebook Lead Ads
-              </h2>
-              <span
-                className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                  fbIntegration?.status === "active"
-                    ? "bg-green-50 text-green-700 border border-green-200"
-                    : "bg-gray-100 text-gray-600 border border-gray-200"
-                }`}
-              >
-                {fbIntegration?.status === "active" ? "Active" : "Inactive"}
-              </span>
-            </div>
-            
-            <p className="text-sm text-gray-600 mb-6">
-              Manage and sync your Facebook Lead Ads directly to your system.
+       {/* Facebook Lead Ads */}
+<div className="flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all overflow-hidden">
+
+  <div className="p-6 flex-grow">
+
+    <div className="flex justify-between items-start">
+
+      <div>
+
+        <h2 className="text-lg font-semibold">
+          Facebook Lead Ads
+        </h2>
+
+      </div>
+
+      <span
+        className={`px-3 py-1 rounded-full text-xs font-medium ${
+          fbIntegration?.status === "connected"
+            ? "bg-green-100 text-green-700"
+            : "bg-red-100 text-red-700"
+        }`}
+      >
+        {fbIntegration?.status === "connected"
+          ? "Connected"
+          : "Disconnected"}
+      </span>
+
+    </div>
+
+    <div className="mt-6 space-y-4">
+
+      <div className="flex justify-between items-center">
+        <p className="text-xs text-gray-500">
+          Facebook Page
+        </p>
+
+        <p className="text-xs font-medium">
+          {fbIntegration?.pageName || "Not Connected"}
+        </p>
+      </div>
+
+      {fbIntegration?.status === "connected" && (
+        <>
+          <div className="flex justify-between items-center">
+            <p className="text-xs text-gray-500">
+              Token Expires
             </p>
 
-            <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
-              <p className="text-xs text-gray-500 uppercase font-semibold tracking-wider mb-1">
-                Connected Page
-              </p>
-              <p className="text-sm font-medium text-gray-900">
-                {fbIntegration?.pageName ?? "Not Connected"}
-              </p>
-            </div>
+            <p className="text-xs font-medium">
+              {new Date(
+                fbIntegration.tokenExpiresAt
+              ).toLocaleDateString()}
+            </p>
           </div>
 
-          <div className="border-t border-gray-100 p-4 bg-gray-50/50">
-            <Link 
-              href="/settings/integrations/facebook/forms" 
-              className="w-full flex justify-center items-center px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+          <div className="flex justify-between items-center">
+            <p className="text-xs text-gray-500">
+              Remaining
+            </p>
+
+            <p
+              className={`text-xs font-medium ${
+                fbIntegration.needsReconnect
+                  ? "text-red-600"
+                  : "text-green-600"
+              }`}
             >
-              {fbIntegration?.status === "active" ? "Manage Integration" : "Set Up Integration"} &rarr;
-            </Link>
+              {fbIntegration.expiresIn.days} days{" "}
+              {fbIntegration.expiresIn.hours} hrs
+            </p>
           </div>
-        </div>
+
+          {fbIntegration.needsReconnect && (
+            <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3">
+
+              <p className="text-sm text-yellow-800">
+
+                Your Facebook token will expire soon.
+                Please reconnect your account.
+
+              </p>
+
+            </div>
+          )}
+        </>
+      )}
+
+    </div>
+
+  </div>
+
+  <div className="border-t border-gray-200 bg-gray-50">
+
+    <div className="flex">
+
+      <Link
+        href="/settings/integrations/facebook/forms"
+        className="flex-1 text-center bg-[#05335c] hover:bg-[#05335c]/90 text-white py-2"
+      >
+        Manage Forms
+      </Link>
+
+      <Link
+        href="/settings/integrations/facebook"
+        className="flex-1 text-center hover:bg-gray-100 py-2"
+      >
+        {fbIntegration?.status === "connected"
+          ? "Reconnect"
+          : "Connect"}
+      </Link>
+
+    </div>
+
+  </div>
+
+</div>
 
         {/* 2. Google Ads Card (Static - Inactive) */}
         <div className="flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden opacity-75 hover:opacity-100">
@@ -105,14 +181,6 @@ export default function IntegrationsPage() {
               Track conversions and sync your Google search campaigns.
             </p>
 
-            <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
-              <p className="text-xs text-gray-500 uppercase font-semibold tracking-wider mb-1">
-                Connected Account
-              </p>
-              <p className="text-sm font-medium text-gray-500 italic">
-                Not Connected
-              </p>
-            </div>
           </div>
 
           <div className="border-t border-gray-100 p-4 bg-gray-50/50">
@@ -141,14 +209,7 @@ export default function IntegrationsPage() {
               Import leads automatically from your LinkedIn Lead Gen Forms.
             </p>
 
-            <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
-              <p className="text-xs text-gray-500 uppercase font-semibold tracking-wider mb-1">
-                Connected Page
-              </p>
-              <p className="text-sm font-medium text-gray-500 italic">
-                Not Connected
-              </p>
-            </div>
+         
           </div>
 
           <div className="border-t border-gray-100 p-4 bg-gray-50/50">
