@@ -1,21 +1,27 @@
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  const url = new URL("https://www.facebook.com/v25.0/dialog/oauth");
+  const appId = process.env.META_APP_ID;
 
-  url.searchParams.set("client_id", process.env.META_ID);
+  const redirectUri = `${process.env.APP_URL}/api/facebook/callback`;
 
-  url.searchParams.set(
-    "redirect_uri",
-    `${process.env.NEXTAUTH_URL}/api/facebook/callback`
-  );
+  const scope = [
+    "pages_show_list",
+    "pages_read_engagement",
+    "pages_manage_metadata",
+    "pages_manage_ads",
+    "ads_management",
+    "ads_read",
+    "business_management",
+    "leads_retrieval",
+  ].join(",");
 
-  url.searchParams.set(
-    "configuration_id",
-    process.env.FACEBOOK_CONFIGURATION_ID
-  );
-
-  url.searchParams.set("response_type", "code");
+  const url =
+    `https://www.facebook.com/v25.0/dialog/oauth` +
+    `?client_id=${appId}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&scope=${scope}` +
+    `&response_type=code`;
 
   return NextResponse.redirect(url);
 }
