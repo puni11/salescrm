@@ -34,7 +34,7 @@ export async function POST(req) {
 
     // Find Integration
     const integration = await internalDB
-      .collection("google_sheet_integrations")
+      .collection("facebook_integrations")
       .findOne({
         secret,
         active: true,
