@@ -4,7 +4,10 @@ import {
   Search, Filter, Plus, Upload, X, MessageSquare, 
   Calendar, User, Phone, Mail, CheckCircle, 
   AlertCircle, ArrowDownToLine, TargetIcon,
-  Activity, Globe, Info, Clock, ShieldCheck, MessageCircle
+  Activity, Globe, Info, Clock, ShieldCheck, MessageCircle,
+  Briefcase,
+  CalendarCheck,
+  BookAIcon
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -226,7 +229,20 @@ async function fetchCounsellors() {
       default: return "bg-gray-100 text-gray-800";
     }
   };
+const formatDate = (value) => {
+  if (!value) return "";
 
+  // Excel/Google Sheets serial date
+  if (!isNaN(value) && Number(value) > 30000) {
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    return new Date(
+      excelEpoch.getTime() + Number(value) * 86400000
+    ).toLocaleDateString("en-IN");
+  }
+
+  // ISO date or timestamp
+  return new Date(value).toLocaleDateString("en-IN");
+};
   // Reusable Filter Render Logic (used in both desktop bar and mobile bottom sheet)
  const renderFilters = (isMobile = false) => {
   // Extract repeated styles to keep the JSX clean
@@ -623,6 +639,23 @@ async function fetchCounsellors() {
                     <Phone size={16} className="mr-3 text-gray-400" />
                     <a href={`tel:${selectedLead.phone}`} className="hover:text-blue-600">{selectedLead.phone}</a>
                   </div>
+                  {selectedLead.company && <div className="flex items-center text-sm text-gray-600">
+                    <Briefcase size={16} className="mr-3 text-gray-400" />
+                    <span>Company - {selectedLead.company || "N/A"}</span>
+                  </div>}
+                  {selectedLead.city && <div className="flex items-center text-sm text-gray-600">
+                    <Globe size={16} className="mr-3 text-gray-400" />
+                    <span> {selectedLead.city || "N/A"}</span>
+                  </div>}
+                  {selectedLead.prev_course && <div className="flex items-center text-sm text-gray-600">
+                    <BookAIcon size={16} className="mr-3 text-gray-400" />
+                    <span>Previous Course: {selectedLead.prev_course || "N/A"}</span>
+                  </div>}
+                   {selectedLead.prev_admission && <div className="flex items-center text-sm text-gray-600">
+                    <CalendarCheck size={16} className="mr-3 text-gray-400" />
+                    <span>Previous Admission  Date: {formatDate(selectedLead.prev_admission)}</span>
+                  </div>}
+                 
                   <div className="flex items-center text-sm text-gray-600">
                     <Calendar size={16} className="mr-3 text-gray-400" />
                     <span>Created Date: <span className="font-medium text-gray-700">{selectedLead.createdAt && new Date(selectedLead.createdAt).toLocaleString()}</span></span>

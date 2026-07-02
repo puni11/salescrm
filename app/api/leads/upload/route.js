@@ -89,10 +89,12 @@ export async function POST(req) {
         status: row["Status"] || "New Lead",
 
         company: row["Company Name"] || "",
-
+        prev_course: row["Previous Course"] || "",
+        prev_admission: row["Admission Date"] || "",
+        gender: row["Gender"] || "",
         assignedTo: {
-          _id: new ObjectId("6a4507369c0b2c7d69a99ab9"),
-          name: "Deepanshu Sharma",
+          _id: new ObjectId("6a33c7bc3d699a93dd2287f2"),
+          name: "Bhavya",
         },
 
         updatedAt: new Date(),
