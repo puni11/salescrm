@@ -45,7 +45,16 @@ const STATUSES = [
   "Converted", 
   "Call Back"
 ];
-
+const SOURCE_TYPES = [
+  "Direct",
+  "Google",
+  "Facebook",
+  "Instagram",
+  "LinkedIn",
+  "Twitter",
+  "Referral",
+  "GS1"
+];
 // --- MAIN APPLICATION COMPONENT ---
 export default function App() {
   const [leads, setLeads] = useState([]);
@@ -54,11 +63,10 @@ export default function App() {
   const [selectedLeadId, setSelectedLeadId] = useState(null);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [whatsappMessage, setWhatsappMessage] = useState("");
-  
+    const [counsellors, setCounsellors] = useState([]);
+  const [selectedCounsellor, setSelectedCounsellor] = useState("");
   // Modals & Drawers
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
-  const [isImportOpen, setIsImportOpen] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [courseFilter, setCourseFilter] = useState("All");
   // Filters & Pagination
@@ -71,6 +79,7 @@ export default function App() {
   const debouncedSearch = useDebounce(search, 500);
   
   const [statusFilter, setStatusFilter] = useState("All");
+  const [sourceFilter, setSourceFilter] = useState("All");
   const [profileFilter, setProfileFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("All"); // All, Today, Last3, Last7, Last30
   const limit = 10;
@@ -78,8 +87,24 @@ export default function App() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, statusFilter, profileFilter, dateFilter, courseFilter]);
+  }, [debouncedSearch, statusFilter, sourceFilter, profileFilter, dateFilter, courseFilter]);
+  useEffect(() => {
+    fetchCounsellors();
+  }, []);
+async function fetchCounsellors() {
+    try {
+      const res = await fetch("/api/cousellors");
+      const data = await res.json();
 
+      if (data.success) {
+        setCounsellors(data.data);
+      }
+    } catch (error) {
+      console.error("Error fetching counsellors:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
   // --- API INTEGRATIONS ---
 
   // 1. Fetch Leads
@@ -96,7 +121,9 @@ export default function App() {
         ...(statusFilter !== "All" && { status: statusFilter }),
         ...(profileFilter !== "All" && { profile: profileFilter }),
           ...(courseFilter !== "All" && { course: courseFilter }),
-        ...(dateFilter !== "All" && { dateFilter })
+        ...(dateFilter !== "All" && { dateFilter }),
+        ...(sourceFilter !== "All" && { source: sourceFilter }),
+        ...(selectedCounsellor && { counsellorId: selectedCounsellor }),
       });
 
       const res = await apiRequest(`/api/contact?${params.toString()}`);
@@ -121,7 +148,7 @@ export default function App() {
   useEffect(() => {
     fetchLeads();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, debouncedSearch, statusFilter, profileFilter, dateFilter, sort, fromDate, toDate, courseFilter]);
+  }, [page, debouncedSearch, statusFilter, sourceFilter, profileFilter, dateFilter, sort, fromDate, toDate, courseFilter, selectedCounsellor]);
 
   // 2. Update Lead Status
   const updateLeadStatus = async (id, newStatus) => {
@@ -184,35 +211,6 @@ export default function App() {
     }
   };
 
-  // 5. Import CSV
-  const handleImport = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setIsImporting(true);
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const res = await fetch('/api/contact/import', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (res.ok) {
-        alert("Leads imported successfully!");
-        setIsImportOpen(false);
-        fetchLeads();
-      } else {
-        alert("Import failed. Please check your file format.");
-      }
-    } catch (error) {
-      console.error(error);
-      alert("An error occurred during import.");
-    } finally {
-      setIsImporting(false);
-    }
-  };
 
   // --- HELPERS ---
   const getLeadId = (lead) => typeof lead._id === 'object' && lead._id !== null ? lead._id.$oid : lead._id;
@@ -230,11 +228,27 @@ export default function App() {
   };
 
   // Reusable Filter Render Logic (used in both desktop bar and mobile bottom sheet)
-  const renderFilters = (isMobile = false) => (
+ const renderFilters = (isMobile = false) => {
+  // Extract repeated styles to keep the JSX clean
+  const inputClasses = "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition-all focus:border-transparent focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500";
+  const wrapperClasses = isMobile ? "flex flex-col gap-1.5 mt-2 first:mt-0" : "flex items-center gap-2";
+  const labelClasses = "text-xs font-bold uppercase tracking-wide text-gray-500";
+
+  // Helper function to render mobile labels consistently
+  const MobileLabel = ({ text }) => (
+    isMobile ? <label className={labelClasses}>{text}</label> : null
+  );
+
+  return (
     <>
-      <div className={isMobile ? "flex flex-col gap-1.5" : ""}>
-        {isMobile && <label className="text-xs font-bold text-gray-500 uppercase">Quick Date</label>}
-        <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full outline-none focus:ring-2 focus:ring-blue-500">
+      {/* Quick Date */}
+      <div className={wrapperClasses}>
+        <MobileLabel text="Quick Date" />
+        <select 
+          value={dateFilter} 
+          onChange={(e) => setDateFilter(e.target.value)} 
+          className={inputClasses}
+        >
           <option value="All">All Time</option>
           <option value="Today">Today</option>
           <option value="Last3">Last 3 Days</option>
@@ -243,61 +257,119 @@ export default function App() {
         </select>
       </div>
 
-      <div className={isMobile ? "flex flex-col gap-1.5" : "flex items-center gap-2"}>
-        {isMobile && <label className="text-xs font-bold text-gray-500 uppercase">Custom Date Range</label>}
-        <div className="flex items-center gap-2 w-full">
-          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
-          <span className="text-gray-400 text-sm font-medium">to</span>
-          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+      {/* Custom Date Range */}
+      <div className={wrapperClasses}>
+        <MobileLabel text="Custom Date Range" />
+        <div className="flex w-full items-center gap-2">
+          <input 
+            type="date" 
+            value={fromDate} 
+            onChange={(e) => setFromDate(e.target.value)} 
+            className={`flex-1 ${inputClasses}`} 
+          />
+          <span className="text-sm font-medium text-gray-400">to</span>
+          <input 
+            type="date" 
+            value={toDate} 
+            onChange={(e) => setToDate(e.target.value)} 
+            className={`flex-1 ${inputClasses}`} 
+          />
         </div>
       </div>
 
-      <div className={isMobile ? "flex flex-col gap-1.5 mt-2" : ""}>
-        {isMobile && <label className="text-xs font-bold text-gray-500 uppercase">Sort By</label>}
-        <select value={sort} onChange={(e) => setSort(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full outline-none focus:ring-2 focus:ring-blue-500">
+      {/* Sort By */}
+      <div className={wrapperClasses}>
+        <MobileLabel text="Sort By" />
+        <select 
+          value={sort} 
+          onChange={(e) => setSort(e.target.value)} 
+          className={inputClasses}
+        >
           <option value="newest">Newest First</option>
           <option value="oldest">Oldest First</option>
           <option value="name">Name (A-Z)</option>
         </select>
       </div>
 
-      <div className={isMobile ? "flex flex-col gap-1.5 mt-2" : ""}>
-        {isMobile && <label className="text-xs font-bold text-gray-500 uppercase">Status</label>}
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full outline-none focus:ring-2 focus:ring-blue-500">
+      {/* Status */}
+      <div className={wrapperClasses}>
+        <MobileLabel text="Status" />
+        <select 
+          value={statusFilter} 
+          onChange={(e) => setStatusFilter(e.target.value)} 
+          className={inputClasses}
+        >
           <option value="All">All Statuses</option>
           {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
-<div className={isMobile ? "flex flex-col gap-1.5 mt-2" : ""}>
-  {isMobile && (
-    <label className="text-xs font-bold text-gray-500 uppercase">
-      Course
-    </label>
-  )}
 
-  <select
-    value={courseFilter}
-    onChange={(e) => setCourseFilter(e.target.value)}
-    className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full outline-none focus:ring-2 focus:ring-blue-500"
-  >
-    <option value="All">All Courses</option>
-    <option value="Digital Marketing">
-      Digital Marketing
-    </option>
-    <option value="Azure + Azure DevOps">
-      Azure + Azure DevOps
-    </option>
-  </select>
-</div>
-      <div className={isMobile ? "flex flex-col gap-1.5 mt-2" : ""}>
-        {isMobile && <label className="text-xs font-bold text-gray-500 uppercase">Profile</label>}
-        <select value={profileFilter} onChange={(e) => setProfileFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full outline-none focus:ring-2 focus:ring-blue-500">
+      {/* Course */}
+      <div className={wrapperClasses}>
+        <MobileLabel text="Course" />
+        <select
+          value={courseFilter}
+          onChange={(e) => setCourseFilter(e.target.value)}
+          className={inputClasses}
+        >
+          <option value="All">All Courses</option>
+          <option value="Digital Marketing">Digital Marketing</option>
+          <option value="Azure + Azure DevOps">Azure + Azure DevOps</option>
+        </select>
+      </div>
+
+      {/* Source */}
+      <div className={wrapperClasses}>
+        <MobileLabel text="Source" />
+        <select 
+          value={sourceFilter} 
+          onChange={(e) => setSourceFilter(e.target.value)} 
+          className={inputClasses}
+        >
+          <option value="All">All Sources</option>
+          {SOURCE_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+
+      {/* Counsellor */}
+      <div className={wrapperClasses}>
+        <MobileLabel text="Counsellor" />
+        <select
+          value={selectedCounsellor}
+          onChange={(e) => setSelectedCounsellor(e.target.value)}
+          disabled={loading}
+          className={inputClasses}
+        >
+          <option value="">
+            {loading ? "Loading..." : "Select Counsellor"}
+          </option>
+          {counsellors.map((counsellor) => (
+            <option key={counsellor.id} value={counsellor.id}>
+              {counsellor.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Profile */}
+      <div className={wrapperClasses}>
+        <MobileLabel text="Profile" />
+        <select 
+          value={profileFilter} 
+          onChange={(e) => setProfileFilter(e.target.value)} 
+          className={inputClasses}
+        >
           <option value="All">All Profiles</option>
-          {PROFILES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+          {PROFILES.map(p => (
+            <option key={p} value={p}>
+              {p.charAt(0).toUpperCase() + p.slice(1)}
+            </option>
+          ))}
         </select>
       </div>
     </>
   );
+};
 
   const selectedLead = leads.find(l => getLeadId(l) === selectedLeadId);
 
@@ -332,11 +404,7 @@ export default function App() {
           </button>
         </div>
       </header>
-
-      {/* Filters Bar (Desktop & Search Combo) */}
-      <div className="bg-white px-4 sm:px-8 py-4 border-b border-gray-200 flex flex-col md:flex-row justify-between gap-4 items-center shadow-sm z-10">
-        {/* 🔍 Search & Mobile Filter Button */}
-        <div className="relative flex-grow w-full md:w-auto md:max-w-md flex items-center gap-2">
+ <div className="relative flex-grow w-full md:w-auto md:max-w-md flex items-center gap-2 px-8 py-4">
           <div className="relative flex-grow">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
@@ -354,6 +422,10 @@ export default function App() {
             <Filter size={20} />
           </button>
         </div>
+      {/* Filters Bar (Desktop & Search Combo) */}
+      <div className="bg-white px-4 sm:px-8 py-4 border-b border-gray-200  gap-4 items-center shadow-sm z-10">
+        {/* 🔍 Search & Mobile Filter Button */}
+       
 
         {/* Desktop Filters Wrapper */}
         <div className="hidden md:flex gap-3 flex-wrap items-center">

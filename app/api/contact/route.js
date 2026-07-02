@@ -5,20 +5,31 @@ import { after } from "next/server";
 import { sendMail } from "@/lib/sendMail";
 import { ObjectId } from "mongodb";
 import welcomeHtml from "@/lib/emailHtml/welcomeHtml";
+const SOURCE_TYPES = [
+  "Direct",
+  "Google",
+  "Facebook",
+  "Instagram",
+  "LinkedIn",
+  "Twitter",
+  "Referral",
+  "GS1"
+];
 export async function GET(req) {
   try {
     const session = await getServerSession(authOptions);
-    console.log(session)
-   if(!session){
-    return Response.json({success:false, message:"You are Not Authorised"}, {status:401})
-   }
+    console.log(session);
+    
+    if (!session) {
+      return Response.json({ success: false, message: "You are Not Authorised" }, { status: 401 });
+    }
 
     const { searchParams } = new URL(req.url);
 
     const page = parseInt(searchParams.get("page")) || 1;
     const limit = parseInt(searchParams.get("limit")) || 20;
     const search = searchParams.get("search") || "";
-    const course = searchParams.get("course") || ""
+    const course = searchParams.get("course") || "";
     const sort = searchParams.get("sort");
     const fromDate = searchParams.get("fromDate");
     const toDate = searchParams.get("toDate");
@@ -26,6 +37,7 @@ export async function GET(req) {
     const source = searchParams.get("source");
     const campaign = searchParams.get("campaign");
     const dateFilter = searchParams.get("dateFilter");
+    const counsellorId = searchParams.get("counsellorId") || "";
 
     const skip = (page - 1) * limit;
 
@@ -33,9 +45,10 @@ export async function GET(req) {
     const db = client.db("sales");
 
     const query = {};
-if (session.user.role !== "admin") {
-  query["assignedTo._id"] = new ObjectId(session.user.id);
-}
+    if (session.user.role !== "admin") {
+      query["assignedTo._id"] = new ObjectId(session.user.id);
+    }
+
     // Search
     if (search) {
       query.$or = [
@@ -51,9 +64,34 @@ if (session.user.role !== "admin") {
     if (status) query.status = status;
     if (source) query.source = source;
     if (campaign) query.campaign = campaign;
-if (course) {
-  query.course = course;
-}
+    if (counsellorId) query["assignedTo._id"] = new ObjectId(counsellorId);
+    // --- UPDATED STATUS FILTER LOGIC ---
+    if (source && source !== "All") {
+      if (source === "Referral") {
+        // Remove "Referral" so we don't accidentally exclude it
+        const excludedSources = SOURCE_TYPES.filter(s => s !== "Referral");
+        
+        query.source = {
+          $exists: true,
+          $nin: [
+            null,
+            "", // Catch empty strings
+            ...excludedSources.map(s => new RegExp(`^${s}`, "i"))
+          ]
+        };
+      } else {
+        query.source = {
+          $regex: `^${source}`,
+          $options: "i"
+        };
+      }
+    }
+    // -----------------------------------
+
+    if (course) {
+      query.course = course;
+    }
+
     // Custom date range
     if (fromDate || toDate) {
       query.createdAt = {};
@@ -68,7 +106,6 @@ if (course) {
         query.createdAt.$lte = to;
       }
     }
-
     // Quick filters
     else if (dateFilter && dateFilter !== "All") {
       const now = new Date();
