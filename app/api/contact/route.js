@@ -296,7 +296,7 @@ const assignedTo = getLeadAssignment(course);
     // This executes AFTER the response is sent to the client
     after(async () => {
       try {
-        const whatsappUrl = `${process.env.WHATSAPP_API_URL}?api_key=${process.env.WHATSAPP_API}&templatename=whatsapp_dm_lead_submissions&country=India&is_media=false&camp_name=dm_lead_form_submission&mobile_numbers=${cleanedPhone}&variables=${encodeURIComponent(trimmedName)}`;
+        const whatsappUrl = `${process.env.WHATSAPP_API_URL}?api_key=${process.env.WHATSAPP_API}&templatename=whatsapp_dm_lead_submissions&country=India&is_media=false&camp_name=dm_lead_form_submission&mobile_numbers=${cleanedPhone}&variables=${encodeURIComponent(`${trimmedName},${course}`)}`;
         
         console.log("WhatsApp URL [Background]:", whatsappUrl);
         const whatsappRes = await fetch(whatsappUrl);
