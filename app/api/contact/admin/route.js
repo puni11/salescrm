@@ -1,3 +1,4 @@
+import { getLeadAssignment } from "@/lib/leadAssignment"
 import clientPromise from "@/lib/mongodb"
 
 export async function POST(req) {
@@ -33,6 +34,7 @@ export async function POST(req) {
 
     // 3. Build New Lead Document following the updated model
     const now = new Date()
+    const assignedTo = getLeadAssignment(course);
     const newLead = {
       name,
       email: email || "",
@@ -49,6 +51,7 @@ export async function POST(req) {
       ip,
       userAgent,
       status: "New Lead",
+      assignedTo: assignedTo || null,
       comments: [],
       createdAt: now,
       updatedAt: now

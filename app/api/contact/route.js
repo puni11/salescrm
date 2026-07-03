@@ -5,6 +5,7 @@ import { after } from "next/server";
 import { sendMail } from "@/lib/sendMail";
 import { ObjectId } from "mongodb";
 import welcomeHtml from "@/lib/emailHtml/welcomeHtml";
+import { getLeadAssignment } from "@/lib/leadAssignment";
 const SOURCE_TYPES = [
   "Direct",
   "Google",
@@ -236,6 +237,7 @@ export async function POST(req) {
     // --- Database Operations ---
     const client = await clientPromise;
     const db = client.db("sales");
+const assignedTo = getLeadAssignment(course);
 
     const leadData = {
       name: trimmedName,
@@ -258,6 +260,7 @@ export async function POST(req) {
       ip,
       userAgent,
       status: "New Lead",
+      assignedTo: assignedTo || null,
     };
 
     const leadsCollection = db.collection("dm");
