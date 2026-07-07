@@ -7,7 +7,8 @@ import {
   Activity, Globe, Info, Clock, ShieldCheck, MessageCircle,
   Briefcase,
   CalendarCheck,
-  BookAIcon
+  BookAIcon,
+  Trash2Icon
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -80,7 +81,10 @@ export default function App() {
   const [pages, setPages] = useState(0);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 500);
-  
+  const [deleteModal, setDeleteModal] = useState({
+  open: false,
+  id: null,
+});
   const [statusFilter, setStatusFilter] = useState("All");
   const [sourceFilter, setSourceFilter] = useState("All");
   const [profileFilter, setProfileFilter] = useState("All");
@@ -213,7 +217,36 @@ async function fetchCounsellors() {
       setLoading(false);
     }
   };
+const handleDelete = async (id) => {
+  try {
+    const res = await fetch(`/api/contact/${id}`, {
+      method: "DELETE",
+    });
 
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Failed to delete lead");
+    }
+
+    // Close modal
+    setDeleteModal({
+      open: false,
+      id: null,
+    });
+
+    // Close sidebar
+    setSelectedLeadId(null);
+
+    // Remove lead from state (no page reload needed)
+    setLeads((prev) => prev.filter((lead) => getLeadId(lead) !== id));
+
+    toast.success("Lead deleted successfully");
+  } catch (error) {
+    console.error(error);
+    toast.error(error.message || "Something went wrong");
+  }
+};
 
   // --- HELPERS ---
   const getLeadId = (lead) => typeof lead._id === 'object' && lead._id !== null ? lead._id.$oid : lead._id;
@@ -625,6 +658,17 @@ const formatDate = (value) => {
               >
                 <X size={20} />
               </button>
+              <button
+  onClick={() =>
+    setDeleteModal({
+      open: true,
+      id: selectedLead._id,
+    })
+  }
+  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+>
+  <Trash2Icon size={20} />
+</button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
@@ -808,7 +852,57 @@ const formatDate = (value) => {
           </div>
         </>
       )}
+{deleteModal.open && (
+  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="w-[90%] max-w-md rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+      <div className="flex justify-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
+          <Trash2Icon className="h-8 w-8 text-red-600" />
+        </div>
+      </div>
 
+      <h3 className="mt-5 text-center text-xl font-bold text-gray-900">
+        Delete Lead?
+      </h3>
+
+      <p className="mt-2 text-center text-gray-500">
+        Are you sure you want to delete this lead?
+        <br />
+        <span className="font-semibold text-red-600">
+          This action cannot be undone.
+        </span>
+      </p>
+
+      <div className="mt-6 flex gap-3">
+        <button
+          onClick={() =>
+            setDeleteModal({
+              open: false,
+              id: null,
+            })
+          }
+          className="flex-1 rounded-lg border border-gray-300 py-3 font-medium text-gray-700 transition hover:bg-gray-100"
+        >
+          Cancel
+        </button>
+
+        <button
+          onClick={async () => {
+            await handleDelete(deleteModal.id);
+
+            setDeleteModal({
+              open: false,
+              id: null,
+            });
+          }}
+          className="flex-1 rounded-lg bg-red-600 py-3 font-medium text-white transition hover:bg-red-700"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+)}
       {/* --- ADD LEAD MODAL --- */}
       {isAddLeadOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
