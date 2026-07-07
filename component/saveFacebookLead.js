@@ -1,3 +1,4 @@
+import { getLeadAssignment } from "@/lib/leadAssignment";
 import clientPromise from "@/lib/mongodb";
 
 export async function saveFacebookLead(lead, webhookData) {
@@ -29,6 +30,10 @@ export async function saveFacebookLead(lead, webhookData) {
 
   // Apply default values
   Object.assign(crmLead, config.defaults);
+ const course = crmLead.course;
+
+   const assignedTo = await getLeadAssignment(course);
+  crmLead.assignedTo = assignedTo;
 
   // System values
   crmLead.consent = true;

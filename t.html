@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Khalsa Events | Aesthetic Premium Event Planners</title>
+    <meta name="description" content="Khalsa Events - Fusing Rajasthani Royalty and Punjabi Grandeur. Premium Wedding & Event Planners in Jaipur since 1996.">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Yatra One gives a beautiful Indian calligraphy / Devanagari aesthetic. Outfit for clean modern body text. -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Yatra+One&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            'light-pink': '#FDF4F6',
+                            'rose': '#E88FA1',
+                            'hot-pink': '#D81B60', /* Matching the gate reference */
+                            'blush': '#F9E5E9',
+                            'cream': '#FFFDD0',
+                            'gold': '#D4AF37',
+                            'gold-light': '#F3E5AB',
+                            'brown': '#4A3B3C',
+                            'dark-rose': '#8C4A58',
+                            'white': '#FFFFFF'
+                        }
+                    },
+                    fontFamily: {
+                        display: ['"Yatra One"', 'cursive'],
+                        body: ['"Outfit"', 'sans-serif'],
+                    },
+                    boxShadow: {
+                        'aesthetic-sm': '0 4px 14px 0 rgba(232, 143, 161, 0.15)',
+                        'aesthetic-md': '0 10px 30px 0 rgba(232, 143, 161, 0.2)',
+                        'aesthetic-lg': '0 20px 40px 0 rgba(232, 143, 161, 0.25)',
+                        'aesthetic-gold': '0 10px 30px 0 rgba(212, 175, 55, 0.2)',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        html.lenis { height: auto; }
+        .lenis.lenis-smooth { scroll-behavior: auto; }
+        .lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
+        .lenis.lenis-stopped { overflow: hidden; }
+        .lenis.lenis-scrolling iframe { pointer-events: none; }
+
+        :root {
+            --light-pink: #FDF4F6;
+            --rose: #E88FA1;
+            --hot-pink: #D81B60;
+            --cream: #FFFDD0;
+            --gold: #D4AF37;
+            --brown: #4A3B3C;
+        }
+
+        body {
+            background-color: var(--light-pink);
+            color: var(--brown);
+            overflow-x: hidden;
+            font-family: 'Outfit', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .display-1 { font-family: 'Yatra One', cursive; font-size: clamp(4rem, 10vw, 120px); line-height: 1.1; font-weight: 400; color: var(--hot-pink); }
+        .display-2 { font-family: 'Yatra One', cursive; font-size: clamp(3rem, 7vw, 80px); line-height: 1.2; font-weight: 400; }
+        .heading-2 { font-family: 'Yatra One', cursive; font-size: 32px; font-weight: 400; line-height: 1.3; }
+        .body-text { font-family: 'Outfit', sans-serif; font-size: 18px; font-weight: 300; line-height: 1.8; color: var(--brown); }
+
+        .text-outline-gold {
+            color: transparent;
+            -webkit-text-stroke: 1px var(--gold);
+        }
+
+        .btn-aesthetic {
+            background: linear-gradient(135deg, var(--rose), var(--hot-pink));
+            color: var(--white);
+            font-family: 'Outfit', sans-serif;
+            font-size: 16px;
+            font-weight: 500;
+            padding: 16px 40px;
+            border-radius: 50px;
+            box-shadow: 0 10px 20px -5px rgba(216, 27, 96, 0.4);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .btn-aesthetic:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 25px -5px rgba(216, 27, 96, 0.5);
+            background: linear-gradient(135deg, var(--hot-pink), var(--rose));
+        }
+
+        .btn-ghost {
+            background-color: transparent;
+            color: var(--hot-pink);
+            font-family: 'Outfit', sans-serif;
+            font-size: 16px;
+            font-weight: 500;
+            padding: 16px 40px;
+            border-radius: 50px;
+            border: 1px solid var(--hot-pink);
+            transition: all 0.4s ease;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .btn-ghost:hover {
+            background-color: var(--hot-pink);
+            color: var(--white);
+            box-shadow: 0 10px 20px -5px rgba(216, 27, 96, 0.3);
+        }
+
+        #royal-gates-container {
+            position: fixed;
+            inset: 0;
+            z-index: 100000;
+            display: flex;
+            pointer-events: none;
+            background-color: #000; /* Behind gates */
+        }
+        
+        .gate-half {
+            width: 50vw;
+            height: 100vh;
+            background-color: var(--hot-pink);
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.2);
+        }
+
+        /* The cream pane inside the pink frame */
+        .gate-pane {
+            width: 85%;
+            height: 85%;
+            background-color: #FDF5E6; /* Cream color from image */
+            border-radius: 10px;
+            position: relative;
+            border: 8px solid var(--hot-pink);
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.1), 0 10px 30px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-evenly;
+            overflow: hidden;
+        }
+
+        /* Horizontal slats on the cream pane */
+        .gate-slat {
+            width: 100%;
+            height: 2px;
+            background-color: rgba(0,0,0,0.05);
+            border-bottom: 1px solid rgba(255,255,255,0.8);
+        }
+
+        /* Black Studs on the doors */
+        .gate-studs-row {
+            position: absolute;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            padding: 0 15%;
+            z-index: 10;
+        }
+        .studs-top { top: 15%; }
+        .studs-bottom { bottom: 15%; }
+        
+        .stud {
+            width: 12px;
+            height: 12px;
+            background-color: #111;
+            border-radius: 50%;
+            box-shadow: 1px 1px 2px rgba(255,255,255,0.5), -1px -1px 2px rgba(0,0,0,0.5);
+        }
+
+        /* Gold Floral Appliques */
+        .gold-corner {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            background-image: radial-gradient(circle at center, var(--gold) 40%, transparent 60%);
+            opacity: 0.8;
+            filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.2));
+        }
+        .gold-corner-tl { top: 10px; left: 10px; border-top-left-radius: 100%; }
+        .gold-corner-tr { top: 10px; right: 10px; border-top-right-radius: 100%; }
+        .gold-corner-bl { bottom: 10px; left: 10px; border-bottom-left-radius: 100%; }
+        .gold-corner-br { bottom: 10px; right: 10px; border-bottom-right-radius: 100%; }
+
+        /* Center Gold Cross Motif */
+        .gate-center-motif {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 150px;
+            height: 150px;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Arch top for the gates */
+        .gate-arch-overlay {
+            position: absolute;
+            top: -10%;
+            left: -10%;
+            width: 120%;
+            height: 20%;
+            background-color: var(--light-pink);
+            border-radius: 50%;
+            z-index: 30;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+
+        /* Central meeting line */
+        .gate-meeting-line {
+            position: absolute;
+            top: 0;
+            width: 10px;
+            height: 100%;
+            background: linear-gradient(to right, rgba(0,0,0,0.2), rgba(255,255,255,0.2));
+            z-index: 50;
+        }
+        .gate-left .gate-meeting-line { right: 0; }
+        .gate-right .gate-meeting-line { left: 0; }
+
+        .img-arched {
+            border-radius: 200px 200px 10px 10px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: var(--aesthetic-lg);
+        }
+        .img-arched img {
+            width: 100%; height: 100%; object-fit: cover;
+            transition: transform 1.5s ease;
+        }
+        .img-arched:hover img { transform: scale(1.05); }
+
+        .img-circle {
+            border-radius: 50%;
+            overflow: hidden;
+            aspect-ratio: 1 / 1;
+            position: relative;
+            box-shadow: var(--aesthetic-md);
+            padding: 10px;
+            background: var(--white);
+        }
+        .img-circle img {
+            border-radius: 50%;
+            width: 100%; height: 100%; object-fit: cover;
+            transition: transform 1.5s ease;
+        }
+        .img-circle:hover img { transform: scale(1.05); }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 30px;
+            box-shadow: var(--aesthetic-md);
+            transition: all 0.4s ease;
+        }
+        .glass-card:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--aesthetic-lg);
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .input-aesthetic {
+            width: 100%;
+            background-color: var(--white);
+            border: 1px solid rgba(232, 143, 161, 0.3);
+            padding: 16px 24px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 16px;
+            color: var(--brown);
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            outline: none;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+        }
+        .input-aesthetic:focus {
+            border-color: var(--rose);
+            box-shadow: 0 0 0 4px rgba(232, 143, 161, 0.1);
+        }
+        .input-aesthetic::placeholder { color: #A09395; font-weight: 300; }
+
+        ::selection { background-color: var(--rose); color: var(--white); }
+
+        .pin-container { height: 100vh; width: 100%; position: relative; overflow: hidden; }
+        .h-scroll-container { width: 600vw; display: flex; flex-wrap: nowrap; height: 100vh; }
+        .h-panel { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px; position: relative; }
+
+        /* Canvas Petals */
+        #petal-canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 15; /* Above bg image, below text */
+            pointer-events: none;
+        }
+
+        /* Subtle noise for texture */
+        .noise-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            pointer-events: none;
+            background-image: url('data:image/svg+xml,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="noiseFilter"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23noiseFilter)" opacity="0.03"/%3E%3C/svg%3E');
+        }
+    </style>
+</head>
+<body class="bg-brand-light-pink text-brand-brown">
+
+    <div class="noise-bg"></div>
+
+    <div id="royal-gates-container">
+        
+        <!-- Left Door -->
+        <div class="gate-half gate-left" id="gate-left">
+            <div class="gate-arch-overlay"></div>
+            <div class="gate-pane">
+                <!-- Gold corners -->
+                <div class="gold-corner gold-corner-tl"></div>
+                <div class="gold-corner gold-corner-tr"></div>
+                <div class="gold-corner gold-corner-bl"></div>
+                <div class="gold-corner gold-corner-br"></div>
+                
+                <!-- Studs Top -->
+                <div class="gate-studs-row studs-top">
+                    <div class="stud"></div><div class="stud"></div><div class="stud"></div><div class="stud"></div>
+                </div>
+
+                <!-- Slats -->
+                <div class="gate-slat"></div><div class="gate-slat"></div><div class="gate-slat"></div>
+                <div class="gate-slat"></div><div class="gate-slat"></div><div class="gate-slat"></div>
+                
+                <!-- Studs Bottom -->
+                <div class="gate-studs-row studs-bottom">
+                    <div class="stud"></div><div class="stud"></div><div class="stud"></div><div class="stud"></div>
+                </div>
+
+                <!-- Central Gold Cross Applique -->
+                <div class="gate-center-motif">
+                    <svg viewBox="0 0 100 100" fill="none" class="w-full h-full drop-shadow-lg text-brand-gold">
+                        <!-- Cross arms -->
+                        <path d="M50 10 L60 40 L90 50 L60 60 L50 90 L40 60 L10 50 L40 40 Z" fill="currentColor" opacity="0.8"/>
+                        <!-- Center flower -->
+                        <circle cx="50" cy="50" r="15" fill="#C5A880"/>
+                        <circle cx="50" cy="50" r="5" fill="#A88B60"/>
+                        <!-- Intricate details -->
+                        <path d="M50 20 L55 35 L50 40 L45 35 Z" fill="#FFF"/>
+                        <path d="M50 80 L55 65 L50 60 L45 65 Z" fill="#FFF"/>
+                        <path d="M20 50 L35 45 L40 50 L35 55 Z" fill="#FFF"/>
+                        <path d="M80 50 L65 45 L60 50 L65 55 Z" fill="#FFF"/>
+                    </svg>
+                </div>
+            </div>
+            <!-- Meeting Line / Handle area -->
+            <div class="gate-meeting-line">
+                <div class="absolute top-1/2 right-4 transform -translate-y-1/2 w-4 h-24 bg-brand-gold rounded-full shadow-lg border-2 border-yellow-200"></div>
+            </div>
+        </div>
+
+        <!-- Right Door -->
+        <div class="gate-half gate-right" id="gate-right">
+            <div class="gate-arch-overlay"></div>
+            <div class="gate-pane">
+                <!-- Gold corners -->
+                <div class="gold-corner gold-corner-tl"></div>
+                <div class="gold-corner gold-corner-tr"></div>
+                <div class="gold-corner gold-corner-bl"></div>
+                <div class="gold-corner gold-corner-br"></div>
+                
+                <!-- Studs Top -->
+                <div class="gate-studs-row studs-top">
+                    <div class="stud"></div><div class="stud"></div><div class="stud"></div><div class="stud"></div>
+                </div>
+
+                <!-- Slats -->
+                <div class="gate-slat"></div><div class="gate-slat"></div><div class="gate-slat"></div>
+                <div class="gate-slat"></div><div class="gate-slat"></div><div class="gate-slat"></div>
+                
+                <!-- Studs Bottom -->
+                <div class="gate-studs-row studs-bottom">
+                    <div class="stud"></div><div class="stud"></div><div class="stud"></div><div class="stud"></div>
+                </div>
+
+                <!-- Central Gold Cross Applique -->
+                <div class="gate-center-motif">
+                    <svg viewBox="0 0 100 100" fill="none" class="w-full h-full drop-shadow-lg text-brand-gold">
+                        <!-- Cross arms -->
+                        <path d="M50 10 L60 40 L90 50 L60 60 L50 90 L40 60 L10 50 L40 40 Z" fill="currentColor" opacity="0.8"/>
+                        <!-- Center flower -->
+                        <circle cx="50" cy="50" r="15" fill="#C5A880"/>
+                        <circle cx="50" cy="50" r="5" fill="#A88B60"/>
+                        <path d="M50 20 L55 35 L50 40 L45 35 Z" fill="#FFF"/>
+                        <path d="M50 80 L55 65 L50 60 L45 65 Z" fill="#FFF"/>
+                        <path d="M20 50 L35 45 L40 50 L35 55 Z" fill="#FFF"/>
+                        <path d="M80 50 L65 45 L60 50 L65 55 Z" fill="#FFF"/>
+                    </svg>
+                </div>
+            </div>
+            <!-- Meeting Line / Handle area -->
+            <div class="gate-meeting-line">
+                <div class="absolute top-1/2 left-4 transform -translate-y-1/2 w-4 h-24 bg-brand-gold rounded-full shadow-lg border-2 border-yellow-200"></div>
+            </div>
+        </div>
+    </div>
+
+    <nav class="fixed w-full top-0 z-50 transition-all duration-500 py-6 px-6 lg:px-12 bg-white/40 backdrop-blur-md border-b border-brand-rose/20 shadow-sm" id="navbar">
+        <div class="max-w-[1600px] mx-auto flex justify-between items-center">
+            
+            <!-- Logo -->
+            <a href="#" class="font-display text-3xl lg:text-4xl text-brand-hot-pink flex items-center gap-3 tracking-wide">
+                Khalsa Events
+                <!-- Elegant Lotus SVG -->
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-brand-gold">
+                    <path d="M12 22C12 22 19 18 19 12C19 6 12 2 12 2C12 2 5 6 5 12C5 18 12 22 12 22Z" fill="rgba(212, 175, 55, 0.2)"/>
+                    <path d="M12 22C12 22 16 18 16 12C16 6 12 2 12 2" />
+                    <path d="M12 22C12 22 8 18 8 12C8 6 12 2 12 2" />
+                </svg>
+            </a>
+            
+            <!-- Desktop Nav -->
+            <div class="hidden lg:flex gap-10 font-body text-sm font-medium uppercase tracking-[2px] items-center text-brand-brown">
+                <a href="#about" class="hover:text-brand-hot-pink transition-colors relative group">
+                    Our Legacy
+                    <span class="absolute -bottom-2 left-0 w-0 h-0.5 bg-brand-hot-pink transition-all duration-300 group-hover:w-full"></span>
+                </a>
+                <a href="#cultures" class="hover:text-brand-hot-pink transition-colors relative group">
+                    Cultural Roots
+                    <span class="absolute -bottom-2 left-0 w-0 h-0.5 bg-brand-hot-pink transition-all duration-300 group-hover:w-full"></span>
+                </a>
+                <a href="#expertise" class="hover:text-brand-hot-pink transition-colors relative group">
+                    Expertise
+                    <span class="absolute -bottom-2 left-0 w-0 h-0.5 bg-brand-hot-pink transition-all duration-300 group-hover:w-full"></span>
+                </a>
+                <a href="#gallery" class="hover:text-brand-hot-pink transition-colors relative group">
+                    Portfolio
+                    <span class="absolute -bottom-2 left-0 w-0 h-0.5 bg-brand-hot-pink transition-all duration-300 group-hover:w-full"></span>
+                </a>
+                <a href="#contact" class="btn-aesthetic !py-2 !px-6 !text-sm">
+                    Plan Event
+                </a>
+            </div>
+
+            <!-- Mobile Menu Toggle -->
+            <button class="lg:hidden flex flex-col gap-2 p-2 z-50 text-brand-hot-pink" id="mobile-menu-btn">
+                <span class="w-8 h-0.5 bg-current block transition-transform origin-left"></span>
+                <span class="w-8 h-0.5 bg-current block transition-opacity"></span>
+                <span class="w-8 h-0.5 bg-current block transition-transform origin-left"></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Mobile Menu Overlay -->
+    <div class="fixed inset-0 bg-brand-light-pink/95 backdrop-blur-lg z-40 transform translate-x-full transition-transform duration-700 ease-in-out flex flex-col justify-center px-12 border-l border-brand-rose/30" id="mobile-menu">
+        <div class="flex flex-col gap-8 text-center">
+            <a href="#about" class="display-2 text-brand-hot-pink mobile-link">Legacy</a>
+            <a href="#cultures" class="display-2 text-brand-hot-pink mobile-link">Roots</a>
+            <a href="#expertise" class="display-2 text-brand-hot-pink mobile-link">Expertise</a>
+            <a href="#gallery" class="display-2 text-brand-hot-pink mobile-link">Gallery</a>
+            <a href="#contact" class="display-2 text-brand-hot-pink mobile-link">Contact</a>
+        </div>
+    </div>
+
+    <main>
+        <section class="relative h-screen w-full flex items-center justify-center pt-24 overflow-hidden bg-brand-blush" id="hero">
+            
+            <!-- Hero Background Image (Aesthetic Indian Theme) -->
+            <div class="absolute inset-0 z-0">
+                <img src="https://images.unsplash.com/photo-1583939003579-730e3918a45a?q=80&w=2000&auto=format&fit=crop" class="w-full h-full object-cover opacity-30 hero-bg-img mix-blend-multiply filter blur-[2px]" alt="Royal Indian Setup">
+                <div class="absolute inset-0 bg-gradient-to-b from-brand-light-pink/60 via-transparent to-brand-light-pink"></div>
+            </div>
+
+            <!-- Canvas for Falling Pink/White Petals -->
+            <canvas id="petal-canvas"></canvas>
+
+            <div class="max-w-[1400px] w-full px-6 flex flex-col items-center text-center relative z-20 mt-10">
+                
+                <div class="bg-white/80 backdrop-blur-sm text-brand-hot-pink font-body font-medium text-xs tracking-[3px] uppercase px-6 py-2 rounded-full border border-brand-rose/30 shadow-aesthetic-sm mb-8 hero-fade">
+                    Est. 1996 • Jaipur, Rajasthan
+                </div>
+                
+                <h1 class="display-1 text-brand-hot-pink mb-6 drop-shadow-md">
+                    <div class="overflow-hidden"><span class="hero-word block">Where Dreams</span></div>
+                    <div class="overflow-hidden">
+                        <span class="hero-word block relative inline-block">
+                            <span class="text-brand-gold drop-shadow-sm">Become</span> Reality
+                        </span>
+                    </div>
+                </h1>
+                
+                <p class="body-text text-brand-brown/80 max-w-2xl mb-12 hero-fade text-xl">
+                    Architecting majestic celebrations and royal weddings with elegant Indian traditions and uncompromising premium standards.
+                </p>
+                
+                <div class="flex flex-col sm:flex-row gap-6 hero-fade">
+                    <a href="#contact" class="btn-aesthetic">Plan Your Grandeur</a>
+                    <a href="#expertise" class="btn-ghost">Explore Expertise</a>
+                </div>
+            </div>
+            
+            <!-- Aesthetic Bottom Arch transition -->
+            <div class="absolute bottom-0 left-0 w-full z-10 pointer-events-none">
+                <svg viewBox="0 0 1440 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-auto text-brand-light-pink">
+                    <path d="M0 100V50C240 100 480 0 720 0C960 0 1200 100 1440 50V100H0Z" fill="currentColor"/>
+                </svg>
+            </div>
+        </section>
+
+        <div class="py-8 bg-brand-light-pink relative z-20 overflow-hidden border-y border-brand-rose/20">
+            <div class="flex whitespace-nowrap animate-[marquee_30s_linear_infinite] items-center text-brand-hot-pink font-display text-4xl tracking-wide opacity-80">
+                <!-- Set 1 -->
+                <span class="mx-8">Rajasthani Royalty</span>
+                <svg class="w-8 h-8 mx-8 text-brand-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22C12 22 19 18 19 12C19 6 12 2 12 2C12 2 5 6 5 12C5 18 12 22 12 22Z"/></svg>
+                <span class="mx-8">Punjabi Grandeur</span>
+                <svg class="w-8 h-8 mx-8 text-brand-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/></svg>
+                <span class="mx-8">500+ Curated Events</span>
+                <svg class="w-8 h-8 mx-8 text-brand-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9L12 2Z"/></svg>
+                <span class="mx-8 text-outline-gold">Uncompromising Elegance</span>
+                <!-- Repeating Set -->
+                <span class="mx-8">Rajasthani Royalty</span>
+                <svg class="w-8 h-8 mx-8 text-brand-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22C12 22 19 18 19 12C19 6 12 2 12 2C12 2 5 6 5 12C5 18 12 22 12 22Z"/></svg>
+                <span class="mx-8">Punjabi Grandeur</span>
+                <svg class="w-8 h-8 mx-8 text-brand-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/></svg>
+                <span class="mx-8">500+ Curated Events</span>
+                <svg class="w-8 h-8 mx-8 text-brand-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9L12 2Z"/></svg>
+                <span class="mx-8 text-outline-gold">Uncompromising Elegance</span>
+            </div>
+        </div>
+
+        <section id="about" class="relative bg-brand-light-pink py-32 overflow-hidden">
+            <!-- Decorative Mandala Watermark -->
+            <svg class="absolute -top-20 -left-20 w-[600px] h-[600px] text-brand-rose opacity-5 animate-[spin_100s_linear_infinite]" viewBox="0 0 100 100" fill="currentColor">
+                <path d="M50 0 A50 50 0 0 1 100 50 A50 50 0 0 1 50 100 A50 50 0 0 1 0 50 A50 50 0 0 1 50 0 Z M50 10 A40 40 0 0 0 10 50 A40 40 0 0 0 50 90 A40 40 0 0 0 90 50 A40 40 0 0 0 50 10 Z"/>
+                <circle cx="50" cy="50" r="20" stroke="currentColor" stroke-width="2" fill="none"/>
+            </svg>
+
+            <div class="max-w-[1400px] mx-auto px-6 relative z-10" id="legacy-trigger">
+                <div class="flex flex-col lg:flex-row gap-20 items-center">
+                    
+                    <!-- Left: Aesthetic Image -->
+                    <div class="w-full lg:w-1/2 flex justify-center">
+                        <div class="img-arched w-full max-w-[500px] aspect-[4/5] bg-brand-blush p-4 border border-brand-rose/30 relative">
+                            <!-- Floating decorative badge -->
+                            <div class="absolute -top-6 -right-6 bg-white rounded-full w-32 h-32 flex flex-col items-center justify-center shadow-aesthetic-md border border-brand-rose/20 z-20 transform rotate-12">
+                                <span class="font-display text-4xl text-brand-hot-pink">30+</span>
+                                <span class="font-body text-[10px] uppercase tracking-widest text-brand-brown font-bold text-center">Years of<br>Excellence</span>
+                            </div>
+                            
+                            <img src="https://images.unsplash.com/photo-1519225421980-715cb0215aed?q=80&w=2070" class="w-full h-full object-cover rounded-[180px_180px_0_0] about-img-parallax" alt="Elegant Setup">
+                        </div>
+                    </div>
+
+                    <!-- Right: Content -->
+                    <div class="w-full lg:w-1/2 flex flex-col items-start about-content">
+                        <div class="bg-brand-rose/10 text-brand-hot-pink font-body font-medium text-xs tracking-[3px] uppercase px-4 py-1.5 rounded-full border border-brand-rose/30 mb-6">Our Legacy</div>
+                        
+                        <h3 class="display-2 text-brand-brown mb-8">
+                            Curating <span class="text-brand-hot-pink">Poetry</span> <br> in Every Event.
+                        </h3>
+                        
+                        <div class="space-y-6 body-text text-brand-brown/80 text-lg border-l-2 border-brand-rose/50 pl-6">
+                            <p>
+                                Directed by Ravindra Singh, Khalsa Events is the soul of majestic celebrations across Rajasthan. We don't merely plan events; we weave cultural tapestries of love, light, and luxury.
+                            </p>
+                            <p>
+                                Embracing our rich Indian heritage, we seamlessly blend the palatial grace of royal weddings with the flawless execution demanded by high-end galas. Every detail is a testament to perfection.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="cultures" class="py-32 bg-brand-blush relative overflow-hidden border-y border-brand-rose/20">
+            <div class="max-w-[1400px] mx-auto px-6 relative z-10 text-center mb-20">
+                <h2 class="display-2 text-brand-brown mb-4">Our <span class="text-brand-hot-pink">Cultural</span> Roots</h2>
+                <p class="body-text text-brand-brown/70 max-w-2xl mx-auto">Two distinct cultures, harmonized into one breathtaking royal experience.</p>
+            </div>
+
+            <div class="max-w-[1200px] mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 relative z-10">
+                
+                <!-- Rajasthani Card -->
+                <div class="glass-card p-12 group culture-card flex flex-col items-center text-center">
+                    <div class="w-24 h-24 mb-8 bg-brand-light-pink rounded-full flex justify-center items-center shadow-inner border border-brand-rose/20 group-hover:scale-110 transition-transform duration-500">
+                        <!-- Custom Jharokha SVG -->
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-brand-gold">
+                            <path d="M4 22h16M4 22V10l8-6 8 6v12M12 10v12M8 14h8M8 18h8"/>
+                            <path d="M12 4v2" stroke-width="2"/>
+                            <circle cx="12" cy="7" r="1"/>
+                        </svg>
+                    </div>
+                    <h3 class="font-display text-4xl text-brand-hot-pink mb-4">Rajasthani Royalty</h3>
+                    <p class="body-text text-brand-brown/80 mb-8">Grandeur inspired by Rajputana forts, warm marigolds, and palatial hospitality. Grand entrances and desert-inspired majesty.</p>
+                    <ul class="space-y-3 font-body text-sm font-medium uppercase tracking-widest text-brand-brown/90 w-full text-left">
+                        <li class="flex items-center gap-3 border-b border-brand-rose/20 pb-2"><span class="text-brand-gold">✦</span> Fort-Style Tentage</li>
+                        <li class="flex items-center gap-3 border-b border-brand-rose/20 pb-2"><span class="text-brand-gold">✦</span> Traditional Hospitality</li>
+                        <li class="flex items-center gap-3 pb-2"><span class="text-brand-gold">✦</span> Royal Elephant Entry</li>
+                    </ul>
+                </div>
+
+                <!-- Punjabi Card -->
+                <div class="glass-card p-12 group culture-card flex flex-col items-center text-center">
+                    <div class="w-24 h-24 mb-8 bg-brand-light-pink rounded-full flex justify-center items-center shadow-inner border border-brand-rose/20 group-hover:scale-110 transition-transform duration-500">
+                        <!-- Custom Vibrant/Dhol SVG -->
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-brand-hot-pink">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+                            <path d="M8 12h8M12 8v8"/>
+                            <path d="M4.93 4.93l14.14 14.14M4.93 19.07L19.07 4.93" stroke-width="0.5" stroke-dasharray="2 2"/>
+                        </svg>
+                    </div>
+                    <h3 class="font-display text-4xl text-brand-hot-pink mb-4">Punjabi Grandeur</h3>
+                    <p class="body-text text-brand-brown/80 mb-8">Unmatched energy and bold colors. We infuse the spirit of Punjab through vibrant floral setups and Phulkari-inspired decors.</p>
+                    <ul class="space-y-3 font-body text-sm font-medium uppercase tracking-widest text-brand-brown/90 w-full text-left">
+                        <li class="flex items-center gap-3 border-b border-brand-rose/20 pb-2"><span class="text-brand-hot-pink">✦</span> High-Energy Sangeets</li>
+                        <li class="flex items-center gap-3 border-b border-brand-rose/20 pb-2"><span class="text-brand-hot-pink">✦</span> Phulkari Themed Decor</li>
+                        <li class="flex items-center gap-3 pb-2"><span class="text-brand-hot-pink">✦</span> Premium DJ & SFX</li>
+                    </ul>
+                </div>
+
+            </div>
+        </section>
+
+        <section id="expertise" class="relative overflow-hidden bg-brand-light-pink">
+            
+            <div class="absolute top-12 left-6 lg:left-24 z-20 services-title pointer-events-none mix-blend-multiply opacity-50">
+                <h2 class="display-2 text-brand-rose">Our <br>Expertise</h2>
+            </div>
+
+            <div class="h-scroll-container z-10" id="services-h-scroll">
+                
+                <!-- Service 1: Wedding -->
+                <div class="h-panel">
+                    <div class="max-w-[1200px] mx-auto w-full flex flex-col lg:flex-row items-center gap-16 relative">
+                        <div class="w-full lg:w-1/2 z-10">
+                            <div class="img-circle w-full max-w-[500px]">
+                                <img src="https://images.unsplash.com/photo-1511285560929-80b456fea0bc?q=80" class="img-parallax-h" alt="Wedding">
+                            </div>
+                        </div>
+                        <div class="w-full lg:w-1/2 z-10 glass-card p-12">
+                            <h3 class="font-display text-5xl text-brand-hot-pink mb-4">Full Wedding Production</h3>
+                            <div class="font-body text-xs tracking-widest uppercase text-brand-gold mb-6 font-bold">From ₹2,00,000</div>
+                            <p class="body-text mb-8">End-to-end master planning for grand scales (500+ pax) across Rajasthan's finest venues. We architect the entire experience flawlessly.</p>
+                            <div class="grid grid-cols-2 gap-4 font-body text-sm font-medium text-brand-brown">
+                                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-brand-rose"></span> Grand Tentage</div>
+                                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-brand-gold"></span> Floral Artistry</div>
+                                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-brand-hot-pink"></span> SFX & Entries</div>
+                                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-brand-brown"></span> Premium Catering</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Service 2: Pre-wedding -->
+                <div class="h-panel">
+                    <div class="max-w-[1200px] mx-auto w-full flex flex-col lg:flex-row-reverse items-center gap-16 relative">
+                        <div class="w-full lg:w-1/2 z-10 flex justify-end">
+                            <div class="img-arched w-full max-w-[450px] aspect-[3/4] p-2 bg-white">
+                                <img src="https://images.unsplash.com/photo-1606216494943-7f72295ce147?q=80" class="img-parallax-h rounded-[200px_200px_8px_8px]" alt="Mehendi">
+                            </div>
+                        </div>
+                        <div class="w-full lg:w-1/2 z-10 glass-card p-12">
+                            <h3 class="font-display text-5xl text-brand-hot-pink mb-4">Pre-Wedding Festivities</h3>
+                            <div class="font-body text-xs tracking-widest uppercase text-brand-gold mb-6 font-bold">From ₹1,00,000</div>
+                            <p class="body-text mb-8">Vibrant, high-energy Haldi and Sangeet ceremonies bursting with color, heavy bass, and traditional life. Unforgettable celebrations.</p>
+                            <div class="grid grid-cols-2 gap-4 font-body text-sm font-medium text-brand-brown">
+                                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-brand-rose"></span> Thematic Decor</div>
+                                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-brand-gold"></span> Interactive DJ</div>
+                                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-brand-hot-pink"></span> Choreography</div>
+                                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-brand-brown"></span> Guest Hampers</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Service 3: Corporate -->
+                <div class="h-panel">
+                    <div class="max-w-[1200px] mx-auto w-full flex flex-col lg:flex-row items-center gap-16 relative">
+                        <div class="w-full lg:w-1/2 z-10">
+                            <div class="w-full max-w-[550px] aspect-video rounded-3xl overflow-hidden shadow-aesthetic-lg relative">
+                                <img src="https://images.unsplash.com/photo-1511578314322-379afb476865?q=80" class="w-full h-full object-cover img-parallax-h" alt="Corporate">
+                            </div>
+                        </div>
+                        <div class="w-full lg:w-1/2 z-10 glass-card p-12">
+                            <h3 class="font-display text-5xl text-brand-hot-pink mb-4">Corporate Galas</h3>
+                            <div class="font-body text-xs tracking-widest uppercase text-brand-gold mb-6 font-bold">From ₹1,00,000</div>
+                            <p class="body-text mb-8">Sharp, professional, and imposing environments for product launches, dealer meets, and spectacular award nights tailored to your brand.</p>
+                            <ul class="space-y-4 font-body text-sm font-medium text-brand-brown">
+                                <li class="flex items-center gap-3"><span class="text-brand-gold">✦</span> Brand Identity Integration</li>
+                                <li class="flex items-center gap-3"><span class="text-brand-gold">✦</span> Premium A/V & Stage Tech</li>
+                                <li class="flex items-center gap-3"><span class="text-brand-gold">✦</span> VIP Hospitality & Logistics</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <section class="py-32 bg-brand-blush relative overflow-hidden">
+            <div class="max-w-[1000px] mx-auto px-6 relative z-10">
+                <div class="text-center mb-24">
+                    <h2 class="display-2 text-brand-brown">The <span class="text-brand-hot-pink">Process</span></h2>
+                    <p class="body-text mt-4 max-w-xl mx-auto">How we turn your vision into a flawless reality, step by elegant step.</p>
+                </div>
+
+                <div class="relative">
+                    <!-- Central Timeline Line -->
+                    <div class="absolute left-1/2 transform -translate-x-1/2 w-0.5 h-full bg-gradient-to-b from-brand-rose via-brand-gold to-brand-light-pink hidden md:block"></div>
+                    
+                    <!-- Step 1 -->
+                    <div class="flex flex-col md:flex-row justify-between items-center w-full mb-20 timeline-step relative">
+                        <div class="w-full md:w-5/12 text-right pr-0 md:pr-12 mb-6 md:mb-0">
+                            <h3 class="heading-2 text-brand-hot-pink mb-3">Consultation</h3>
+                            <p class="body-text text-sm">We sit down to deeply understand your cultural roots, guest demographics, and ultimate dream for the event.</p>
+                        </div>
+                        <div class="w-12 h-12 bg-white border-2 border-brand-rose rounded-full z-10 flex items-center justify-center text-brand-hot-pink font-display text-xl shadow-aesthetic-sm shrink-0">1</div>
+                        <div class="w-full md:w-5/12 pl-0 md:pl-12 mt-6 md:mt-0 text-left">
+                             <div class="glass-card p-6">
+                                 <span class="font-body text-xs font-bold uppercase tracking-widest text-brand-gold block mb-2">Output</span>
+                                 <span class="font-body text-brand-brown">Moodboards & Budget Estimation</span>
+                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="flex flex-col md:flex-row justify-between items-center w-full mb-20 timeline-step relative">
+                        <div class="w-full md:w-5/12 text-right pr-0 md:pr-12 mb-6 md:mb-0 md:order-1 order-3">
+                             <div class="glass-card p-6">
+                                 <span class="font-body text-xs font-bold uppercase tracking-widest text-brand-gold block mb-2">Output</span>
+                                 <span class="font-body text-brand-brown">Vendor Locking & 3D Renders</span>
+                             </div>
+                        </div>
+                        <div class="w-12 h-12 bg-brand-rose border-2 border-white rounded-full z-10 flex items-center justify-center text-white font-display text-xl shadow-aesthetic-sm shrink-0 md:order-2 order-2 my-6 md:my-0">2</div>
+                        <div class="w-full md:w-5/12 pl-0 md:pl-12 md:order-3 order-1 text-left">
+                            <h3 class="heading-2 text-brand-hot-pink mb-3">Architectural Planning</h3>
+                            <p class="body-text text-sm">Our team designs layout plans, 3D renders of the stage and mandap, and secures the finest vendors.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 3 -->
+                    <div class="flex flex-col md:flex-row justify-between items-center w-full timeline-step relative">
+                        <div class="w-full md:w-5/12 text-right pr-0 md:pr-12 mb-6 md:mb-0">
+                            <h3 class="heading-2 text-brand-hot-pink mb-3">Flawless Execution</h3>
+                            <p class="body-text text-sm">From ground-breaking tentage setup to managing VIP hospitality, we handle the chaos so you celebrate.</p>
+                        </div>
+                        <div class="w-12 h-12 bg-brand-hot-pink border-2 border-white rounded-full z-10 flex items-center justify-center text-white font-display text-xl shadow-aesthetic-sm shrink-0">3</div>
+                        <div class="w-full md:w-5/12 pl-0 md:pl-12 mt-6 md:mt-0 text-left">
+                             <div class="glass-card p-6 border-brand-gold">
+                                 <span class="font-body text-xs font-bold uppercase tracking-widest text-brand-gold block mb-2">Output</span>
+                                 <span class="font-body text-brand-brown">The Perfect Event</span>
+                             </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <section id="gallery" class="py-32 bg-brand-light-pink overflow-hidden border-t border-brand-rose/20">
+            <div class="max-w-[1400px] mx-auto px-6 mb-20 text-center">
+                <h2 class="display-2 text-brand-brown mb-4">Visual <span class="text-brand-hot-pink">Symphony</span></h2>
+                <p class="body-text max-w-xl mx-auto">Glimpses of the magic we have orchestrated across Rajasthan.</p>
+            </div>
+
+            <div class="columns-1 md:columns-2 lg:columns-3 gap-8 px-6 max-w-[1600px] mx-auto space-y-8 gallery-grid">
+                
+                <div class="gallery-item relative overflow-hidden rounded-3xl shadow-aesthetic-sm group break-inside-avoid">
+                    <img src="https://images.unsplash.com/photo-1511285560929-80b456fea0bc?q=80" class="w-full h-auto object-cover transform group-hover:scale-110 transition-transform duration-700" alt="Gallery">
+                    <div class="absolute inset-0 bg-gradient-to-t from-brand-hot-pink/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-8">
+                        <div>
+                            <h4 class="font-display text-2xl text-white">Floral Mandap</h4>
+                            <p class="font-body text-xs uppercase tracking-widest text-white/80">Jaipur Palace</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="gallery-item relative overflow-hidden img-arched group break-inside-avoid">
+                    <img src="https://images.unsplash.com/photo-1583939003579-730e3918a45a?q=80" class="w-full h-auto object-cover transform group-hover:scale-110 transition-transform duration-700" alt="Gallery">
+                </div>
+
+                <div class="gallery-item relative overflow-hidden rounded-3xl shadow-aesthetic-sm group break-inside-avoid">
+                    <img src="https://images.unsplash.com/photo-1621252179027-94459d278660?q=80" class="w-full h-auto object-cover transform group-hover:scale-110 transition-transform duration-700" alt="Gallery">
+                    <div class="absolute inset-0 bg-brand-brown/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                        <span class="font-display text-3xl text-white">SANGEET</span>
+                    </div>
+                </div>
+
+                 <div class="gallery-item relative overflow-hidden img-circle group break-inside-avoid">
+                    <img src="https://images.unsplash.com/photo-1519225421980-715cb0215aed?q=80" class="w-full h-auto object-cover transform group-hover:scale-110 transition-transform duration-700" alt="Gallery">
+                </div>
+
+                <div class="gallery-item relative overflow-hidden rounded-3xl shadow-aesthetic-sm group break-inside-avoid">
+                    <img src="https://images.unsplash.com/photo-1511578314322-379afb476865?q=80" class="w-full h-auto object-cover transform group-hover:scale-110 transition-transform duration-700" alt="Gallery">
+                </div>
+
+                 <div class="gallery-item relative overflow-hidden img-arched group break-inside-avoid">
+                    <img src="https://images.unsplash.com/photo-1606216494943-7f72295ce147?q=80" class="w-full h-auto object-cover transform group-hover:scale-110 transition-transform duration-700" alt="Gallery">
+                </div>
+            </div>
+        </section>
+
+        <section class="py-32 bg-brand-blush relative border-y border-brand-rose/20">
+            <div class="max-w-[800px] mx-auto px-6">
+                <h2 class="display-2 text-center text-brand-brown mb-16">Event <span class="text-brand-hot-pink">Insights</span></h2>
+                
+                <div class="space-y-4">
+                    <div class="glass-card overflow-hidden faq-item">
+                        <button class="faq-btn w-full flex justify-between items-center p-6 text-left hover:text-brand-hot-pink transition-colors">
+                            <span class="font-display text-2xl">Do you handle end-to-end production?</span>
+                            <span class="faq-icon text-2xl text-brand-gold">+</span>
+                        </button>
+                        <div class="faq-content h-0 px-6 opacity-0 transition-all duration-300">
+                            <p class="body-text pb-6">Yes, we specialize in full end-to-end production. This includes tentage, floral setups, technical lighting, DJ & sound, choreography, special SFX, and comprehensive hospitality.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="glass-card overflow-hidden faq-item">
+                        <button class="faq-btn w-full flex justify-between items-center p-6 text-left hover:text-brand-hot-pink transition-colors">
+                            <span class="font-display text-2xl">What scale of events do you manage?</span>
+                            <span class="faq-icon text-2xl text-brand-gold">+</span>
+                        </button>
+                        <div class="faq-content h-0 px-6 opacity-0 transition-all duration-300">
+                            <p class="body-text pb-6">Our expertise shines at grand events of 500+ guests. We have the logistics and manpower to transform massive grounds and palatial venues seamlessly.</p>
+                        </div>
+                    </div>
+
+                    <div class="glass-card overflow-hidden faq-item">
+                        <button class="faq-btn w-full flex justify-between items-center p-6 text-left hover:text-brand-hot-pink transition-colors">
+                            <span class="font-display text-2xl">Which cities do you serve?</span>
+                            <span class="faq-icon text-2xl text-brand-gold">+</span>
+                        </button>
+                        <div class="faq-content h-0 px-6 opacity-0 transition-all duration-300">
+                            <p class="body-text pb-6">Headquartered in Jaipur, we serve Jaipur, Ajmer, Pushkar, and surrounding premium locations across Rajasthan. We are also open to destination projects pan-India.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="contact" class="py-32 bg-brand-light-pink relative overflow-hidden">
+            <div class="max-w-[1400px] mx-auto px-6 relative z-10">
+                <div class="flex flex-col lg:flex-row gap-20">
+                    
+                    <!-- Contact Info -->
+                    <div class="w-full lg:w-5/12 contact-info-reveal">
+                        <h2 class="display-2 text-brand-brown mb-8">
+                            Let's Build <br>Something <span class="text-brand-hot-pink">Grand.</span>
+                        </h2>
+                        <p class="body-text mb-12">Reach out to our planners to begin crafting your unforgettable celebration.</p>
+                        
+                        <div class="space-y-8">
+                            <div class="flex items-start gap-6 group">
+                                <div class="w-12 h-12 rounded-full bg-white flex items-center justify-center shadow-aesthetic-sm group-hover:bg-brand-rose group-hover:text-white transition-colors text-brand-hot-pink shrink-0">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                                </div>
+                                <div>
+                                    <span class="block font-body text-xs uppercase tracking-widest text-brand-brown/60 mb-1">Studio HQ</span>
+                                    <p class="font-body text-lg text-brand-brown">12/42, Kaveri Path, Sector 12,<br>Mansarovar, Jaipur, 302020</p>
+                                </div>
+                            </div>
+
+                            <div class="flex items-start gap-6 group">
+                                <div class="w-12 h-12 rounded-full bg-white flex items-center justify-center shadow-aesthetic-sm group-hover:bg-brand-rose group-hover:text-white transition-colors text-brand-hot-pink shrink-0">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                                </div>
+                                <div>
+                                    <span class="block font-body text-xs uppercase tracking-widest text-brand-brown/60 mb-1">Direct Lines</span>
+                                    <a href="tel:+918905464094" class="block font-body text-lg text-brand-brown hover:text-brand-hot-pink">+91 8905464094</a>
+                                    <a href="tel:+919588229227" class="block font-body text-lg text-brand-brown hover:text-brand-hot-pink mt-1">+91 9588229227</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Aesthetic Form -->
+                    <div class="w-full lg:w-7/12 form-reveal">
+                        <form id="enquiryForm" class="glass-card p-10 md:p-14 relative">
+                            <h3 class="font-display text-4xl text-brand-hot-pink mb-8">Inquire Now</h3>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                                <div>
+                                    <label class="block font-body text-xs uppercase tracking-widest text-brand-brown/70 mb-2 pl-2">Full Name *</label>
+                                    <input type="text" required class="input-aesthetic" placeholder="e.g. Vikram Singh">
+                                </div>
+                                <div>
+                                    <label class="block font-body text-xs uppercase tracking-widest text-brand-brown/70 mb-2 pl-2">Phone Number *</label>
+                                    <input type="tel" required class="input-aesthetic" placeholder="+91">
+                                </div>
+                                <div class="md:col-span-2">
+                                    <label class="block font-body text-xs uppercase tracking-widest text-brand-brown/70 mb-2 pl-2">Event Type *</label>
+                                    <select required class="input-aesthetic appearance-none cursor-pointer bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23E88FA1%22%20stroke-width%3D%222%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[position:right_20px_center] bg-[length:20px_20px]">
+                                        <option value="" disabled selected>Select an option</option>
+                                        <option value="wedding">Wedding Production</option>
+                                        <option value="mehendi">Mehendi / Sangeet</option>
+                                        <option value="corporate">Corporate Gala</option>
+                                    </select>
+                                </div>
+                                <div class="md:col-span-2">
+                                    <label class="block font-body text-xs uppercase tracking-widest text-brand-brown/70 mb-2 pl-2">Event Details</label>
+                                    <textarea rows="4" class="input-aesthetic resize-none" placeholder="Scale, venue preferences..."></textarea>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn-aesthetic w-full mt-4">
+                                Send Inquiry
+                            </button>
+                            
+                            <div id="formSuccess" class="hidden mt-6 text-center text-brand-hot-pink font-body bg-brand-rose/10 py-4 rounded-xl border border-brand-rose/20">
+                                Inquiry Received. Our planners will contact you shortly.
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="bg-brand-blush pt-24 pb-8 border-t border-brand-rose/30 relative overflow-hidden">
+        <div class="max-w-[1400px] mx-auto px-6 grid grid-cols-1 md:grid-cols-12 gap-12 mb-16 relative z-10 text-center md:text-left">
+            
+            <div class="md:col-span-5">
+                <div class="font-display text-5xl text-brand-hot-pink mb-6">Khalsa Events</div>
+                <p class="font-body text-lg opacity-80 max-w-md mx-auto md:mx-0 text-brand-brown">
+                    Premium Wedding & Event Planners in Jaipur, Rajasthan. Fusing authentic Indian traditions with aesthetic perfection since 1996.
+                </p>
+            </div>
+            
+            <div class="md:col-span-3 flex flex-col gap-4 font-body text-sm font-medium uppercase tracking-widest mt-8 md:mt-0">
+                <span class="text-brand-gold mb-2">Navigation</span>
+                <a href="#about" class="text-brand-brown hover:text-brand-hot-pink transition-colors">The Legacy</a>
+                <a href="#cultures" class="text-brand-brown hover:text-brand-hot-pink transition-colors">Our Roots</a>
+                <a href="#expertise" class="text-brand-brown hover:text-brand-hot-pink transition-colors">Expertise</a>
+                <a href="#gallery" class="text-brand-brown hover:text-brand-hot-pink transition-colors">Gallery</a>
+            </div>
+
+            <div class="md:col-span-4 flex flex-col gap-4 mt-8 md:mt-0 items-center md:items-start">
+                <span class="font-body text-sm uppercase tracking-widest text-brand-gold mb-2">Verified Reviews</span>
+                <a href="https://share.google/Jo7lOgM8p9nY3sXDc" target="_blank" class="btn-ghost !py-2 !px-6 !text-sm !w-full md:!w-auto text-center">Google Reviews</a>
+                <a href="https://www.weddingwire.in/wedding-decorators/khalsa-events--e490936" target="_blank" class="btn-ghost !py-2 !px-6 !text-sm !w-full md:!w-auto text-center">WeddingWire</a>
+            </div>
+        </div>
+        
+        <div class="text-center font-body text-xs font-medium uppercase tracking-[0.2em] pt-8 max-w-[1400px] mx-auto px-6 border-t border-brand-rose/20 text-brand-brown/60">
+            © 2026 Khalsa Events. Crafted Elegance.
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
+    <script src="https://unpkg.com/@studio-freight/lenis@1.0.39/dist/lenis.min.js"></script>
+
+    <script>
+        const canvas = document.getElementById('petal-canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+        let petals = [];
+
+        function resizeCanvas() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        class Petal {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height - height;
+                this.w = 10 + Math.random() * 15;
+                this.h = 15 + Math.random() * 20;
+                this.opacity = 0.3 + Math.random() * 0.5;
+                this.speedY = 0.5 + Math.random() * 1.5;
+                this.speedX = -0.5 + Math.random() * 1;
+                this.rotation = Math.random() * 360;
+                this.rotationSpeed = -1 + Math.random() * 2;
+                // Soft aesthetic petal colors
+                const colors = ['#E88FA1', '#FDF4F6', '#D81B60', '#FFFDD0'];
+                this.color = colors[Math.floor(Math.random() * colors.length)];
+            }
+            update() {
+                this.y += this.speedY;
+                this.x += this.speedX + Math.sin(this.y * 0.01) * 0.5;
+                this.rotation += this.rotationSpeed;
+
+                if (this.y > height) {
+                    this.y = -50;
+                    this.x = Math.random() * width;
+                }
+                if (this.x > width + 50) this.x = -50;
+                if (this.x < -50) this.x = width + 50;
+            }
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate((this.rotation * Math.PI) / 180);
+                ctx.globalAlpha = this.opacity;
+                ctx.fillStyle = this.color;
+                
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(this.w / 2, this.h / 2, 0, this.h);
+                ctx.quadraticCurveTo(-this.w / 2, this.h / 2, 0, 0);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        for (let i = 0; i < 70; i++) petals.push(new Petal());
+
+        function animatePetals() {
+            ctx.clearRect(0, 0, width, height);
+            petals.forEach(petal => { petal.update(); petal.draw(); });
+            requestAnimationFrame(animatePetals);
+        }
+
+        window.addEventListener('load', () => {
+            animatePetals();
+            
+            // Brief pause before opening gates
+            setTimeout(() => {
+                const tl = gsap.timeline();
+                
+                // Slide detailed gates apart
+                tl.to("#gate-left", { xPercent: -100, duration: 2, ease: "power4.inOut" })
+                  .to("#gate-right", { xPercent: 100, duration: 2, ease: "power4.inOut" }, "<")
+                  .set("#royal-gates-container", { display: "none" })
+                  
+                  // Trigger Hero Animations
+                  .from(".hero-bg-img", { scale: 1.1, duration: 2, ease: "power2.out" }, "-=1")
+                  .from(".hero-word", { yPercent: 120, duration: 1.2, stagger: 0.1, ease: "power4.out" }, "-=1.5")
+                  .from(".hero-fade", { opacity: 0, y: 30, duration: 1, stagger: 0.2 }, "-=0.8");
+            }, 800); // 800ms to appreciate the gate artwork
+        });
+
+        const lenis = new Lenis({
+            duration: 1.2,
+            easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+            direction: 'vertical',
+            smooth: true,
+        });
+        function raf(time) {
+            lenis.raf(time);
+            requestAnimationFrame(raf);
+        }
+        requestAnimationFrame(raf);
+
+        gsap.registerPlugin(ScrollTrigger);
+        lenis.on('scroll', ScrollTrigger.update);
+        gsap.ticker.add((time)=>{ lenis.raf(time * 1000) });
+        gsap.ticker.lagSmoothing(0);
+
+        // Navbar Hide/Show
+        let lastScrollY = window.scrollY;
+        lenis.on('scroll', (e) => {
+            const navbar = document.getElementById('navbar');
+            if (e.scroll > 100) {
+                if (e.scroll > lastScrollY) navbar.style.transform = 'translateY(-100%)';
+                else navbar.style.transform = 'translateY(0)';
+            }
+            lastScrollY = e.scroll;
+        });
+
+        // Mobile Menu
+        const mobileBtn = document.getElementById('mobile-menu-btn');
+        const mobileMenu = document.getElementById('mobile-menu');
+        const spans = mobileBtn.querySelectorAll('span');
+        let isMenuOpen = false;
+
+        mobileBtn.addEventListener('click', () => {
+            isMenuOpen = !isMenuOpen;
+            if(isMenuOpen) {
+                mobileMenu.classList.remove('translate-x-full');
+                spans[0].style.transform = 'rotate(45deg) translate(2px, 6px)';
+                spans[1].style.opacity = '0';
+                spans[2].style.transform = 'rotate(-45deg) translate(2px, -6px)';
+            } else {
+                mobileMenu.classList.add('translate-x-full');
+                spans[0].style.transform = 'none';
+                spans[1].style.opacity = '1';
+                spans[2].style.transform = 'none';
+            }
+        });
+        document.querySelectorAll('.mobile-link').forEach(link => {
+            link.addEventListener('click', () => mobileBtn.click());
+        });
+
+        // About Section
+        gsap.from(".about-img-parallax", {
+            scrollTrigger: { trigger: "#legacy-trigger", start: "top bottom", scrub: true },
+            y: 100, ease: "none"
+        });
+        gsap.from(".about-content > *", {
+            scrollTrigger: { trigger: "#legacy-trigger", start: "top 60%" },
+            y: 50, opacity: 0, duration: 1, stagger: 0.2, ease: "power3.out"
+        });
+
+        // Culture Cards
+        gsap.from(".culture-card", {
+            scrollTrigger: { trigger: "#cultures", start: "top 60%" },
+            y: 80, opacity: 0, duration: 1, stagger: 0.3, ease: "power4.out"
+        });
+
+        // Horizontal Scroll (Expertise)
+        const hContainer = document.getElementById('services-h-scroll');
+        const hPanels = gsap.utils.toArray('.h-panel');
+
+        let horizontalScroll = gsap.to(hPanels, {
+            xPercent: -100 * (hPanels.length - 1),
+            ease: "none",
+            scrollTrigger: {
+                trigger: "#expertise",
+                pin: true,
+                scrub: 1,
+                snap: 1 / (hPanels.length - 1),
+                end: () => "+=" + hContainer.offsetWidth
+            }
+        });
+
+        hPanels.forEach((panel) => {
+            const img = panel.querySelector('.img-parallax-h');
+            if(img) {
+                gsap.fromTo(img, 
+                    { x: -50, scale: 1.1 },
+                    { x: 50, scale: 1,
+                      scrollTrigger: { trigger: panel, containerAnimation: horizontalScroll, start: "left right", end: "right left", scrub: true }
+                    }
+                );
+            }
+        });
+
+        // Timeline
+        gsap.utils.toArray('.timeline-step').forEach((step) => {
+            gsap.from(step, { scrollTrigger: { trigger: step, start: "top 80%" }, y: 50, opacity: 0, duration: 0.8, ease: "power3.out" });
+        });
+
+        // Gallery
+        gsap.utils.toArray('.gallery-item').forEach((item) => {
+            gsap.from(item, { scrollTrigger: { trigger: item, start: "top 85%" }, y: 80, opacity: 0, duration: 1, ease: "power4.out" });
+        });
+
+        // Contact
+        gsap.from(".contact-info-reveal > *", { scrollTrigger: { trigger: "#contact", start: "top 70%" }, y: 50, opacity: 0, duration: 0.8, stagger: 0.1 });
+        gsap.from(".form-reveal", { scrollTrigger: { trigger: "#contact", start: "top 60%" }, x: 50, opacity: 0, duration: 1, ease: "power4.out" });
+
+        // FAQ Accordion
+        document.querySelectorAll('.faq-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const content = btn.nextElementSibling;
+                const icon = btn.querySelector('.faq-icon');
+                const isOpen = !content.classList.contains('h-0');
+                
+                document.querySelectorAll('.faq-content').forEach(c => { c.classList.add('h-0'); c.classList.remove('py-4'); c.style.opacity = '0'; });
+                document.querySelectorAll('.faq-icon').forEach(i => { i.textContent = '+'; i.classList.remove('rotate-45'); });
+
+                if (!isOpen) {
+                    content.classList.remove('h-0'); content.classList.add('py-4');
+                    setTimeout(() => content.style.opacity = '1', 50);
+                    icon.textContent = '+';
+                    icon.classList.add('rotate-45', 'transition-transform');
+                }
+            });
+        });
+
+        // Form Submit
+        document.getElementById('enquiryForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const btn = this.querySelector('button');
+            const ogText = btn.innerHTML;
+            btn.innerHTML = 'Sending...';
+            btn.style.opacity = '0.7'; btn.style.pointerEvents = 'none';
+            
+            setTimeout(() => {
+                btn.innerHTML = ogText;
+                btn.style.opacity = '1'; btn.style.pointerEvents = 'auto';
+                const successDiv = document.getElementById('formSuccess');
+                successDiv.classList.remove('hidden');
+                gsap.fromTo(successDiv, { y: 10, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5 });
+                this.reset();
+                setTimeout(() => successDiv.classList.add('hidden'), 5000);
+            }, 1500);
+        });
+    </script>
+</body>
+</html>
