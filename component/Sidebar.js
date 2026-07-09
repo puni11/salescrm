@@ -24,7 +24,8 @@ import {
   X, // <-- Added X icon for mobile close button
   User2Icon,
   ChevronRight,
-  Settings2Icon
+  Settings2Icon,
+  PhoneCall
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Image from "next/image";
@@ -129,6 +130,13 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             label="Leads" 
             collapsed={collapsed} 
             active={pathname.includes("/leads")}
+          />
+           <NavItem 
+            href="/call-logs" 
+            icon={PhoneCall} 
+            label="Call Activity" 
+            collapsed={collapsed} 
+            active={pathname.includes("/call-logs")}
           />
           {session?.user?.role === 'admin' && (
             <NavItem 
