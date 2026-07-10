@@ -131,13 +131,13 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             collapsed={collapsed} 
             active={pathname.includes("/leads")}
           />
-           <NavItem 
+        {session?.user?.role === 'admin' && (   <NavItem 
             href="/call-logs" 
             icon={PhoneCall} 
             label="Call Activity" 
             collapsed={collapsed} 
             active={pathname.includes("/call-logs")}
-          />
+          />)}
           {session?.user?.role === 'admin' && (
             <NavItem 
               href="/staff" 
