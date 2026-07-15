@@ -8,9 +8,11 @@ import {
   Briefcase,
   CalendarCheck,
   BookAIcon,
-  Trash2Icon
+  Trash2Icon,
+  
 } from "lucide-react";
 import toast from "react-hot-toast";
+import DashboardStats from "@/component/DashboardStats";
 
 // --- CUSTOM HOOKS ---
 function useDebounce(value, delay) {
@@ -69,6 +71,7 @@ export default function App() {
   const [whatsappMessage, setWhatsappMessage] = useState("");
     const [counsellors, setCounsellors] = useState([]);
   const [selectedCounsellor, setSelectedCounsellor] = useState("");
+  const [stats, setStats] = useState(null);
   // Modals & Drawers
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
@@ -144,6 +147,7 @@ async function fetchCounsellors() {
         const payload = res.data;
         setLeads(payload.data || payload || []);
         setPages(payload.pages || 0);
+        setStats(res.data.stats || null);
       }
     } catch (error) {
       console.error("Failed to fetch leads", error);
@@ -471,6 +475,7 @@ const formatDate = (value) => {
             <Filter size={20} />
           </button>
         </div>
+       {stats && <DashboardStats stats={stats} />}
       {/* Filters Bar (Desktop & Search Combo) */}
       <div className="bg-white px-4 sm:px-8 py-4 border-b border-gray-200  gap-4 items-center shadow-sm z-10">
         {/* 🔍 Search & Mobile Filter Button */}

@@ -1,8 +1,8 @@
 'use client'
 import React, { useState, useEffect } from "react";
 import { 
-  Search, Filter, X, CheckCircle, 
-  AlertCircle, Clock, Phone, User, Calendar,
+  Search, Filter, X, CheckCircle, Minus,
+  AlertCircle, Clock, TrendingUp, TrendingDown, Calendar,
   PhoneIncoming, PhoneOutgoing, PhoneMissed, UserMinus, Activity,
   RefreshCw
 } from "lucide-react";
@@ -126,7 +126,36 @@ export default function CallLogsPage() {
     fetchLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, debouncedSearch, statusFilter, callTypeFilter, courseFilter, selectedCounsellor, fromDate, toDate]);
-
+const TrendBadge = ({ trend }) => {
+  if (trend === undefined || trend === null) return null;
+  
+  const isPositive = trend > 0;
+  const isNegative = trend < 0;
+  
+  return (
+    <div className="flex items-center gap-1.5 text-[13px]">
+      {isPositive && (
+        <span className="flex items-center font-medium text-emerald-600 bg-emerald-50/50 px-1.5 py-0.5 rounded">
+          <TrendingUp size={14} className="mr-1" />
+          {trend}%
+        </span>
+      )}
+      {isNegative && (
+        <span className="flex items-center font-medium text-rose-600 bg-rose-50/50 px-1.5 py-0.5 rounded">
+          <TrendingDown size={14} className="mr-1" />
+          {Math.abs(trend)}%
+        </span>
+      )}
+      {trend === 0 && (
+        <span className="flex items-center font-medium text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">
+          <Minus size={14} className="mr-1" />
+          0%
+        </span>
+      )}
+      <span className="text-gray-400 text-xs">Past 4 days</span>
+    </div>
+  );
+};
   // --- HELPERS ---
   const formatDuration = (seconds) => {
     if (!seconds && seconds !== 0) return "N/A";
@@ -222,7 +251,12 @@ export default function CallLogsPage() {
       </>
     );
   };
-
+const formatTime = (totalSeconds) => {
+  if (!totalSeconds) return "0m 0s";
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = Math.round(totalSeconds % 60);
+  return `${mins}m ${secs}s`;
+};
   if (unauthorized) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -240,7 +274,7 @@ export default function CallLogsPage() {
         <div className="flex flex-row gap-3">
       <BackButton />
 <button
-  onClick={() => router.refresh()}
+  onClick={() => fetchLogs()}
   className={`flex items-center rounded-lg gap-2 px-4 py-2 text-xs cursor-pointer font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 hover:text-gray-900 transition-colors shadow-sm w-fit `}
 >
   <RefreshCw size={16} />
@@ -248,7 +282,7 @@ export default function CallLogsPage() {
 </button>
       </div>
       {/* Header */}
-      <header className=" px-4 sm:px-8 py-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <header className=" px-4 sm:px-0 py-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Call Logs</h1>
           <p className="text-sm text-gray-500 mt-1">View and monitor all calling activity.</p>
@@ -272,65 +306,103 @@ export default function CallLogsPage() {
           </button>
         </div>
       </header>
-      <div className="hidden md:flex bg-white px-4 sm:px-8 py-4 border-b border-gray-200 gap-3 flex-wrap items-center shadow-sm z-10">
+      <div className="hidden md:flex bg-white px-4 sm:px-8 py-4 border rounded-lg border-gray-200 gap-3 flex-wrap items-center z-10">
         {renderFilters(false)}
       </div>
 {/* --- SUMMARY CARDS GRID --- */}
 {/* --- MINIMALIST SUMMARY CARDS --- */}
 {stats && (
-  <div className="px-4 sm:px-8 py-8 ">
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
+  <div className="px-4 sm:px-0 py-2">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
       
       {/* Total Calls */}
-      <div className="group bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300 flex flex-col gap-4">
- <div className="w-10 h-10 rounded-lg bg-gray-50/50 flex items-center justify-center text-gray-600 group-hover:bg-gray-50 transition-colors">          <Activity size={18} strokeWidth={1.75} />
+      <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300">
+        <div className="flex justify-between items-start mb-4">
+          <div className="flex items-center gap-2">
+            <Activity size={16} className="text-gray-400" />
+            <h2 className="text-sm font-medium text-gray-700">Total Calls</h2>
+          </div>
+          
         </div>
-        <div>
-          <h3 className="text-3xl font-semibold text-gray-900 tracking-tight">{stats.totalCalls}</h3>
-          <p className="text-[13px] font-medium text-gray-400 mt-1">Total Calls</p>
+        <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
+          {stats.totalCalls?.count || 0}
+        </h3>
+        <TrendBadge trend={stats.totalCalls?.trend} />
+      </div>
+
+      {/* Avg Call Time */}
+      <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300">
+        <div className="flex justify-between items-start mb-4">
+          <div className="flex items-center gap-2">
+            <Activity size={16} className="text-gray-400" />
+            <h2 className="text-sm font-medium text-gray-700">Avg. Call Time</h2>
+          </div>
+         
         </div>
+        <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
+          {formatTime(stats.averageCallTime?.count || 0)}
+        </h3>
+         <TrendBadge trend={stats.averageCallTime?.trend} />
       </div>
 
       {/* Incoming */}
-      <div className="group bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300 flex flex-col gap-4">
- <div className="w-10 h-10 rounded-lg bg-gray-50/50 flex items-center justify-center text-gray-600 group-hover:bg-gray-50 transition-colors">          <PhoneIncoming size={18} strokeWidth={1.75} />
+      <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300">
+        <div className="flex justify-between items-start mb-4">
+          <div className="flex items-center gap-2">
+            <PhoneIncoming size={16} className="text-gray-400" />
+            <h2 className="text-sm font-medium text-gray-700">Incoming</h2>
+          </div>
+          
         </div>
-        <div>
-          <h3 className="text-3xl font-semibold text-gray-900 tracking-tight">{stats.incomingCalls}</h3>
-          <p className="text-[13px] font-medium text-gray-400 mt-1">Incoming</p>
-        </div>
+        <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
+          {stats.incomingCalls?.count || 0}
+        </h3>
+        <TrendBadge trend={stats.incomingCalls?.trend} />
       </div>
 
       {/* Outgoing */}
-      <div className="group bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300 flex flex-col gap-4">
- <div className="w-10 h-10 rounded-lg bg-gray-50/50 flex items-center justify-center text-gray-600 group-hover:bg-gray-50 transition-colors">          <PhoneOutgoing size={18} strokeWidth={1.75} />
+      <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300">
+        <div className="flex justify-between items-start mb-4">
+          <div className="flex items-center gap-2">
+            <PhoneOutgoing size={16} className="text-gray-400" />
+            <h2 className="text-sm font-medium text-gray-700">Outgoing</h2>
+          </div>
+          
         </div>
-        <div>
-          <h3 className="text-3xl font-semibold text-gray-900 tracking-tight">{stats.outgoingCalls}</h3>
-          <p className="text-[13px] font-medium text-gray-400 mt-1">Outgoing</p>
-        </div>
+        <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
+          {stats.outgoingCalls?.count || 0}
+        </h3>
+        <TrendBadge trend={stats.outgoingCalls?.trend} />
       </div>
 
       {/* Missed */}
-      <div className="group bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300 flex flex-col gap-4">
-        <div className="w-10 h-10 rounded-lg bg-gray-50/50 flex items-center justify-center text-gray-600 group-hover:bg-gray-50 transition-colors">
-          <PhoneMissed size={18} strokeWidth={1.75} />
+      <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300">
+        <div className="flex justify-between items-start mb-4">
+          <div className="flex items-center gap-2">
+            <PhoneMissed size={16} className="text-gray-400" />
+            <h2 className="text-sm font-medium text-gray-700">Missed</h2>
+          </div>
+          
         </div>
-        <div>
-          <h3 className="text-3xl font-semibold text-gray-900 tracking-tight">{stats.missedCalls}</h3>
-          <p className="text-[13px] font-medium text-gray-400 mt-1">Missed Calls</p>
-        </div>
+        <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
+          {stats.missedCalls?.count || 0}
+        </h3>
+        <TrendBadge trend={stats.missedCalls?.trend} />
       </div>
 
       {/* Unregistered */}
-      <div className="group bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300 flex flex-col gap-4">
-        <div className="w-10 h-10 rounded-lg bg-gray-50/50 flex items-center justify-center text-gray-600 group-hover:bg-gray-50 transition-colors">
-          <UserMinus size={18} strokeWidth={1.75} />
+      <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300">
+        <div className="flex justify-between items-start mb-4">
+          <div className="flex items-center gap-2">
+            <UserMinus size={16} className="text-gray-400" />
+            <h2 className="text-sm font-medium text-gray-700">Unregistered</h2>
+          </div>
+          
         </div>
-        <div>
-          <h3 className="text-3xl font-semibold text-gray-900 tracking-tight">{stats.unregisteredCalls}</h3>
-          <p className="text-[13px] font-medium text-gray-400 mt-1">Unregistered</p>
-        </div>
+        <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
+          {stats.unregisteredCalls?.count || 0}
+        </h3>
+        <TrendBadge trend={stats.unregisteredCalls?.trend} />
       </div>
 
     </div>
@@ -340,7 +412,7 @@ export default function CallLogsPage() {
       
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-auto p-2 sm:p-8 relative">
+      <main className="flex-1 overflow-auto p-2 sm:p-0 relative">
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">

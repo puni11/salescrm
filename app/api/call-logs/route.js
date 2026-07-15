@@ -49,6 +49,19 @@ export async function GET(req) {
         preFetchedUserIds = matchedUsers.map(u => u._id.toString());
       }
     }
+const getDaysAgoSkippingSunday = (start, days) => {
+      let d = new Date(start);
+      let count = 0;
+      while (count < days) {
+        d.setDate(d.getDate() - 1);
+        if (d.getDay() !== 0) count++; 
+      }
+      return d;
+    };
+
+    const now = new Date();
+    const fourDaysAgo = getDaysAgoSkippingSunday(now, 4);
+    const eightDaysAgo = getDaysAgoSkippingSunday(fourDaysAgo, 4);
 
     const pipeline = [];
 
@@ -248,24 +261,35 @@ export async function GET(req) {
           },
         ],
         
-        // 2. The Dashboard Statistics
+       // 2. The Dashboard Statistics (Overall + 4-Day Trends, Skipping Sundays)
         stats: [
           {
             $group: {
               _id: null,
+              
+              // --- OVERALL TOTALS (Respects user filters, Includes all days) ---
               totalCalls: { $sum: 1 },
-              incomingCalls: {
-                $sum: { $cond: [{ $eq: ["$call_type", "INCOMING"] }, 1, 0] }
-              },
-              outgoingCalls: {
-                $sum: { $cond: [{ $eq: ["$call_type", "OUTGOING"] }, 1, 0] }
-              },
-              missedCalls: {
-                $sum: { $cond: [{ $eq: ["$call_type", "MISSED"] }, 1, 0] }
-              },
-              unregisteredCalls: {
-                $sum: { $cond: [{ $not: ["$lead._id"] }, 1, 0] } // Counts if lead._id is missing
-              }
+              incomingCalls: { $sum: { $cond: [{ $eq: ["$call_type", "INCOMING"] }, 1, 0] } },
+              outgoingCalls: { $sum: { $cond: [{ $eq: ["$call_type", "OUTGOING"] }, 1, 0] } },
+              missedCalls: { $sum: { $cond: [{ $eq: ["$call_type", "MISSED"] }, 1, 0] } },
+              unregisteredCalls: { $sum: { $cond: [{ $not: ["$lead._id"] }, 1, 0] } },
+              averageCallTime: { $avg: "$duration_seconds" },
+
+              // --- CURRENT 4 DAYS (Skipping Sunday) ---
+              c4_total: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }] }, 1, 0] } },
+              c4_incoming: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }, { $eq: ["$call_type", "INCOMING"] }] }, 1, 0] } },
+              c4_outgoing: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }, { $eq: ["$call_type", "OUTGOING"] }] }, 1, 0] } },
+              c4_missed: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }, { $eq: ["$call_type", "MISSED"] }] }, 1, 0] } },
+              c4_unregistered: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }, { $not: ["$lead._id"] }] }, 1, 0] } },
+              c4_avgTime: { $avg: { $cond: [{ $and: [{ $gte: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }] }, "$duration_seconds", null] } },
+
+              // --- PREVIOUS 4 DAYS (Skipping Sunday) ---
+              p4_total: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", eightDaysAgo] }, { $lt: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }] }, 1, 0] } },
+              p4_incoming: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", eightDaysAgo] }, { $lt: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }, { $eq: ["$call_type", "INCOMING"] }] }, 1, 0] } },
+              p4_outgoing: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", eightDaysAgo] }, { $lt: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }, { $eq: ["$call_type", "OUTGOING"] }] }, 1, 0] } },
+              p4_missed: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", eightDaysAgo] }, { $lt: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }, { $eq: ["$call_type", "MISSED"] }] }, 1, 0] } },
+              p4_unregistered: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", eightDaysAgo] }, { $lt: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }, { $not: ["$lead._id"] }] }, 1, 0] } },
+              p4_avgTime: { $avg: { $cond: [{ $and: [{ $gte: ["$call_time", eightDaysAgo] }, { $lt: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }] }, "$duration_seconds", null] } }
             }
           }
         ],
@@ -275,21 +299,52 @@ export async function GET(req) {
       },
     });
 
-    // ------------------------------------------
-    // Execute Aggregation
-    // ------------------------------------------
-
+ 
+    
+    // Build the final, clean stats object to send to the frontend
+   
     const result = await db.collection("call_logs").aggregate(pipeline).toArray();
     const rows = result[0]?.data || [];
     const total = result[0]?.totalCount?.[0]?.count || 0;
     
     // Extract stats (fallback to 0s if empty)
-    const stats = result[0]?.stats?.[0] || {
-      totalCalls: 0,
-      incomingCalls: 0,
-      outgoingCalls: 0,
-      missedCalls: 0,
-      unregisteredCalls: 0
+// Helper function to calculate percentage trend safely
+    const calcTrend = (current, previous) => {
+      const cur = current || 0;
+      const prev = previous || 0;
+      if (prev > 0) return Number((((cur - prev) / prev) * 100).toFixed(2));
+      if (cur > 0) return 100; // 100% increase if previous was 0 but we have calls now
+      return 0;
+    };
+
+    const rawStats = result[0]?.stats?.[0] || {};
+    
+    // Build the final, clean stats object to send to the frontend
+    const stats = {
+      totalCalls: {
+        count: rawStats.totalCalls || 0,
+        trend: calcTrend(rawStats.c4_total, rawStats.p4_total)
+      },
+      incomingCalls: {
+        count: rawStats.incomingCalls || 0,
+        trend: calcTrend(rawStats.c4_incoming, rawStats.p4_incoming)
+      },
+      outgoingCalls: {
+        count: rawStats.outgoingCalls || 0,
+        trend: calcTrend(rawStats.c4_outgoing, rawStats.p4_outgoing)
+      },
+      missedCalls: {
+        count: rawStats.missedCalls || 0,
+        trend: calcTrend(rawStats.c4_missed, rawStats.p4_missed)
+      },
+      unregisteredCalls: {
+        count: rawStats.unregisteredCalls || 0,
+        trend: calcTrend(rawStats.c4_unregistered, rawStats.p4_unregistered)
+      },
+      averageCallTime: {
+        count: Number((rawStats.averageCallTime || 0).toFixed(2)),
+        trend: calcTrend(rawStats.c4_avgTime, rawStats.p4_avgTime)
+      }
     };
 
     // Remove the _id from the stats object to keep it clean for frontend
