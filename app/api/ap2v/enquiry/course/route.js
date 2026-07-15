@@ -1,6 +1,5 @@
-// app/api/enquiry/generic/route.js
-
 import { NextResponse } from "next/server";
+import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 
 import {
@@ -20,30 +19,78 @@ import {
 
 export async function POST(req) {
   try {
-    // ===============================
+    // =====================================
     // Validate Origin
-    // ===============================
+    // =====================================
     const originValidation = validateOrigin(req);
 
     if (!originValidation.valid) {
       return originValidation.response;
     }
 
-    // ===============================
+    // =====================================
     // Parse Body
-    // ===============================
+    // =====================================
     const body = await req.json();
 
-    // ===============================
-    // Sanitize Inputs
-    // ===============================
-    const name = sanitize(body.name2);
-    const phone = sanitize(body.mobile2);
-    const email = sanitize(body.email2);
+    /**
+     * Supports BOTH forms
+     *
+     * Form 1
+     * name_c1
+     * email_c1
+     * mobile_c1
+     * myself/company
+     * message_c1
+     *
+     * Form 2
+     * name_c2
+     * email_c2
+     * mobile_c2
+     * myself1/company1
+     * message_c2
+     */
 
-    // ===============================
-    // Validate Name
-    // ===============================
+    const isForm2 =
+      body.name_c2 ||
+      body.email_c2 ||
+      body.mobile_c2;
+
+    // =====================================
+    // Read Values
+    // =====================================
+
+    const name = sanitize(
+      isForm2 ? body.name_c2 : body.name_c1
+    );
+
+    const email = sanitize(
+      isForm2 ? body.email_c2 : body.email_c1
+    );
+
+    const phone = sanitize(
+      isForm2 ? body.mobile_c2 : body.mobile_c1
+    );
+
+    const enquiryFor = sanitize(
+      isForm2
+        ? body.myself1 || body.company1
+        : body.myself || body.company
+    );
+
+    const message = sanitize(
+      isForm2
+        ? body.message_c2
+        : body.message_c1
+    );
+
+    // Django Course ID
+    const course = sanitize(body.anquira_course);
+
+    // =====================================
+    // Validation
+    // =====================================
+
     const nameValidation = validateName(name);
 
     if (!nameValidation.valid) {
@@ -52,15 +99,10 @@ export async function POST(req) {
           success: false,
           message: nameValidation.message,
         },
-        {
-          status: 400,
-        }
+        { status: 400 }
       );
     }
 
-    // ===============================
-    // Validate Phone
-    // ===============================
     const phoneValidation = validatePhone(phone);
 
     if (!phoneValidation.valid) {
@@ -69,15 +111,10 @@ export async function POST(req) {
           success: false,
           message: phoneValidation.message,
         },
-        {
-          status: 400,
-        }
+        { status: 400 }
       );
     }
 
-    // ===============================
-    // Validate Email
-    // ===============================
     const emailValidation = validateEmail(email);
 
     if (!emailValidation.valid) {
@@ -86,21 +123,21 @@ export async function POST(req) {
           success: false,
           message: emailValidation.message,
         },
-        {
-          status: 400,
-        }
+        { status: 400 }
       );
     }
 
-    // ===============================
+    // =====================================
     // MongoDB
-    // ===============================
-    const client = await clientPromise;
-    const db = client.db("crm"); // Change database name if needed
+    // =====================================
 
-    // ===============================
-    // Duplicate Check
-    // ===============================
+    const client = await clientPromise;
+    const db = client.db("sales");
+
+    // =====================================
+    // Duplicate Check (5 Minutes)
+    // =====================================
+
     const duplicate = await checkDuplicate(
       db,
       phoneValidation.phone,
@@ -114,50 +151,61 @@ export async function POST(req) {
           message:
             "You have already submitted an enquiry recently.",
         },
-        {
-          status: 409,
-        }
+        { status: 409 }
       );
     }
 
-    // ===============================
-    // Save Data
-    // ===============================
+    // =====================================
+    // Save
+    // =====================================
+
     await saveEnquiry(db, {
-      formType: "generic",
+      formType: "course",
+
+      form: isForm2 ? "course_form_2" : "course_form_1",
 
       name,
 
       phone: phoneValidation.phone,
 
       email,
-from: "ap2v",
+
+      enquiryFor,
+
+      message,
+
+      course,
+
+      from: "ap2v",
+
       ip: getClientIP(req),
 
       userAgent: getUserAgent(req),
+
       origin: originValidation.origin,
+
       assignedTo: {
-                    _id: new ObjectId("6a50991f338a623acd94650a"),
-                    name: "Neelanshu",
-                  },
+        _id: new ObjectId(
+          "6a50991f338a623acd94650a"
+        ),
+        name: "Neelanshu",
+      },
 
       referer: req.headers.get("referer") || "",
     });
 
-    // ===============================
-    // Success
-    // ===============================
     return NextResponse.json(
       {
         success: true,
-        message: "Enquiry submitted successfully.",
+        message:
+          "Course enquiry submitted successfully.",
       },
       {
         status: 201,
       }
     );
   } catch (error) {
-    console.error("Generic Enquiry Error:", error);
+    console.error(error);
 
     return NextResponse.json(
       {
@@ -171,7 +219,6 @@ from: "ap2v",
   }
 }
 
-// Optional: Reject unsupported methods
 export async function GET() {
   return NextResponse.json(
     {

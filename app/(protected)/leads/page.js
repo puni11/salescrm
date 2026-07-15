@@ -490,7 +490,6 @@ const formatDate = (value) => {
               <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200">
                 <tr>
                   <th className="px-6 py-4">Name & Contact</th>
-                  <th className="px-6 py-4">Profile & Consent</th>
                   <th className="px-6 py-4">Course & Level</th>
                   <th className="px-6 py-4">Source & Campaign</th>
                   <th className="px-6 py-4">Created Date</th>
@@ -548,17 +547,9 @@ const formatDate = (value) => {
                         className="hover:bg-blue-50 cursor-pointer transition-colors group"
                       >
                         <td className="px-6 py-4">
-                          <div className="font-medium text-gray-900 group-hover:text-blue-700">{lead.name}</div>
+                          <div className="font-medium text-gray-900 group-hover:text-blue-700">{lead.name} {lead.from && "-"} {lead.from &&  <span className="text-xs font-light bg-red-50 text-red-600 px-2 py-0.5 rounded-sm shadow">{lead.from}</span>}</div>
                           <div className="text-gray-500 text-xs mt-1">{lead.email}</div>
                           <div className="text-gray-500 text-xs">{lead.phone}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="font-medium text-gray-900 capitalize">{lead.profile || 'N/A'}</div>
-                          {lead.consent ? (
-                            <div className="text-emerald-600 text-xs mt-1 flex items-center gap-1"><CheckCircle size={12}/> Consented</div>
-                          ) : (
-                            <div className="text-gray-400 text-xs mt-1 flex items-center gap-1">No Consent given</div>
-                          )}
                         </td>
                         <td className="px-6 py-4">
                           <div className="font-medium text-gray-900 capitalize">{lead.course || 'N/A'}</div>

@@ -28,7 +28,7 @@ export async function DELETE(req, { params }) {
      const session = await getServerSession(authOptions);
     console.log(session);
     
-    if (!session.user.role !== "admin") {
+    if (session.user.role !== "admin") {
       return Response.json({ success: false, message: "You are Not Authorised" }, { status: 401 });
     }
     const { id } = await params;
