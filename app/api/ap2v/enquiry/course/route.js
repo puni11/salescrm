@@ -33,23 +33,7 @@ export async function POST(req) {
     // =====================================
     const body = await req.json();
 
-    /**
-     * Supports BOTH forms
-     *
-     * Form 1
-     * name_c1
-     * email_c1
-     * mobile_c1
-     * myself/company
-     * message_c1
-     *
-     * Form 2
-     * name_c2
-     * email_c2
-     * mobile_c2
-     * myself1/company1
-     * message_c2
-     */
+
 
     const isForm2 =
       body.name_c2 ||
@@ -61,27 +45,27 @@ export async function POST(req) {
     // =====================================
 
     const name = sanitize(
-      isForm2 ? body.name_c2 : body.name_c1
+      isForm2 ? body.name : body.name
     );
 
     const email = sanitize(
-      isForm2 ? body.email_c2 : body.email_c1
+      isForm2 ? body.email : body.email
     );
 
     const phone = sanitize(
-      isForm2 ? body.mobile_c2 : body.mobile_c1
+      isForm2 ? body.mobile : body.mobile
     );
 
     const enquiryFor = sanitize(
       isForm2
-        ? body.myself1 || body.company1
+        ? body.myself || body.company
         : body.myself || body.company
     );
 
     const message = sanitize(
       isForm2
-        ? body.message_c2
-        : body.message_c1
+        ? body.message
+        : body.message
     );
 
     // Django Course ID

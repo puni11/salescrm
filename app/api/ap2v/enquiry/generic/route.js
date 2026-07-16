@@ -38,9 +38,9 @@ export async function POST(req) {
     // ===============================
     // Sanitize Inputs
     // ===============================
-    const name = sanitize(body.name2);
-    const phone = sanitize(body.mobile2);
-    const email = sanitize(body.email2);
+    const name = sanitize(body.name);
+    const phone = sanitize(body.mobile);
+    const email = sanitize(body.email);
 
     // ===============================
     // Validate Name
