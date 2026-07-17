@@ -25,7 +25,9 @@ import {
   User2Icon,
   ChevronRight,
   Settings2Icon,
-  PhoneCall
+  PhoneCall,
+  LayoutDashboardIcon,
+  HistoryIcon
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Image from "next/image";
@@ -124,6 +126,13 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
 
         {/* Navigation */}
         <nav className="flex-1 py-6 space-y-1.5 overflow-y-auto overflow-x-hidden scrollbar-hide">
+            <NavItem 
+            href="/dashboard" 
+            icon={LayoutDashboardIcon} 
+            label="Dashboard" 
+            collapsed={collapsed} 
+             active={pathname === "/dashboard"}
+          />
           <NavItem 
             href="/leads" 
             icon={User2} 
@@ -132,6 +141,13 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             active={pathname.includes("/leads")}
           />
         {session?.user?.role === 'admin' && (   <NavItem 
+            href="/dashboard/interaction" 
+            icon={HistoryIcon} 
+            label="Lead Interaction" 
+            collapsed={collapsed} 
+            active={pathname.includes("/dashboard/interaction")}
+          />)}
+          {session?.user?.role === 'admin' && (   <NavItem 
             href="/call-logs" 
             icon={PhoneCall} 
             label="Call Activity" 

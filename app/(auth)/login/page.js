@@ -44,7 +44,7 @@ export default function LoginPage() {
         return
       }
 
-      router.push("/leads")
+      router.push("/dashboard")
 
     } catch (err) {
       setError("Something went wrong")

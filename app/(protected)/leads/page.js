@@ -9,10 +9,12 @@ import {
   CalendarCheck,
   BookAIcon,
   Trash2Icon,
+  History,
   
 } from "lucide-react";
 import toast from "react-hot-toast";
 import DashboardStats from "@/component/DashboardStats";
+import Link from "next/link";
 
 // --- CUSTOM HOOKS ---
 function useDebounce(value, delay) {
@@ -647,11 +649,19 @@ const formatDate = (value) => {
           />
           <div className="fixed inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl z-50 transform transition-transform flex flex-col border-l border-gray-200">
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50">
-              <h2 className="text-xl font-semibold text-gray-900">Lead Details</h2>
+            <div className="flex gap-2">              <h2 className="text-xl font-semibold text-gray-900">Lead Details</h2>
+            
+            <Link href={`/leads/timeline/${selectedLead._id}`} className="flex gap-1 bg-red-100 items-center text-xs px-2 rounded-md text-red-600">
+                    <History size={16} className=" text-red-400" />
+                    See Lead Timeline
+                  </Link>
+            </div>
+              <div>
               <button 
                 onClick={() => setSelectedLeadId(null)}
                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
               >
+                
                 <X size={20} />
               </button>
               <button
@@ -665,11 +675,14 @@ const formatDate = (value) => {
 >
   <Trash2Icon size={20} />
 </button>
+</div>
+
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
               <div>
                 <h3 className="text-2xl font-bold text-gray-900">{selectedLead.name}</h3>
+                
                 <div className="mt-3 space-y-2">
                   <div className="flex items-center text-sm text-gray-600">
                     <Mail size={16} className="mr-3 text-gray-400" />
@@ -709,8 +722,8 @@ const formatDate = (value) => {
                 </div>
               </div>
 
-              <hr className="border-gray-100" />
               
+              <hr className="border-gray-100" />
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex items-center text-sm text-gray-600">
                   <Globe size={16} className="mr-3 text-gray-400" />
