@@ -144,6 +144,7 @@ export async function POST(req) {
         status: 201,
       }
     );
+    
   } catch (error) {
     console.error("Generic Enquiry Error:", error);
 
@@ -170,4 +171,17 @@ export async function GET() {
       status: 405,
     }
   );
+}
+export async function OPTIONS(req) {
+  const origin = req.headers.get("origin");
+
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Credentials": "true",
+    },
+  });
 }

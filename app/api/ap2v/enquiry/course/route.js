@@ -214,3 +214,16 @@ export async function GET() {
     }
   );
 }
+export async function OPTIONS(req) {
+  const origin = req.headers.get("origin");
+
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Credentials": "true",
+    },
+  });
+}
