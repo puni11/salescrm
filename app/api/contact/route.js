@@ -15,7 +15,9 @@ const SOURCE_TYPES = [
   "Twitter",
   "Referral",
   "GS1"
-];
+]; 
+
+const specialCounsellorId = "6a6888f23bccf7d435b4340d" || "6a688b423bccf7d435b43411";
 export async function GET(req) {
   try {
     const session = await getServerSession(authOptions);
@@ -45,9 +47,23 @@ export async function GET(req) {
     const db = client.db("sales");
 
     const query = {};
-    if (session.user.role !== "admin") {
-      query["assignedTo._id"] = new ObjectId(session.user.id);
-    }
+   if (session.user.role !== "admin") {
+  if (session.user.id === "6a6888f23bccf7d435b4340d" || "6a688b423bccf7d435b43411") {
+    query.$or = [
+      {
+        "assignedTo._id": new ObjectId(session.user.id),
+      },
+      {
+        course: {
+          $regex: "^Azure",
+          $options: "i",
+        },
+      },
+    ];
+  } else {
+    query["assignedTo._id"] = new ObjectId(session.user.id);
+  }
+}
 
     // Search
     if (search) {
