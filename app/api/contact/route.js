@@ -6,16 +6,7 @@ import { sendMail } from "@/lib/sendMail";
 import { ObjectId } from "mongodb";
 import welcomeHtml from "@/lib/emailHtml/welcomeHtml";
 import { getLeadAssignment } from "@/lib/leadAssignment";
-const SOURCE_TYPES = [
-  "Direct",
-  "Google",
-  "Facebook",
-  "Instagram",
-  "LinkedIn",
-  "Twitter",
-  "Referral",
-  "GS1"
-]; 
+
 
 const specialCounsellorId = "6a6888f23bccf7d435b4340d" || "6a688b423bccf7d435b43411";
 export async function GET(req) {
@@ -47,8 +38,11 @@ export async function GET(req) {
     const db = client.db("sales");
 
     const query = {};
-   if (session.user.role !== "admin") {
-  if (session.user.id === "6a6888f23bccf7d435b4340d" || "6a688b423bccf7d435b43411") {
+if (session.user.role !== "admin") {
+  if (
+    session.user.id === "6a6888f23bccf7d435b4340d" ||
+    session.user.id === "6a688b423bccf7d435b43411"
+  ) {
     query.$or = [
       {
         "assignedTo._id": new ObjectId(session.user.id),
