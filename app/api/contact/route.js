@@ -40,8 +40,7 @@ export async function GET(req) {
     const query = {};
 if (session.user.role !== "admin") {
   if (
-    session.user.id === "6a6888f23bccf7d435b4340d" ||
-    session.user.id === "6a688b423bccf7d435b43411"
+    session.user.id === "6a33c7bc3d699a93dd2287f2"
   ) {
     query.$or = [
       {
