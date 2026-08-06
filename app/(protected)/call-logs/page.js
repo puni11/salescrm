@@ -126,14 +126,46 @@ export default function CallLogsPage() {
     fetchLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, debouncedSearch, statusFilter, callTypeFilter, courseFilter, selectedCounsellor, fromDate, toDate]);
-const TrendBadge = ({ trend }) => {
+const TrendBadge = ({ trend, fromDate, toDate }) => {
   if (trend === undefined || trend === null) return null;
   
   const isPositive = trend > 0;
   const isNegative = trend < 0;
   
+  let dynamicDateText = "";
+
+  if (fromDate || toDate) {
+    // If user has selected a custom date range in the filters
+    const formatOpts = { month: 'short', day: 'numeric' };
+    const fDate = fromDate ? new Date(fromDate).toLocaleDateString('en-US', formatOpts) : "Start";
+    const tDate = toDate ? new Date(toDate).toLocaleDateString('en-US', formatOpts) : "Today";
+    
+    dynamicDateText = `Selected: ${fDate} - ${tDate}`;
+  } else {
+    // Default: Show Today and 4 days prior (skipping Sundays)
+    const getDaysAgoSkippingSunday = (start, days) => {
+      let d = new Date(start);
+      let count = 0;
+      while (count < days) {
+        d.setDate(d.getDate() - 1);
+        if (d.getDay() !== 0) count++; 
+      }
+      return d;
+    };
+
+    const now = new Date(); // Today
+    const fourDaysAgo = getDaysAgoSkippingSunday(now, 4); // 4 working days ago
+
+    const formatOpts = { month: 'short', day: 'numeric' };
+    const startDate = fourDaysAgo.toLocaleDateString('en-US', formatOpts);
+    const endDate = now.toLocaleDateString('en-US', formatOpts);
+    
+    // Now it displays the current period
+    dynamicDateText = `${startDate} - ${endDate}`;
+  }
+
   return (
-    <div className="flex items-center gap-1.5 text-[13px]">
+    <div className="flex items-center gap-1.5 text-[13px] mt-1">
       {isPositive && (
         <span className="flex items-center font-medium text-emerald-600 bg-emerald-50/50 px-1.5 py-0.5 rounded">
           <TrendingUp size={14} className="mr-1" />
@@ -152,7 +184,7 @@ const TrendBadge = ({ trend }) => {
           0%
         </span>
       )}
-      <span className="text-gray-400 text-xs">Past 4 days</span>
+      <span className="text-gray-400 text-xs whitespace-nowrap">{dynamicDateText}</span>
     </div>
   );
 };
@@ -164,14 +196,7 @@ const TrendBadge = ({ trend }) => {
     return `${m}m ${s}s`;
   };
 
-  const getStatusColor = (status) => {
-    if (!status) return "bg-gray-100 text-gray-800";
-    const s = status.toLowerCase();
-    if (s.includes("answered") || s.includes("connected") || s.includes("converted")) return "bg-green-100 text-green-800";
-    if (s.includes("missed") || s.includes("failed") || s.includes("invalid")) return "bg-red-100 text-red-800";
-    if (s.includes("voicemail") || s.includes("interested")) return "bg-yellow-100 text-yellow-800";
-    return "bg-blue-100 text-blue-800";
-  };
+
 
   // Reusable Filter Render Logic
   const renderFilters = (isMobile = false) => {
@@ -327,7 +352,7 @@ const formatTime = (totalSeconds) => {
         <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
           {stats.totalCalls?.count || 0}
         </h3>
-        <TrendBadge trend={stats.totalCalls?.trend} />
+        <TrendBadge trend={stats.totalCalls?.trend} fromDate={fromDate} toDate={toDate}/>
       </div>
 
       {/* Avg Call Time */}
@@ -342,7 +367,7 @@ const formatTime = (totalSeconds) => {
         <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
           {formatTime(stats.averageCallTime?.count || 0)}
         </h3>
-         <TrendBadge trend={stats.averageCallTime?.trend} />
+         <TrendBadge trend={stats.averageCallTime?.trend} fromDate={fromDate} toDate={toDate} />
       </div>
 
       {/* Incoming */}
@@ -357,7 +382,7 @@ const formatTime = (totalSeconds) => {
         <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
           {stats.incomingCalls?.count || 0}
         </h3>
-        <TrendBadge trend={stats.incomingCalls?.trend} />
+        <TrendBadge trend={stats.incomingCalls?.trend} fromDate={fromDate} toDate={toDate} />
       </div>
 
       {/* Outgoing */}
@@ -372,7 +397,7 @@ const formatTime = (totalSeconds) => {
         <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
           {stats.outgoingCalls?.count || 0}
         </h3>
-        <TrendBadge trend={stats.outgoingCalls?.trend} />
+        <TrendBadge trend={stats.outgoingCalls?.trend} fromDate={fromDate} toDate={toDate}/>
       </div>
 
       {/* Missed */}
@@ -387,7 +412,7 @@ const formatTime = (totalSeconds) => {
         <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
           {stats.missedCalls?.count || 0}
         </h3>
-        <TrendBadge trend={stats.missedCalls?.trend} />
+        <TrendBadge trend={stats.missedCalls?.trend} fromDate={fromDate} toDate={toDate}/>
       </div>
 
       {/* Unregistered */}
@@ -402,7 +427,7 @@ const formatTime = (totalSeconds) => {
         <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
           {stats.unregisteredCalls?.count || 0}
         </h3>
-        <TrendBadge trend={stats.unregisteredCalls?.trend} />
+        <TrendBadge trend={stats.unregisteredCalls?.trend} fromDate={fromDate} toDate={toDate}/>
       </div>
 
     </div>

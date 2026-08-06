@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "@/component/Sidebar";
-
+import usePushNotifications from "@/hooks/usePushNotifications";
+import NotificationPermissionPopup from "./NotificationPermissionPopup";
 export default function ClientLayout({ session, children }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [showNotificationPopup, setShowNotificationPopup] = useState(true);
 
+const { enableNotifications } = usePushNotifications();
   return (
     <div className="flex h-screen overflow-hidden font-sans w-full">
       

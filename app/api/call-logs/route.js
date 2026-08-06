@@ -26,35 +26,14 @@ export async function GET(req) {
 
     const client = await clientPromise;
     const db = client.db("sales");
-    
-    // ⚠️ REPLACE THIS WITH YOUR ACTUAL USERS DATABASE NAME
-    const usersDb = client.db("internal"); 
+    const usersDb = client.db("internal");
 
-    // ------------------------------------------
-    // PRE-FETCH: Find User IDs if searching/filtering by counsellor
-    // ------------------------------------------
-    let preFetchedUserIds = [];
-    if (counsellor || search) {
-      const userFilterOr = [];
-      if (counsellor) userFilterOr.push({ name: { $regex: counsellor, $options: "i" } });
-      if (search) userFilterOr.push({ name: { $regex: search, $options: "i" } });
-
-      if (userFilterOr.length > 0) {
-        const matchedUsers = await usersDb
-          .collection("users")
-          .find({ $or: userFilterOr })
-          .project({ _id: 1 })
-          .toArray();
-        
-        preFetchedUserIds = matchedUsers.map(u => u._id.toString());
-      }
-    }
-const getDaysAgoSkippingSunday = (start, days) => {
+    const getDaysAgoSkippingSunday = (start, days) => {
       let d = new Date(start);
       let count = 0;
       while (count < days) {
         d.setDate(d.getDate() - 1);
-        if (d.getDay() !== 0) count++; 
+        if (d.getDay() !== 0) count++;
       }
       return d;
     };
@@ -68,7 +47,6 @@ const getDaysAgoSkippingSunday = (start, days) => {
     // ------------------------------------------
     // Normalize Call Phone
     // ------------------------------------------
-
     pipeline.push({
       $addFields: {
         normalizedPhone: {
@@ -95,7 +73,6 @@ const getDaysAgoSkippingSunday = (start, days) => {
     // ------------------------------------------
     // Lookup Lead
     // ------------------------------------------
-
     pipeline.push({
       $lookup: {
         from: "dm",
@@ -151,11 +128,13 @@ const getDaysAgoSkippingSunday = (start, days) => {
     // ------------------------------------------
     // Filters
     // ------------------------------------------
+    
+    // Helper to safely escape special characters for MongoDB regex
+    const escapeRegex = (text) => text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
 
     const match = {};
 
     if (callType) {
-      // Map frontend filters to DB values
       const callTypeMap = {
         "Inbound": "INCOMING",
         "Outbound": "OUTGOING",
@@ -165,10 +144,6 @@ const getDaysAgoSkippingSunday = (start, days) => {
     }
 
     if (status) match.status = status;
-
-    if (course) {
-      match["lead.course"] = { $regex: course, $options: "i" };
-    }
 
     if (from || to) {
       match.call_time = {};
@@ -188,38 +163,73 @@ const getDaysAgoSkippingSunday = (start, days) => {
       match.duration_seconds = { ...(match.duration_seconds || {}), $lte: Number(maxDuration) };
     }
 
-    if (search || counsellor) {
-      match.$or = [];
+    // Initialize $and array for robust combined filtering
+    match.$and = [];
 
-      if (counsellor) {
-        match.$or.push({ "lead.assignedTo.name": { $regex: counsellor, $options: "i" } });
+    // 1. SPECIFIC COURSE FILTER
+    if (course) {
+      match.$and.push({
+        "lead.course": { $regex: escapeRegex(course), $options: "i" }
+      });
+    }
+
+    // 2. COUNSELLOR FILTER
+    if (counsellor) {
+      const counsellorRegex = { $regex: escapeRegex(counsellor), $options: "i" };
+      
+      const matchedCounsellors = await usersDb.collection("users")
+        .find({ name: counsellorRegex })
+        .project({ _id: 1 })
+        .toArray();
+      const counsellorIds = matchedCounsellors.map(u => u._id.toString());
+
+      const counsellorOr = [
+        { "lead.assignedTo.name": counsellorRegex }
+      ];
+      if (counsellorIds.length > 0) {
+        counsellorOr.push({ userId: { $in: counsellorIds } });
       }
 
-      if (search) {
-        match.$or.push(
-          { phone: { $regex: search, $options: "i" } },
-          { "lead.phone": { $regex: search, $options: "i" } },
-          { "lead.name": { $regex: search, $options: "i" } },
-          { "lead.email": { $regex: search, $options: "i" } },
-          { "lead.course": { $regex: search, $options: "i" } }
-        );
+      match.$and.push({ $or: counsellorOr });
+    }
+
+    // 3. GLOBAL SEARCH FIELD
+    if (search) {
+      const searchRegex = { $regex: escapeRegex(search), $options: "i" };
+      
+      const matchedSearchUsers = await usersDb.collection("users")
+        .find({ name: searchRegex })
+        .project({ _id: 1 })
+        .toArray();
+      const searchUserIds = matchedSearchUsers.map(u => u._id.toString());
+
+      const searchOr = [
+        { phone: searchRegex },
+        { "lead.phone": searchRegex },
+        { "lead.name": searchRegex },
+        { "lead.email": searchRegex },
+        { "lead.course": searchRegex }
+      ];
+
+      if (searchUserIds.length > 0) {
+        searchOr.push({ userId: { $in: searchUserIds } });
       }
 
-      if (preFetchedUserIds.length > 0) {
-        match.$or.push({ userId: { $in: preFetchedUserIds } });
-      }
+      match.$and.push({ $or: searchOr });
+    }
 
-      if (match.$or.length === 0) delete match.$or;
+    // Cleanup empty $and so MongoDB doesn't throw an error
+    if (match.$and.length === 0) {
+      delete match.$and;
     }
 
     if (Object.keys(match).length) {
       pipeline.push({ $match: match });
     }
-    
+
     // ------------------------------------------
     // Sorting
     // ------------------------------------------
-
     const allowedSortFields = {
       call_time: "call_time",
       duration_seconds: "duration_seconds",
@@ -229,7 +239,7 @@ const getDaysAgoSkippingSunday = (start, days) => {
       name: "lead.name",
       email: "lead.email",
       course: "lead.course",
-      counsellor: "lead.assignedTo.name", 
+      counsellor: "lead.assignedTo.name",
     };
 
     const sortField = allowedSortFields[sortBy] || "call_time";
@@ -241,10 +251,8 @@ const getDaysAgoSkippingSunday = (start, days) => {
     // ------------------------------------------
     // Pagination + Analytics Stats
     // ------------------------------------------
-
     pipeline.push({
       $facet: {
-        // 1. The Paginated Data
         data: [
           { $skip: (page - 1) * pageSize },
           { $limit: pageSize },
@@ -260,14 +268,10 @@ const getDaysAgoSkippingSunday = (start, days) => {
             },
           },
         ],
-        
-       // 2. The Dashboard Statistics (Overall + 4-Day Trends, Skipping Sundays)
         stats: [
           {
             $group: {
               _id: null,
-              
-              // --- OVERALL TOTALS (Respects user filters, Includes all days) ---
               totalCalls: { $sum: 1 },
               incomingCalls: { $sum: { $cond: [{ $eq: ["$call_type", "INCOMING"] }, 1, 0] } },
               outgoingCalls: { $sum: { $cond: [{ $eq: ["$call_type", "OUTGOING"] }, 1, 0] } },
@@ -275,7 +279,6 @@ const getDaysAgoSkippingSunday = (start, days) => {
               unregisteredCalls: { $sum: { $cond: [{ $not: ["$lead._id"] }, 1, 0] } },
               averageCallTime: { $avg: "$duration_seconds" },
 
-              // --- CURRENT 4 DAYS (Skipping Sunday) ---
               c4_total: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }] }, 1, 0] } },
               c4_incoming: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }, { $eq: ["$call_type", "INCOMING"] }] }, 1, 0] } },
               c4_outgoing: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }, { $eq: ["$call_type", "OUTGOING"] }] }, 1, 0] } },
@@ -283,7 +286,6 @@ const getDaysAgoSkippingSunday = (start, days) => {
               c4_unregistered: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }, { $not: ["$lead._id"] }] }, 1, 0] } },
               c4_avgTime: { $avg: { $cond: [{ $and: [{ $gte: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }] }, "$duration_seconds", null] } },
 
-              // --- PREVIOUS 4 DAYS (Skipping Sunday) ---
               p4_total: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", eightDaysAgo] }, { $lt: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }] }, 1, 0] } },
               p4_incoming: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", eightDaysAgo] }, { $lt: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }, { $eq: ["$call_type", "INCOMING"] }] }, 1, 0] } },
               p4_outgoing: { $sum: { $cond: [{ $and: [{ $gte: ["$call_time", eightDaysAgo] }, { $lt: ["$call_time", fourDaysAgo] }, { $ne: [{ $dayOfWeek: "$call_time" }, 1] }, { $eq: ["$call_type", "OUTGOING"] }] }, 1, 0] } },
@@ -293,33 +295,24 @@ const getDaysAgoSkippingSunday = (start, days) => {
             }
           }
         ],
-
-        // 3. For Pagination Logic
         totalCount: [{ $count: "count" }],
       },
     });
 
- 
-    
-    // Build the final, clean stats object to send to the frontend
-   
     const result = await db.collection("call_logs").aggregate(pipeline).toArray();
     const rows = result[0]?.data || [];
     const total = result[0]?.totalCount?.[0]?.count || 0;
     
-    // Extract stats (fallback to 0s if empty)
-// Helper function to calculate percentage trend safely
     const calcTrend = (current, previous) => {
       const cur = current || 0;
       const prev = previous || 0;
       if (prev > 0) return Number((((cur - prev) / prev) * 100).toFixed(2));
-      if (cur > 0) return 100; // 100% increase if previous was 0 but we have calls now
+      if (cur > 0) return 100;
       return 0;
     };
 
     const rawStats = result[0]?.stats?.[0] || {};
     
-    // Build the final, clean stats object to send to the frontend
     const stats = {
       totalCalls: {
         count: rawStats.totalCalls || 0,
@@ -347,13 +340,9 @@ const getDaysAgoSkippingSunday = (start, days) => {
       }
     };
 
-    // Remove the _id from the stats object to keep it clean for frontend
-    delete stats._id;
-
     // ------------------------------------------
     // APPLICATION LEVEL JOIN: Fetch User Names
     // ------------------------------------------
-    
     const uniqueUserIds = [...new Set(rows.map(row => row.userId).filter(Boolean))];
 
     if (uniqueUserIds.length > 0) {
@@ -391,7 +380,7 @@ const getDaysAgoSkippingSunday = (start, days) => {
 
     return NextResponse.json({
       success: true,
-      stats, // <--- New Stats Object Sent to Frontend
+      stats,
       page,
       pageSize,
       total,

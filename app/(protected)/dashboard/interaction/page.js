@@ -263,7 +263,7 @@ const fetchInteractions = async () => {
                     <td className="py-4 px-4 align-top max-w-[280px]">
                       <div className="relative group/tooltip flex items-center">
                         <p className="text-gray-700 truncate pr-4 cursor-default">
-                          {item.details.replace(" - pending", "")}
+                          {item.details}
                         </p>
                         
                         {/* Tooltip Popover */}
