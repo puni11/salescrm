@@ -6,7 +6,7 @@ import { sendMail } from "@/lib/sendMail";
 import { ObjectId } from "mongodb";
 import welcomeHtml from "@/lib/emailHtml/welcomeHtml";
 import { getLeadAssignment } from "@/lib/leadAssignment";
-
+import { sendPushNotification } from "@/lib/sendPushNotification";
 
 const specialCounsellorId = "6a6888f23bccf7d435b4340d" || "6a688b423bccf7d435b43411";
 export async function GET(req) {
@@ -413,6 +413,8 @@ export async function POST(req) {
     // --- Database Operations ---
     const client = await clientPromise;
     const db = client.db("sales");
+    const internalDb = client.db("internal");
+
 const assignedTo = getLeadAssignment(course);
 
     const leadData = {
@@ -485,6 +487,34 @@ const assignedTo = getLeadAssignment(course);
       subject: `Thank You For Your Enquiry for ${course ? course : 'Digital Marekting'} Course`,
       html: welcomeHtml(trimmedName, course, leadId),
     });
+
+    if (assignedTo?._id) {
+      await sendPushNotification({
+        userId: assignedTo._id.toString(),
+        title: "🎯 New Lead Assigned",
+        body: `${trimmedName} has been assigned to you.`,
+        url: `https://sales.grras.com/leads`,
+      });
+    }
+    const admins = await internalDb
+      .collection("users")
+      .find({ role: "admin" })
+      .project({ _id: 1 })
+      .toArray();
+
+    await Promise.all(
+      admins.map((admin) =>
+        sendPushNotification({
+          userId: admin._id.toString(),
+          title: "Attention! New Lead Received",
+          body: `${trimmedName} submitted an enquiry for ${course}.`,
+          url: `https://sales.grras.com/leads`,
+        })
+      )
+    );
+
+
+
       } catch (error) {
         // Errors here won't crash the user's request since it already completed
         console.error("WhatsApp API Error [Background]:", error);

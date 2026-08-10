@@ -45,10 +45,15 @@ export default function GoogleReviews() {
     return null;
   }
 
+  async function hadlepush() {
+    await fetch("/api/notifications/test", {
+  method: "POST",
+});
+  }
   return (
     <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
       <h2 className="text-3xl font-bold text-gray-900 mb-8 text-center">What Our Clients Say</h2>
-
+      <button onClick={hadlepush}>Push</button>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {reviews.map((review) => (
           <div

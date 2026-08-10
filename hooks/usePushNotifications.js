@@ -18,26 +18,47 @@ export default function usePushNotifications() {
     }
   }
 
-  async function enableNotifications() {
-
-  if (!("Notification" in window)) return;
+ async function enableNotifications() {
+  if (!("Notification" in window)) return false;
 
   const permission = await Notification.requestPermission();
 
+  console.log(permission);
+
   if (permission !== "granted") {
-    return;
+    return false;
   }
 
   const registration = await navigator.serviceWorker.ready;
 
-  const subscription = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(
-      process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-    ),
+  let subscription = await registration.pushManager.getSubscription();
+
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(
+        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+      ),
+    });
+  }
+
+  await fetch("/api/notifications/subscribe", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      subscription,
+      browser:
+        navigator.userAgentData?.brands
+          ?.map((b) => b.brand)
+          .join(", ") || "Unknown",
+      platform: navigator.platform,
+      userAgent: navigator.userAgent,
+    }),
   });
 
-  console.log(subscription);
+  return true;
 }
   return {
     enableNotifications,
