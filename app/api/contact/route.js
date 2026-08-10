@@ -25,6 +25,7 @@ export async function GET(req) {
     const course = searchParams.get("course") || "";
     const sort = searchParams.get("sort");
     const fromDate = searchParams.get("fromDate");
+    const from = searchParams.get("from") || "All";
     const toDate = searchParams.get("toDate");
     const status = searchParams.get("status");
     const source = searchParams.get("source");
@@ -98,7 +99,18 @@ if (session.user.role !== "admin") {
         query.source = { $regex: `^${source}`, $options: "i" };
       }
     }
-
+if (from !== "All") {
+  if (from === "GRRAS") {
+    query.$or = [
+      { from: { $exists: false } },
+      { from: null },
+      { from: "" },
+      { from: "GRRAS" },
+    ];
+  } else {
+    query.from = from;
+  }
+}
     if (course) {
       query.course = course;
     }
@@ -199,6 +211,34 @@ if (session.user.role !== "admin") {
               }
             }
           ],
+          froms: [
+  {
+    $project: {
+      normalizedFrom: {
+        $cond: [
+          {
+            $or: [
+              { $eq: ["$from", null] },
+              { $eq: ["$from", ""] },
+              { $not: ["$from"] }
+            ]
+          },
+          "GRRAS",
+          "$from"
+        ]
+      }
+    }
+  },
+  {
+    $group: {
+      _id: "$normalizedFrom",
+      count: { $sum: 1 }
+    }
+  },
+  {
+    $sort: { count: -1 }
+  }
+],
           sources: [
             {
               $project: {
@@ -285,6 +325,10 @@ if (session.user.role !== "admin") {
       },
       sources: (rawAggregate.sources || []).map(s => ({ name: s._id, count: s.count })),
       courses: (rawAggregate.courses || []).map(c => ({ name: c._id, count: c.count })),
+      froms: (rawAggregate.froms || []).map((f) => ({
+    name: f._id,
+    count: f.count,
+  })),
     }
 
     return NextResponse.json({

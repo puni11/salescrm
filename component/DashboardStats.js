@@ -6,7 +6,8 @@ import {
   TrendingDown, 
   Minus, 
   BookOpen, 
-  Share2 
+  Share2, 
+  Building2
 } from "lucide-react";
 
 // --- Compact Trend Badge ---
@@ -45,7 +46,11 @@ const TrendBadge = ({ trend }) => {
 // --- Main Compact Stats Component ---
 export default function DashboardStats({ stats }) {
   if (!stats) return null;
+const grrasCount =
+  stats?.froms?.find((item) => item.name === "GRRAS")?.count || 0;
 
+const ap2vCount =
+  stats?.froms?.find((item) => item.name === "ap2v")?.count || 0;
   return (
     <div className="px-4 sm:px-8 py-2 space-y-4">
       
@@ -53,6 +58,7 @@ export default function DashboardStats({ stats }) {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         
         {/* Total Leads */}
+        <div className="grid grid-cols-2 gap-3 col-span-2">
         <div className="bg-white p-3.5 rounded-lg border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] transition-all duration-200">
           <div className="flex justify-between items-start mb-2">
             <div className="flex items-center gap-1.5">
@@ -80,6 +86,34 @@ export default function DashboardStats({ stats }) {
             {stats.newLeads?.count || 0}
           </h3>
           <TrendBadge trend={stats.newLeads?.trend} />
+        </div>
+        {/* GRRAS Leads */}
+<div className="bg-white p-3.5 rounded-lg border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] transition-all duration-200">
+  <div className="flex justify-between items-start mb-2">
+    <div className="flex items-center gap-1.5">
+      <Building2 size={14} className="text-gray-400" />
+      <h2 className="text-xs font-medium text-gray-600">GRRAS Leads</h2>
+    </div>
+  </div>
+
+  <h3 className="text-3xl font-semibold text-gray-900 tracking-tight mb-2">
+    {grrasCount}
+  </h3>
+</div>
+
+{/* AP2V Leads */}
+<div className="bg-white p-3.5 rounded-lg border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] transition-all duration-200">
+  <div className="flex justify-between items-start mb-2">
+    <div className="flex items-center gap-1.5">
+      <UserPlus size={14} className="text-gray-400" />
+      <h2 className="text-xs font-medium text-gray-600">AP2V Leads</h2>
+    </div>
+  </div>
+
+  <h3 className="text-3xl font-semibold text-gray-900 tracking-tight mb-2">
+    {ap2vCount}
+  </h3>
+</div>
         </div>
         <div className='col-span-3'>
             {stats.sources && stats.sources.length > 0 && (

@@ -53,6 +53,10 @@ const STATUSES = [
   "Converted", 
   "Call Back"
 ];
+const FROM_TYPES = [
+  "GRRAS",
+  "ap2v",
+];
 const SOURCE_TYPES = [
   "Direct",
   "Google",
@@ -74,6 +78,8 @@ export default function App() {
     const [counsellors, setCounsellors] = useState([]);
   const [selectedCounsellor, setSelectedCounsellor] = useState("");
   const [stats, setStats] = useState(null);
+  const [fromFilter, setFromFilter] = useState("All");
+
   // Modals & Drawers
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
@@ -99,7 +105,7 @@ export default function App() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, statusFilter, sourceFilter, profileFilter, dateFilter, courseFilter]);
+  }, [debouncedSearch, statusFilter, sourceFilter, profileFilter, dateFilter, fromFilter, courseFilter]);
   useEffect(() => {
     fetchCounsellors();
   }, []);
@@ -135,6 +141,7 @@ async function fetchCounsellors() {
           ...(courseFilter !== "All" && { course: courseFilter }),
         ...(dateFilter !== "All" && { dateFilter }),
         ...(sourceFilter !== "All" && { source: sourceFilter }),
+        ...(fromFilter !== "All" && { from: fromFilter }),
         ...(selectedCounsellor && { counsellorId: selectedCounsellor }),
       });
 
@@ -161,7 +168,7 @@ async function fetchCounsellors() {
   useEffect(() => {
     fetchLeads();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, debouncedSearch, statusFilter, sourceFilter, profileFilter, dateFilter, sort, fromDate, toDate, courseFilter, selectedCounsellor]);
+  }, [page, debouncedSearch, statusFilter, sourceFilter, fromFilter, profileFilter, dateFilter, sort, fromDate, toDate, courseFilter, selectedCounsellor]);
 
   // 2. Update Lead Status
   const updateLeadStatus = async (id, newStatus) => {
@@ -370,6 +377,7 @@ const formatDate = (value) => {
           <option value="All">All Courses</option>
           <option value="Digital Marketing">Digital Marketing</option>
           <option value="Azure + Azure DevOps">Azure + Azure DevOps</option>
+          <option value="OpenShift + Kubernetes">Openshift + Kubernetes</option>
         </select>
       </div>
 
@@ -422,6 +430,24 @@ const formatDate = (value) => {
           ))}
         </select>
       </div>
+      {/* From */}
+<div className={wrapperClasses}>
+  <MobileLabel text="Website" />
+
+  <select
+    value={fromFilter}
+    onChange={(e) => setFromFilter(e.target.value)}
+    className={inputClasses}
+  >
+    <option value="All">All Websites</option>
+
+    {FROM_TYPES.map((item) => (
+      <option key={item} value={item}>
+        {item}
+      </option>
+    ))}
+  </select>
+</div>  
     </>
   );
 };
