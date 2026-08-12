@@ -988,6 +988,9 @@ const formatDate = (value) => {
     <option value="Azure + Azure DevOps">
       Azure + Azure DevOps
     </option>
+    <option value="OpenShift + Kubernetes">
+      OpenShift + Kubernetes
+    </option>
   </select>
 </div>
                 <div className="space-y-1">
