@@ -7,7 +7,8 @@ import Link from "next/link";
 const courses = [
   "Digital Marketing",
   "Azure + Azure DevOps",
-  "Openshift + Kubernetes"
+  "Openshift + Kubernetes",
+  "ReadHat + CKA Affordable Certification"
 ];
 
 export default function FacebookFormMapping({ formId }) {
