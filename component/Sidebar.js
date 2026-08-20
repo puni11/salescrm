@@ -126,13 +126,13 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
 
         {/* Navigation */}
         <nav className="flex-1 py-6 space-y-1.5 overflow-y-auto overflow-x-hidden scrollbar-hide">
-            <NavItem 
+         {session?.user?.role === 'admin' && (   <NavItem 
             href="/dashboard" 
             icon={LayoutDashboardIcon} 
             label="Dashboard" 
             collapsed={collapsed} 
              active={pathname === "/dashboard"}
-          />
+          />)}
           <NavItem 
             href="/leads" 
             icon={User2} 
