@@ -8,7 +8,8 @@ import welcomeHtml from "@/lib/emailHtml/welcomeHtml";
 import { getLeadAssignment } from "@/lib/leadAssignment";
 import { sendPushNotification } from "@/lib/sendPushNotification";
 
-const specialCounsellorId = "6a6888f23bccf7d435b4340d" || "6a688b423bccf7d435b43411";
+const specialCounsellorId = "6a6888f23bccf7d435b4340d" || "6a688b423bccf7d435b43411"; 
+
 export async function GET(req) {
   try {
     const session = await getServerSession(authOptions);
@@ -43,6 +44,7 @@ if (session.user.role !== "admin") {
   if (
     session.user.id === "6a33c7bc3d699a93dd2287f2"
   ) {
+    // Existing counsellor — keep existing behavior
     query.$or = [
       {
         "assignedTo._id": new ObjectId(session.user.id),
@@ -54,7 +56,23 @@ if (session.user.role !== "admin") {
         },
       },
     ];
+  } else if (
+    session.user.id === "6a87f6bcdde10a504a995702"
+  ) {
+    // New counsellor — own leads + two specific courses
+    query.$or = [
+      {
+        "assignedTo._id": new ObjectId(session.user.id),
+      },
+      {
+        course: "Azure + Azure DevOps",
+      },
+      {
+        course: "ReadHat + CKA Affordable Certification",
+      },
+    ];
   } else {
+    // All other counsellors — only their assigned leads
     query["assignedTo._id"] = new ObjectId(session.user.id);
   }
 }
