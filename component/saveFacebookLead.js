@@ -65,12 +65,23 @@ export async function saveFacebookLead(lead, webhookData) {
   };
 
   // Check duplicate
-  const existingLead = await db2.collection("dm").findOne({
-    $or: [
-      { email: crmLead.email },
-      { phone: crmLead.phone },
-    ],
+const duplicateConditions = [];
+
+if (crmLead.email) {
+  duplicateConditions.push({ email: crmLead.email });
+}
+
+if (crmLead.phone) {
+  duplicateConditions.push({ phone: crmLead.phone });
+}
+
+let existingLead = null;
+
+if (duplicateConditions.length > 0) {
+  existingLead = await db2.collection("dm").findOne({
+    $or: duplicateConditions,
   });
+}
 
   if (existingLead) {
     await db2.collection("dm").updateOne(
