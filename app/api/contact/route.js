@@ -68,7 +68,7 @@ if (session.user.role !== "admin") {
         course: "Azure + Azure DevOps",
       },
       {
-        course: "ReadHat + CKA Affordable Certification",
+        course: "RedHat + CKA Affordable Certification",
       },
     ];
   } else {
