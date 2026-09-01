@@ -93,7 +93,7 @@ export default function FollowUpModal({ selectedLead, setFollowUpOpen }) {
     
     for (let i = 1; i <= daysInMonth; i++) {
       days.push(i);
-    }
+    } 
     return days;
   };
 
