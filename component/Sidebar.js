@@ -27,7 +27,8 @@ import {
   Settings2Icon,
   PhoneCall,
   LayoutDashboardIcon,
-  HistoryIcon
+  HistoryIcon,
+  BookCheck
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Image from "next/image";
@@ -140,20 +141,29 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             collapsed={collapsed} 
             active={pathname.includes("/leads")}
           />
-        {session?.user?.role === 'admin' && (   <NavItem 
-            href="/dashboard/interaction" 
+           <NavItem 
+            href={`${session?.user?.role === 'admin'? `/dashboard/interaction` : `/counsellor/${session?.user?.id}/interaction`}`}
             icon={HistoryIcon} 
             label="Lead Interaction" 
             collapsed={collapsed} 
-            active={pathname.includes("/dashboard/interaction")}
-          />)}
-          {session?.user?.role === 'admin' && (   <NavItem 
-            href="/call-logs" 
+            active={pathname.includes(`${session?.user?.role === 'admin'? `/dashboard/interaction` : `/counsellor/${session?.user?.id}/interaction`}`)}
+          />
+            <NavItem 
+            href={`${session?.user?.role === 'admin'? `/call-logs` : `/counsellor/${session?.user?.id}/call-logs`}`}
             icon={PhoneCall} 
             label="Call Activity" 
             collapsed={collapsed} 
-            active={pathname.includes("/call-logs")}
-          />)}
+            active={pathname.includes(`${session?.user?.role === 'admin'? `/call-logs` : `/counsellor/${session?.user?.id}/call-logs`}`)}
+          />
+           {session?.user?.role === 'admin' && (
+            <NavItem 
+              href="/course" 
+              icon={BookCheck} 
+              label="Course" 
+              collapsed={collapsed} 
+              active={pathname.includes("/course")}
+            />
+          )}
           {session?.user?.role === 'admin' && (
             <NavItem 
               href="/staff" 

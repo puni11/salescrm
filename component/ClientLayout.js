@@ -4,9 +4,17 @@ import { useEffect, useState } from "react";
 import Sidebar from "@/component/Sidebar";
 import usePushNotifications from "@/hooks/usePushNotifications";
 import NotificationPermissionPopup from "./NotificationPermissionPopup";
+import useDailyFollowups from "@/hooks/useDailyFollowups";
+import DailyFollowupScreen from "./DailyFollowupScreen";
 export default function ClientLayout({ session, children }) {
   const [collapsed, setCollapsed] = useState(false);
   const [showNotificationPopup, setShowNotificationPopup] = useState(false);
+    const {
+    followups,
+    showFollowups,
+    closeFollowups,
+  } = useDailyFollowups();
+  
 useEffect(() => {
   if (!("Notification" in window)) return;
 
@@ -49,6 +57,12 @@ const { enableNotifications } = usePushNotifications();
   }}
   onLater={() => setShowNotificationPopup(false)}
 />
+{showFollowups && (
+        <DailyFollowupScreen
+          followups={followups}
+          onClose={closeFollowups}
+        />
+      )}
     </div>
   );
 }

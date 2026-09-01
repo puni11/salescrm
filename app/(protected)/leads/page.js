@@ -1,57 +1,43 @@
 'use client'
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { 
-  Search, Filter, Plus, Upload, X, MessageSquare, 
-  Calendar, User, Phone, Mail, CheckCircle, 
-  AlertCircle, ArrowDownToLine, TargetIcon,
-  Activity, Globe, Info, Clock, ShieldCheck, MessageCircle,
-  Briefcase,
-  CalendarCheck,
-  BookAIcon,
-  Trash2Icon,
-  History,
+  Search, Filter, Plus,
+  EditIcon,
   
 } from "lucide-react";
 import toast from "react-hot-toast";
 import DashboardStats from "@/component/DashboardStats";
 import Link from "next/link";
+import useDebounce from "@/lib/useDebounce";
+import { apiRequest } from "@/lib/api";
+import { fetchCounsellors, fetchCourse, handleDelete } from "@/lib/helper/helper";
+import UnAuthorised from "@/component/Unauthorised";
+import LeadDetails from "@/component/LeadDetails";
+import LeadDelete from "@/component/DeleteLead";
+import LeadAdd from "@/component/LeadAdd";
+import WhatsAppModel from "@/component/WhatsApp";
+import MobileFilter from "@/component/MobileFilters";
+import FolloUpModal from "@/component/FolloUpModal";
+import OtherCourseModal from "@/component/OtherCourseModal";
+import ChangeCounsellor from "@/component/ChangeCounsellorModal";
 
-// --- CUSTOM HOOKS ---
-function useDebounce(value, delay) {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-  useEffect(() => {
-    const handler = setTimeout(() => setDebouncedValue(value), delay);
-    return () => clearTimeout(handler);
-  }, [value, delay]);
-  return debouncedValue;
-}
 
-// --- MOCK API REQUESTER ---
-const apiRequest = async (url, options = {}) => {
-  try {
-    const res = await fetch(url, {
-      headers: { 'Content-Type': 'application/json', ...options.headers },
-      ...options
-    });
-    if (res.status === 401 || res.status === 403) return { unauthorized: true };
-    const data = await res.json();
-    return { data, error: !res.ok };
-  } catch (err) {
-    console.error("API Error:", err);
-    return { error: true, message: err.message };
-  }
-};
 
 // --- CONSTANTS ---
 const PROFILES = ["student", "fresher", "professional", "business", "other", ];
 
-const STATUSES = [
-  "New Lead", 
-  "Interested", 
-  "Not Interested", 
-  "Invalid", 
-  "Converted", 
-  "Call Back"
+const STATUS_OPTIONS = [
+  "New Lead",
+  "Not Interested",
+  "Invalid",
+  "Call Back",
+  "Registered",
+];
+
+const INTERESTED_STATUSES = [
+  "Course Interested",
+  "Follow Up",
+  "Other Course Interested",
 ];
 const FROM_TYPES = [
   "GRRAS",
@@ -75,15 +61,19 @@ export default function App() {
   const [selectedLeadId, setSelectedLeadId] = useState(null);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [whatsappMessage, setWhatsappMessage] = useState("");
+  const [isStatusOpen, setIsStatusOpen] = useState(false);
+const [isInterestedOpen, setIsInterestedOpen] = useState(false);
     const [counsellors, setCounsellors] = useState([]);
   const [selectedCounsellor, setSelectedCounsellor] = useState("");
   const [stats, setStats] = useState(null);
   const [fromFilter, setFromFilter] = useState("All");
+const statusDropdownRef = useRef(null);
 
   // Modals & Drawers
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [courseFilter, setCourseFilter] = useState("All");
+  const [course, setCourse] = useState([])
   // Filters & Pagination
   const [sort, setSort] = useState("newest"); // newest | oldest | name
   const [fromDate, setFromDate] = useState("");
@@ -91,6 +81,9 @@ export default function App() {
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(0);
   const [search, setSearch] = useState("");
+  const [followUpOpen, setFollowUpOpen] = useState(false);
+  const [otherCourse, setOtherCourse] = useState(false);
+  const [changeCounsellorModal, setChangeCounsellorModal] =  useState(false)
   const debouncedSearch = useDebounce(search, 500);
   const [deleteModal, setDeleteModal] = useState({
   open: false,
@@ -107,22 +100,10 @@ export default function App() {
     setPage(1);
   }, [debouncedSearch, statusFilter, sourceFilter, profileFilter, dateFilter, fromFilter, courseFilter]);
   useEffect(() => {
-    fetchCounsellors();
+    fetchCounsellors(setCounsellors, setLoading);
+    fetchCourse(setCourse, setLoading)
   }, []);
-async function fetchCounsellors() {
-    try {
-      const res = await fetch("/api/cousellors");
-      const data = await res.json();
 
-      if (data.success) {
-        setCounsellors(data.data);
-      }
-    } catch (error) {
-      console.error("Error fetching counsellors:", error);
-    } finally {
-      setLoading(false);
-    }
-  }
   // --- API INTEGRATIONS ---
 
   // 1. Fetch Leads
@@ -208,7 +189,23 @@ async function fetchCounsellors() {
     }
     fetchLeads();
   };
+useEffect(() => {
+  const handleClickOutside = (event) => {
+    if (
+      statusDropdownRef.current &&
+      !statusDropdownRef.current.contains(event.target)
+    ) {
+      setIsStatusOpen(false);
+      setIsInterestedOpen(false);
+    }
+  };
 
+  document.addEventListener("mousedown", handleClickOutside);
+
+  return () => {
+    document.removeEventListener("mousedown", handleClickOutside);
+  };
+}, []);
   // 4. Add New Lead
   const handleAddLead = async (newLeadData) => {
     setLoading(true);
@@ -230,36 +227,7 @@ async function fetchCounsellors() {
       setLoading(false);
     }
   };
-const handleDelete = async (id) => {
-  try {
-    const res = await fetch(`/api/contact/${id}`, {
-      method: "DELETE",
-    });
 
-    const data = await res.json();
-
-    if (!res.ok || !data.success) {
-      throw new Error(data.message || "Failed to delete lead");
-    }
-
-    // Close modal
-    setDeleteModal({
-      open: false,
-      id: null,
-    });
-
-    // Close sidebar
-    setSelectedLeadId(null);
-
-    // Remove lead from state (no page reload needed)
-    setLeads((prev) => prev.filter((lead) => getLeadId(lead) !== id));
-
-    toast.success("Lead deleted successfully");
-  } catch (error) {
-    console.error(error);
-    toast.error(error.message || "Something went wrong");
-  }
-};
 
   // --- HELPERS ---
   const getLeadId = (lead) => typeof lead._id === 'object' && lead._id !== null ? lead._id.$oid : lead._id;
@@ -292,7 +260,7 @@ const formatDate = (value) => {
   // Reusable Filter Render Logic (used in both desktop bar and mobile bottom sheet)
  const renderFilters = (isMobile = false) => {
   // Extract repeated styles to keep the JSX clean
-  const inputClasses = "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition-all focus:border-transparent focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500";
+  const inputClasses = "w-full rounded-sm border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition-all focus:border-transparent focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500";
   const wrapperClasses = isMobile ? "flex flex-col gap-1.5 mt-2 first:mt-0" : "flex items-center gap-2";
   const labelClasses = "text-xs font-bold uppercase tracking-wide text-gray-500";
 
@@ -353,18 +321,134 @@ const formatDate = (value) => {
         </select>
       </div>
 
-      {/* Status */}
-      <div className={wrapperClasses}>
-        <MobileLabel text="Status" />
-        <select 
-          value={statusFilter} 
-          onChange={(e) => setStatusFilter(e.target.value)} 
-          className={inputClasses}
+<div
+ ref={statusDropdownRef}
+className={`${wrapperClasses} relative`}>
+  <MobileLabel text="Status" />
+
+  <div className="relative">
+    {/* Main dropdown button */}
+    <button
+      type="button"
+      onClick={() => setIsStatusOpen(!isStatusOpen)}
+      className={`${inputClasses} w-full flex items-center justify-between text-left`}
+    >
+      <span>{statusFilter || "All Statuses"}</span>
+
+      <svg
+        className={`w-4 h-4 transition-transform ${
+          isStatusOpen ? "rotate-180" : ""
+        }`}
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M19 9l-7 7-7-7"
+        />
+      </svg>
+    </button>
+
+    {isStatusOpen && (
+      <div className="absolute z-50 mt-1 w-full min-w-[220px] rounded-lg border border-gray-200 bg-white shadow-lg">
+
+        {/* All */}
+        <button
+          type="button"
+          onClick={() => {
+            setStatusFilter("All");
+            setIsStatusOpen(false);
+            setIsInterestedOpen(false);
+          }}
+          className={`w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 ${
+            statusFilter === "All"
+              ? "bg-gray-50 font-medium"
+              : ""
+          }`}
         >
-          <option value="All">All Statuses</option>
-          {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+          All Statuses
+        </button>
+
+        {/* Normal statuses */}
+        {STATUS_OPTIONS.map((status) => (
+          <button
+            key={status}
+            type="button"
+            onClick={() => {
+              setStatusFilter(status);
+              setIsStatusOpen(false);
+              setIsInterestedOpen(false);
+            }}
+            className={`w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 ${
+              statusFilter === status
+                ? "bg-gray-50 font-medium"
+                : ""
+            }`}
+          >
+            {status}
+          </button>
+        ))}
+
+        {/* Interested */}
+        <div
+          className="relative"
+          onMouseEnter={() => setIsInterestedOpen(true)}
+          onMouseLeave={() => setIsInterestedOpen(false)}
+        >
+          <button
+            type="button"
+            className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 flex items-center justify-between"
+          >
+            <span>Interested</span>
+
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          </button>
+
+          {/* Interested submenu */}
+          {isInterestedOpen && (
+            <div className="absolute left-50 -top-20 ml-1 w-[220px] rounded-lg border border-gray-200 bg-white shadow-lg">
+
+              {INTERESTED_STATUSES.map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => {
+                    setStatusFilter(status);
+                    setIsStatusOpen(false);
+                    setIsInterestedOpen(false);
+                  }}
+                  className={`w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 first:rounded-t-lg last:rounded-b-lg ${
+                    statusFilter === status
+                      ? "bg-gray-50 font-medium"
+                      : ""
+                  }`}
+                >
+                  {status}
+                </button>
+              ))}
+
+            </div>
+          )}
+        </div>
       </div>
+    )}
+  </div>
+</div>
 
       {/* Course */}
       <div className={wrapperClasses}>
@@ -375,10 +459,11 @@ const formatDate = (value) => {
           className={inputClasses}
         >
           <option value="All">All Courses</option>
-          <option value="Digital Marketing">Digital Marketing</option>
-          <option value="Azure + Azure DevOps">Azure + Azure DevOps</option>
-          <option value="OpenShift + Kubernetes">Openshift + Kubernetes</option>
-          <option value="OpenShift AI Webinar">OpenShift AI Webinar</option>
+          {course.map((item) => (
+    <option key={item._id} value={item.name}>
+      {item.name}
+    </option>
+  ))}
         </select>
       </div>
 
@@ -457,13 +542,7 @@ const formatDate = (value) => {
 
   if (unauthorized) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <AlertCircle className="mx-auto h-12 w-12 text-red-500 mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900">Access Denied</h1>
-          <p className="text-gray-500 mt-2">You don't have permission to view this page.</p>
-        </div>
-      </div>
+     <UnAuthorised />
     );
   }
 
@@ -476,17 +555,8 @@ const formatDate = (value) => {
           <h1 className="text-2xl font-bold text-gray-900">Leads Management</h1>
           <p className="text-sm text-gray-500 mt-1">Manage and track your platform inquiries.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => setIsAddLeadOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#05335c] text-white rounded-lg cursor-pointer hover:bg-[#103758] font-medium transition-colors shadow-sm"
-          >
-            <Plus size={18} />
-            Add Lead
-          </button>
-        </div>
-      </header>
- <div className="relative flex-grow w-full md:w-auto md:max-w-md flex items-center gap-2 px-8 py-4">
+        <div className="flex flex-col sm:flex-row items-center">
+         <div className="relative flex-grow w-full md:w-auto md:max-w-md flex items-center gap-2 px-8 py-4">
           <div className="relative flex-grow">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
@@ -504,6 +574,18 @@ const formatDate = (value) => {
             <Filter size={20} />
           </button>
         </div>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setIsAddLeadOpen(true)}
+            className="flex items-center  gap-2 px-4 py-2 bg-[#05335c] text-white rounded-lg cursor-pointer hover:bg-[#103758] font-medium transition-colors shadow-sm"
+          >
+            <Plus size={18} />
+            Add Lead
+          </button>
+        </div>
+        </div>
+      </header>
+
        {stats && <DashboardStats stats={stats} />}
       {/* Filters Bar (Desktop & Search Combo) */}
       <div className="bg-white px-4 sm:px-8 py-4 border-b border-gray-200  gap-4 items-center shadow-sm z-10">
@@ -524,11 +606,11 @@ const formatDate = (value) => {
               <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200">
                 <tr>
                   <th className="px-6 py-4">Name & Contact</th>
-                  <th className="px-6 py-4">Course & Level</th>
-                  <th className="px-6 py-4">Source & Campaign</th>
+                  <th className="px-6 py-4">Course & Source</th>
+                   <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4">Assigned To</th>
                   <th className="px-6 py-4">Created Date</th>
                   <th className="px-6 py-4">Last Comment</th>
-                  <th className="px-6 py-4">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -588,12 +670,20 @@ const formatDate = (value) => {
                         <td className="px-6 py-4">
                           <div className="font-medium text-gray-900 capitalize">{lead.course || 'N/A'}</div>
                           
-                            <div className="text-emerald-600 text-xs mt-1 flex items-center gap-1">{lead.level || lead.profile}</div>
+                            <div className="text-emerald-600 text-xs mt-1 flex items-center gap-1">{lead.source ? lead.source.charAt(0).toUpperCase() + lead.source.slice(1) : 'Direct'}</div>
                          
                         </td>
+                          <td className="px-6 py-4">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(lead.status || "New Lead")}`}>
+                            {lead.status || "New Lead"}
+                          </span>
+                        </td>
                         <td className="px-6 py-4">
-                          <div className="text-gray-900">{lead.source ? lead.source.charAt(0).toUpperCase() + lead.source.slice(1) : 'Direct'}</div>
-                          <div className="text-gray-500 text-xs mt-1">{lead.medium || 'None'} {lead.campaign && `- ${lead.campaign}`}</div>
+                          <div className="text-gray-900">{lead.assignedTo?.name ? lead.assignedTo.name : "No Counsellor"}</div>
+                          <div onClick={() => {
+    setChangeCounsellorModal(true);
+    setSelectedLeadId(leadId);
+  }} className="text-gray-500 text-xs mt-1 flex items-center gap-1"><EditIcon size={12} /> Change</div>
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-gray-900">{parsedDate.toLocaleDateString()}</div>
@@ -627,11 +717,7 @@ const formatDate = (value) => {
     <div className="text-gray-500">No comments</div>
   )}
 </td>
-                        <td className="px-6 py-4">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(lead.status || "New Lead")}`}>
-                            {lead.status || "New Lead"}
-                          </span>
-                        </td>
+                      
                       </tr>
                     );
                   })
@@ -669,515 +755,58 @@ const formatDate = (value) => {
 
       {/* --- SIDEBAR (Lead Details) --- */}
       {selectedLead && (
-        <>
-          <div 
-            className="fixed inset-0 bg-gray-900/20 backdrop-blur-sm z-40 transition-opacity"
-            onClick={() => setSelectedLeadId(null)}
-          />
-          <div className="fixed inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl z-50 transform transition-transform flex flex-col border-l border-gray-200">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50">
-            <div className="flex gap-2">              <h2 className="text-xl font-semibold text-gray-900">Lead Details</h2>
-            
-            <Link href={`/leads/timeline/${selectedLead._id}`} className="flex gap-1 bg-red-100 items-center text-xs px-2 rounded-md text-red-600">
-                    <History size={16} className=" text-red-400" />
-                    See Lead Timeline
-                  </Link>
-            </div>
-              <div>
-              <button 
-                onClick={() => setSelectedLeadId(null)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-              >
-                
-                <X size={20} />
-              </button>
-              <button
-  onClick={() =>
-    setDeleteModal({
-      open: true,
-      id: selectedLead._id,
-    })
-  }
-  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
->
-  <Trash2Icon size={20} />
-</button>
-</div>
-
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6 space-y-8">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900">{selectedLead.name}</h3>
-                
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center text-sm text-gray-600">
-                    <Mail size={16} className="mr-3 text-gray-400" />
-                    <a href={`mailto:${selectedLead.email}`} className="hover:text-blue-600">{selectedLead.email}</a>
-                  </div>
-                  <div className="flex items-center text-sm text-gray-600">
-                    <Phone size={16} className="mr-3 text-gray-400" />
-                    <a href={`tel:${selectedLead.phone}`} className="hover:text-blue-600">{selectedLead.phone}</a>
-                  </div>
-                  {selectedLead.company && <div className="flex items-center text-sm text-gray-600">
-                    <Briefcase size={16} className="mr-3 text-gray-400" />
-                    <span>Company - {selectedLead.company || "N/A"}</span>
-                  </div>}
-                  {selectedLead.city && <div className="flex items-center text-sm text-gray-600">
-                    <Globe size={16} className="mr-3 text-gray-400" />
-                    <span> {selectedLead.city || "N/A"}</span>
-                  </div>}
-                  {selectedLead.prev_course && <div className="flex items-center text-sm text-gray-600">
-                    <BookAIcon size={16} className="mr-3 text-gray-400" />
-                    <span>Previous Course: {selectedLead.prev_course || "N/A"}</span>
-                  </div>}
-                   {selectedLead.prev_admission && <div className="flex items-center text-sm text-gray-600">
-                    <CalendarCheck size={16} className="mr-3 text-gray-400" />
-                    <span>Previous Admission  Date: {formatDate(selectedLead.prev_admission)}</span>
-                  </div>}
-                 
-                  <div className="flex items-center text-sm text-gray-600">
-                    <Calendar size={16} className="mr-3 text-gray-400" />
-                    <span>Created Date: <span className="font-medium text-gray-700">{selectedLead.createdAt && new Date(selectedLead.createdAt).toLocaleString()}</span></span>
-                  </div>
-                  {selectedLead.updatedAt && (
-                    <div className="flex items-center text-sm text-gray-600">
-                      <Clock size={16} className="mr-3 text-gray-400" />
-                      <span>Last Updated: <span className="font-medium text-gray-700">{new Date(selectedLead.updatedAt).toLocaleString()}</span></span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              
-              <hr className="border-gray-100" />
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex items-center text-sm text-gray-600">
-                  <Globe size={16} className="mr-3 text-gray-400" />
-                  <span className="flex flex-col">
-                    <span className="text-xs text-gray-400 uppercase">Source</span>
-                    <span className="font-medium text-gray-900">
-                      {selectedLead.source ? selectedLead.source.charAt(0).toUpperCase() + selectedLead.source.slice(1) : "Direct"}
-                    </span>
-                  </span>
-                </div>
-
-                <div className="flex items-center text-sm text-gray-600">
-                  <Activity size={16} className="mr-3 text-gray-400" />
-                  <span className="flex flex-col">
-                    <span className="text-xs text-gray-400 uppercase">Medium</span>
-                    <span className="font-medium text-gray-900">
-                      {selectedLead.medium ? selectedLead.medium.charAt(0).toUpperCase() + selectedLead.medium.slice(1) : "None"}
-                    </span>
-                  </span>
-                </div>
-
-                <div className="flex items-center text-sm text-gray-600">
-                  <TargetIcon size={16} className="mr-3 text-gray-400" />
-                  <span className="flex flex-col">
-                    <span className="text-xs text-gray-400 uppercase">Campaign</span>
-                    <span className="font-medium text-gray-900">
-                      {selectedLead.campaign ? selectedLead.campaign.charAt(0).toUpperCase() + selectedLead.campaign.slice(1) : "N/A"}
-                    </span>
-                  </span>
-                </div>
-
-                <div className="flex items-center text-sm text-gray-600">
-                  <Info size={16} className="mr-3 text-gray-400" />
-                  <span className="flex flex-col">
-                    <span className="text-xs text-gray-400 uppercase">Search Term</span>
-                    <span className="font-medium text-gray-900">
-                      {selectedLead.term || "N/A"}
-                    </span>
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-2">Lead Status</label>
-                <select 
-                  value={selectedLead.status || "New Lead"}
-                  onChange={(e) => updateLeadStatus(getLeadId(selectedLead), e.target.value)}
-                  className={`w-full p-3 rounded-lg border-2 appearance-none outline-none font-medium text-sm focus:border-blue-500 transition-colors cursor-pointer ${
-                    selectedLead.status === "Converted" ? "border-emerald-200 bg-emerald-50 text-emerald-800" :
-                    selectedLead.status === "Invalid" ? "border-red-200 bg-red-50 text-red-800" :
-                    "border-gray-200 bg-white text-gray-800"
-                  }`}
-                >
-                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-
-              <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 space-y-3">
-                <div>
-                  <div className="text-xs font-semibold text-blue-600 uppercase tracking-wider flex items-center gap-1 mb-1"><User size={14}/> Profile Type</div>
-                  <div className="text-sm font-medium text-gray-900 capitalize">{selectedLead.profile || 'Unknown'}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-blue-600 uppercase tracking-wider flex items-center gap-1 mb-1"><ShieldCheck size={14}/> Marketing Consent</div>
-                  <div className="text-sm font-medium text-gray-900">{selectedLead.consent ? "Granted" : "Not Provided"}</div>
-                </div>
-                {(selectedLead.ip || selectedLead.userAgent) && (
-                  <div className="mt-4 pt-3 border-t border-blue-100/50">
-                    <div className="text-xs text-blue-500 font-medium mb-2">System Tracking Info</div>
-                    {selectedLead.ip && <div className="text-xs text-gray-600 break-all"><span className="font-semibold">IP:</span> {selectedLead.ip}</div>}
-                    {selectedLead.userAgent && <div className="text-xs text-gray-600 mt-1"><span className="font-semibold">User Agent:</span> {selectedLead.userAgent}</div>}
-                    {selectedLead.gclid && <div className="text-xs text-gray-600 mt-1 break-all"><span className="font-semibold">GCLID:</span> {selectedLead.gclid}</div>}
-                  </div>
-                )}
-              </div>
-
-              <hr className="border-gray-100" />
-
-              <div>
-                <h4 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <MessageSquare size={16} /> Internal Comments
-                </h4>
-                
-                <div className="space-y-4 mb-6 max-h-60 overflow-y-auto pr-2">
-                  {(!selectedLead.comments || selectedLead.comments.length === 0) ? (
-                    <p className="text-sm text-gray-500 italic">No comments yet.</p>
-                  ) : (
-                    selectedLead.comments.map((c, i) => (
-                      <div key={c.id || i} className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm">
-                        <p className="text-gray-800 mb-1">{c.text}</p>
-                        <p className="text-xs text-gray-400 font-medium">
-                          {new Date(c.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                        </p>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <form 
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const input = e.target.elements.comment;
-                    addComment(getLeadId(selectedLead), input.value);
-                    input.value = "";
-                  }}
-                  className="flex gap-2"
-                >
-                  <input 
-                    name="comment"
-                    type="text" 
-                    placeholder="Add a note..." 
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                    autoComplete="off"
-                  />
-                  <button type="submit" className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors">
-                    Add
-                  </button>
-                </form>
-  
-              </div>
-              <div className="flex items-center justify-between text-sm text-gray-600">
-                <div className="flex items-center">
-                  <Phone size={16} className="mr-3 text-gray-400" />
-                  <a href={`tel:${selectedLead.phone}`} className="hover:text-blue-600">{selectedLead.phone}</a>
-                </div>
-                <button 
-                  onClick={() => setIsWhatsAppModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1 bg-green-50 text-green-700 hover:bg-green-100 rounded-md text-xs font-medium transition-colors border border-green-200"
-                >
-                  <MessageCircle size={14} />
-                  WhatsApp
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
+        <LeadDetails  selectedLead={selectedLead}
+  setSelectedLeadId={setSelectedLeadId}
+  setDeleteModal={setDeleteModal}
+  getLeadId={getLeadId}
+  updateLeadStatus={updateLeadStatus}
+  addComment={addComment}
+  setIsWhatsAppModalOpen={setIsWhatsAppModalOpen}
+  formatDate={formatDate}
+  setFollowUpOpen={setFollowUpOpen}
+  setOtherCourse = {setOtherCourse}
+  course={course}
+  STATUSES={STATUS_OPTIONS} />
       )}
 {deleteModal.open && (
-  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-    <div className="w-[90%] max-w-md rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
-      <div className="flex justify-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
-          <Trash2Icon className="h-8 w-8 text-red-600" />
-        </div>
-      </div>
-
-      <h3 className="mt-5 text-center text-xl font-bold text-gray-900">
-        Delete Lead?
-      </h3>
-
-      <p className="mt-2 text-center text-gray-500">
-        Are you sure you want to delete this lead?
-        <br />
-        <span className="font-semibold text-red-600">
-          This action cannot be undone.
-        </span>
-      </p>
-
-      <div className="mt-6 flex gap-3">
-        <button
-          onClick={() =>
-            setDeleteModal({
-              open: false,
-              id: null,
-            })
-          }
-          className="flex-1 rounded-lg border border-gray-300 py-3 font-medium text-gray-700 transition hover:bg-gray-100"
-        >
-          Cancel
-        </button>
-
-        <button
-          onClick={async () => {
-            await handleDelete(deleteModal.id);
-
-            setDeleteModal({
-              open: false,
-              id: null,
-            });
-          }}
-          className="flex-1 rounded-lg bg-red-600 py-3 font-medium text-white transition hover:bg-red-700"
-        >
-          Delete
-        </button>
-      </div>
-    </div>
-  </div>
+  <LeadDelete
+    deleteModal={deleteModal}
+    setDeleteModal={setDeleteModal}
+    handleDelete={handleDelete}
+    setSelectedLeadId={setSelectedLeadId}
+    setLeads={setLeads}
+    toast={toast}
+    getLeadId={getLeadId}
+  />
 )}
       {/* --- ADD LEAD MODAL --- */}
       {isAddLeadOpen && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex justify-between items-center p-6 border-b border-gray-100">
-              <h2 className="text-xl font-bold text-gray-900">Add New Lead</h2>
-              <button onClick={() => setIsAddLeadOpen(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={24} />
-              </button>
-            </div>
-            
-            <div className="p-6 overflow-y-auto flex-1">
-              <form 
-                id="addLeadForm"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const formData = new FormData(e.target);
-                  const data = Object.fromEntries(formData.entries());
-                  handleAddLead(data);
-                }}
-                className="grid grid-cols-1 md:grid-cols-2 gap-6"
-              >
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700">Full Name *</label>
-                  <input required name="name" type="text" className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700">Email *</label>
-                  <input name="email" type="email" className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700">Phone Number *</label>
-                  <input required name="phone" type="tel" className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
-                </div>
-                <div className="space-y-1">
-  <label className="text-sm font-medium text-gray-700">
-    Course *
-  </label>
-  <select
-    required
-    name="course"
-    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-  >
-    <option value="">Select Course...</option>
-    <option value="Digital Marketing">
-      Digital Marketing
-    </option>
-    <option value="Azure + Azure DevOps">
-      Azure + Azure DevOps
-    </option>
-    <option value="OpenShift + Kubernetes">
-      OpenShift + Kubernetes
-    </option>
-
-    <option value="OpenShift AI Webinar">
-      OpenShift AI Webinar
-    </option>
-  </select>
-</div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700">Profile Type *</label>
-                  <select required name="profile" className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                    <option value="">Select...</option>
-                    {PROFILES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
-                  </select>
-                </div>
-
-                <div className="space-y-1 md:col-span-2 flex items-center gap-3">
-                  <input type="checkbox" id="consent" name="consent" className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500" />
-                  <label htmlFor="consent" className="text-sm font-medium text-gray-700">User has provided explicit consent to be contacted.</label>
-                </div>
-
-                <div className="space-y-1 md:col-span-2 pt-4 border-t border-gray-100">
-                  <p className="text-xs text-gray-500 uppercase font-semibold mb-3">Optional Tracking Parameters</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <input name="source" type="text" placeholder="Source (e.g. Google)" className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-                    <input name="medium" type="text" placeholder="Medium (e.g. CPC)" className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-                    <input name="campaign" type="text" placeholder="Campaign Name" className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-                    <input name="term" type="text" placeholder="Search Term / Keyword" className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-                  </div>
-                </div>
-
-              </form>
-            </div>
-            
-            <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
-              <button onClick={() => setIsAddLeadOpen(false)} className="px-5 py-2 text-gray-700 font-medium hover:bg-gray-200 rounded-lg transition-colors">
-                Cancel
-              </button>
-              <button form="addLeadForm" type="submit" className="px-5 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
-                Save Lead
-              </button>
-            </div>
-          </div>
-        </div>
+       <LeadAdd
+    setIsAddLeadOpen={setIsAddLeadOpen}
+    handleAddLead={handleAddLead}
+    PROFILES={PROFILES}
+    course={course}
+  />
       )}
 
       {/* --- WHATSAPP MODAL --- */}
       {isWhatsAppModalOpen && selectedLead && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <MessageCircle className="text-green-500" /> 
-                Message {selectedLead.name}
-              </h2>
-              <button onClick={() => setIsWhatsAppModalOpen(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={24} />
-              </button>
-            </div>
-            
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-
-                try {
-                  let cleanPhone = selectedLead.phone.replace(/\D/g, "");
-
-                  if (cleanPhone.length === 10) {
-                    cleanPhone = `91${cleanPhone}`;
-                  }
-
-                  const response = await fetch("/api/whatsapp-log", {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                      leadId: selectedLead._id,
-                      phone: cleanPhone,
-                      message: whatsappMessage,
-                      sentAt: new Date(),
-                    }),
-                  });
-
-                  const data = await response.json();
-
-                  if (!response.ok) {
-                    throw new Error(data.message || "Failed to save WhatsApp log");
-                  }
-
-                  const encodedMessage = encodeURIComponent(whatsappMessage);
-
-                  const whatsappUrl = `https://api.whatsapp.com/send/?phone=${cleanPhone}&text=${encodedMessage}&type=phone_number&app_absent=0`;
-
-                  window.open(whatsappUrl, "_blank");
-
-                  setIsWhatsAppModalOpen(false);
-                  setWhatsappMessage("");
-
-                  toast.success("WhatsApp activity logged");
-                } catch (error) {
-                  console.error(error);
-                  toast.error(error.message);
-                }
-              }}
-            >
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Custom Message</label>
-                <textarea 
-                  required
-                  value={whatsappMessage}
-                  onChange={(e) => setWhatsappMessage(e.target.value)}
-                  rows={5}
-                  placeholder="Type your message here..."
-                  className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 outline-none resize-none text-sm"
-                />
-              </div>
-              
-              <div className="flex justify-end gap-3 border-t border-gray-100 pt-4 mt-2">
-                <button 
-                  type="button" 
-                  onClick={() => setIsWhatsAppModalOpen(false)} 
-                  className="px-5 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit" 
-                  className="px-5 py-2 bg-green-500 text-white font-medium rounded-lg hover:bg-green-600 transition-colors shadow-sm flex items-center gap-2"
-                >
-                  <MessageCircle size={18} />
-                  Send via WhatsApp
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* --- MOBILE FILTERS DRAWER (Bottom Sheet) --- */}
-      <div
-        className={`fixed inset-0 z-[70] md:hidden transition-opacity duration-300 ${
-          isMobileFiltersOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-        }`}
-      >
-        {/* Backdrop */}
-        <div
-          className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"
-          onClick={() => setIsMobileFiltersOpen(false)}
-        />
-
-        {/* Sliding Panel */}
-        <div
-          className={`absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl transition-transform duration-300 transform p-5 pb-8 ${
-            isMobileFiltersOpen ? "translate-y-0" : "translate-y-full"
-          }`}
-        >
-          <div className="flex justify-between items-center mb-5 border-b border-gray-100 pb-4">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <Filter size={20} className="text-blue-600"/>
-              Filters & Sorting
-            </h2>
-            <button
-              onClick={() => setIsMobileFiltersOpen(false)}
-              className="p-2 text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-full transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          {/* Filter Content */}
-          <div className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto px-1">
-            {renderFilters(true)}
-          </div>
-
-          {/* Action Button */}
-          <div className="mt-6 pt-4 border-t border-gray-100">
-            <button
-              onClick={() => setIsMobileFiltersOpen(false)}
-              className="w-full py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors shadow-sm flex items-center justify-center gap-2"
-            >
-              <CheckCircle size={18} />
-              Apply Filters
-            </button>
-          </div>
-        </div>
-      </div>
-
+       <WhatsAppModel
+    selectedLead={selectedLead}
+    setIsWhatsAppModalOpen={setIsWhatsAppModalOpen}
+    whatsappMessage={whatsappMessage}
+    setWhatsappMessage={setWhatsappMessage}
+    toast={toast}
+  />
+      )} 
+      {followUpOpen && <FolloUpModal selectedLead={selectedLeadId} setFollowUpOpen={setFollowUpOpen} />}
+      {otherCourse &&  <OtherCourseModal selectedLead={selectedLeadId} setOtherCourse={setOtherCourse} course={course} />}
+      {changeCounsellorModal &&  <ChangeCounsellor selectedLead={selectedLeadId} counsellor={counsellors} setChangeCounsellorModal={setChangeCounsellorModal} />}
+      <MobileFilter
+  isMobileFiltersOpen={isMobileFiltersOpen}
+  setIsMobileFiltersOpen={setIsMobileFiltersOpen}
+  renderFilters={renderFilters}
+/>
     </div>
   );
 }

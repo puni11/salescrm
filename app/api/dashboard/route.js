@@ -13,12 +13,13 @@ export async function GET(req) {
     const engagement = salesDB.collection("engagement");
     const whatsapp = salesDB.collection("whatsapp_logs");
     const users = internalDB.collection("users");
-
+const followUp = salesDB.collection("followUp");
     const now = new Date();
 
     const today = new Date();
     today.setHours(0,0,0,0);
-
+const tomorrow = new Date(today);
+tomorrow.setDate(tomorrow.getDate() + 1);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
     const [
@@ -42,7 +43,8 @@ export async function GET(req) {
       recentWhatsapp,
       recentComments,
       topEngagedLeads,
-      conversion
+      conversion,
+      todayFollowUps
     ] = await Promise.all([
 
       dm.countDocuments(),
@@ -166,7 +168,13 @@ export async function GET(req) {
         dm.countDocuments({
           status:{$in:["Admission Done","Converted","Closed Won"]}
         })
-      ])
+      ]),
+      followUp.countDocuments({
+  followUpDate: {
+    $gte: today,
+    $lt: tomorrow,
+  },
+}),
     ]);
 
     const months=["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -238,6 +246,7 @@ for (let i = 1; i <= 12; i++) {
         totalCalls,
         todayCalls,
         totalWhatsapp,
+        todayFollowUps,
         activeCounsellors,
         totalEngagementScore:engagementScoreAgg[0]?.score||0,
         averageLeadScore:Math.round(avgLeadScoreAgg[0]?.avg||0),

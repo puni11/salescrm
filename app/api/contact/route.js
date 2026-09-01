@@ -71,7 +71,18 @@ if (session.user.role !== "admin") {
     }
 
     // Filters
-    if (status) query.status = status;
+    if (status) {
+  if (status === "Course Interested") {
+    query.status = {
+      $in: [
+        "Interested",
+        "Course Interested"
+      ]
+    };
+  } else {
+    query.status = status;
+  }
+}
     if (campaign) query.campaign = campaign;
     if (counsellorId) query["assignedTo._id"] = new ObjectId(counsellorId);
 
@@ -275,17 +286,80 @@ if (from !== "All") {
               }
             },
             { $sort: { count: -1 } }
-          ]
+          ],
+       statuses: [
+  {
+    $project: {
+      normalizedStatus: {
+        $switch: {
+          branches: [
+            {
+              case: {
+                $in: [
+                  "$status",
+                  ["Interested", "Course Interested"]
+                ]
+              },
+              then: "Interested"
+            }
+          ],
+          default: {
+            $cond: [
+              {
+                $or: [
+                  { $eq: ["$status", null] },
+                  { $eq: ["$status", ""] }
+                ]
+              },
+              "Unknown",
+              "$status"
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    $group: {
+      _id: "$normalizedStatus",
+      count: { $sum: 1 }
+    }
+  },
+  {
+    $sort: { count: -1 }
+  }
+]
         }
       }
     ];
 
     // Execute queries in parallel for maximum performance
-    const [contactsRaw, total, statsRaw] = await Promise.all([
-      db.collection("dm").find(query).sort(sortOption).skip(skip).limit(limit).toArray(),
-      db.collection("dm").countDocuments(query),
-      db.collection("dm").aggregate(statsPipeline).toArray()
-    ]);
+    const startOfToday = new Date();
+startOfToday.setHours(0, 0, 0, 0);
+
+const endOfToday = new Date();
+endOfToday.setHours(23, 59, 59, 999);
+    const [contactsRaw, total, statsRaw, todayFollowUps] = await Promise.all([
+  db.collection("dm")
+    .find(query)
+    .sort(sortOption)
+    .skip(skip)
+    .limit(limit)
+    .toArray(),
+
+  db.collection("dm").countDocuments(query),
+
+  db.collection("dm")
+    .aggregate(statsPipeline)
+    .toArray(),
+
+  db.collection("followUp").countDocuments({
+    followUpDate: {
+      $gte: startOfToday,
+      $lte: endOfToday,
+    },
+  }),
+]);
 
     // Format Data
     const contacts = contactsRaw.map((item) => ({
@@ -303,7 +377,11 @@ if (from !== "All") {
     // Format Stats
     const rawAggregate = statsRaw[0] || {};
     const overallStats = rawAggregate.overall?.[0] || {};
-    
+    const statusStats = {};
+
+for (const item of rawAggregate.statuses || []) {
+  statusStats[item._id] = item.count;
+}
     // Trend Calculation helper
     const calcTrend = (cur, prev) => {
       const current = cur || 0;
@@ -323,6 +401,8 @@ if (from !== "All") {
         count: overallStats.newLeads || 0,
         trend: calcTrend(overallStats.c7_newLeads, overallStats.p7_newLeads)
       },
+        statuses: statusStats,
+        todayFollowUps,
       sources: (rawAggregate.sources || []).map(s => ({ name: s._id, count: s.count })),
       courses: (rawAggregate.courses || []).map(c => ({ name: c._id, count: c.count })),
       froms: (rawAggregate.froms || []).map((f) => ({
@@ -415,7 +495,7 @@ export async function POST(req) {
     const db = client.db("sales");
     const internalDb = client.db("internal");
 
-const assignedTo = getLeadAssignment(course);
+const assignedTo = await getLeadAssignment(db, internalDb, course);
 
     const leadData = {
       name: trimmedName,

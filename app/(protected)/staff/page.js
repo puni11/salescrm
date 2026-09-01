@@ -30,7 +30,10 @@ export default function UsersPage() {
   const [userId, setUserId] = useState("")
   const [field, setField] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
-
+const [counsellorStatus, setCounsellorStatus] = useState("regular")
+const [selectedCourses, setSelectedCourses] = useState([])
+const [courses, setCourses] = useState([])
+const [coursesLoading, setCoursesLoading] = useState(false)
   useEffect(() => {
     fetchUsers()
   }, [])
@@ -46,7 +49,35 @@ export default function UsersPage() {
       setLoading(false)
     }
   }
+const fetchCourses = async () => {
+  try {
+    setCoursesLoading(true)
 
+    const res = await fetch("/api/course")
+
+    const data = await res.json()
+
+    if (res.ok) {
+      setCourses(data.courses || data || [])
+    } else {
+      toast.error("Failed to load courses")
+    }
+  } catch (error) {
+    console.error(error)
+    toast.error("Failed to load courses")
+  } finally {
+    setCoursesLoading(false)
+  }
+}
+const toggleCourse = (courseId) => {
+  setSelectedCourses((prev) => {
+    if (prev.includes(courseId)) {
+      return prev.filter((id) => id !== courseId)
+    }
+
+    return [...prev, courseId]
+  })
+}
   const openEdit = (user, fieldName, currentValue) => {
     setUserId(user._id)
     setField(fieldName)
@@ -59,14 +90,84 @@ export default function UsersPage() {
     setValue("")
     setModal("password")
   }
+const openCounsellorStatus = async (user) => {
+  setUserId(user._id)
 
+  // Default Regular
+  const currentStatus = user.counsellorStatus || "regular"
+
+  setCounsellorStatus(currentStatus)
+
+  // Existing selected courses
+  setSelectedCourses(
+    user.specialCourses?.map((course) =>
+      typeof course === "object" ? course._id : course
+    ) || []
+  )
+
+  setModal("counsellorStatus")
+
+  // Fetch courses only when needed
+  if (currentStatus === "special") {
+    fetchCourses()
+  }
+}
   const closeModal = () => {
     setModal(null)
     setValue("")
     setField("")
     setUserId("")
+     setCounsellorStatus("regular")
+  setSelectedCourses([])
+  }
+const saveCounsellorStatus = async () => {
+  if (
+    counsellorStatus === "special" &&
+    selectedCourses.length === 0
+  ) {
+    return toast.error(
+      "Please select at least one course for Special counsellor"
+    )
   }
 
+  setIsSubmitting(true)
+
+  try {
+    const res = await fetch(
+      "/api/admin/adminUSer/update-counsellor-status",
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: userId,
+          counsellorStatus,
+          courses:
+            counsellorStatus === "special"
+              ? selectedCourses
+              : [],
+        }),
+      }
+    )
+
+    const data = await res.json()
+
+    if (res.ok || data.success) {
+      toast.success("Counsellor status updated successfully")
+
+      fetchUsers()
+      closeModal()
+    } else {
+      toast.error(data.message || "Update failed")
+    }
+  } catch (error) {
+    console.error(error)
+    toast.error("Something went wrong")
+  } finally {
+    setIsSubmitting(false)
+  }
+}
   const saveEdit = async () => {
     setIsSubmitting(true)
     try {
@@ -124,10 +225,9 @@ export default function UsersPage() {
       label: "User",
       accessor: "name",
       render: (val, row) => (
+        <div>
         <div className="flex items-center gap-3 group">
-          <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-900 flex items-center justify-center font-bold text-sm shrink-0">
-            {val?.charAt(0).toUpperCase() || <UserCircle size={20} />}
-          </div>
+        
           <div className="flex items-center gap-2">
             <span className="font-medium text-gray-900">{val}</span>
             <button 
@@ -136,21 +236,12 @@ export default function UsersPage() {
             >
               <Edit2 size={14} />
             </button>
-          </div>
+             </div>
+        
         </div>
-      )
-    },
-    {
-      label: "Contact Info",
-      accessor: "email",
-      render: (val, row) => (
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <Mail size={14} className="text-gray-400" />
-            {val}
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-600 group w-fit">
-            <Phone size={14} className="text-gray-400" />
+        <div>
+          <div className="flex items-center gap-2 text-xs text-gray-600 group w-fit">
+            <Phone size={12} className="text-gray-400" />
             {row.mobile || "N/A"}
             <button 
               onClick={() => openEdit(row, "mobile", row.mobile)}
@@ -159,9 +250,43 @@ export default function UsersPage() {
               <Edit2 size={12} />
             </button>
           </div>
+          <div className="flex items-center gap-2 text-xs text-gray-600">
+            <Mail size={12} className="text-gray-400" />
+            {val}
+          </div>
+          </div>
         </div>
       )
     },
+  {
+  label: "Counsellor Status",
+  accessor: "counsellorStatus",
+  render: (val, row) => {
+    // Only show for counsellor role
+    if (row.role !== "counsellor") {
+      return (
+        <span className="text-xs text-gray-400">
+          —
+        </span>
+      )
+    }
+
+    const status = val || "regular"
+
+    return (
+      <button
+        onClick={() => openCounsellorStatus(row)}
+        className={`px-3 py-1.5 text-xs font-semibold rounded-full border transition-all ${
+          status === "special"
+            ? "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100"
+            : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+        }`}
+      >
+        {status === "special" ? "Special" : "Regular"}
+      </button>
+    )
+  }
+},
     {
       label: "Role",
       accessor: "role",
@@ -173,7 +298,7 @@ export default function UsersPage() {
                 : "bg-gray-50 text-gray-700 border-gray-200"
             }`}
           >
-            {val === "admin" ? "Admin" : "User"}
+            {val === "admin" ? "Admin" : val}
           </span>
           <button 
             onClick={() => openEdit(row, "role", val)}
@@ -266,7 +391,13 @@ export default function UsersPage() {
                 {/* Modal Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
                   <h2 className="text-lg font-semibold text-gray-900 capitalize">
-                    {modal === "password" ? "Reset Password" : `Update ${field}`}
+                   {
+  modal === "password"
+    ? "Reset Password"
+    : modal === "counsellorStatus"
+    ? "Counsellor Status"
+    : `Update ${field}`
+}
                   </h2>
                   <button onClick={closeModal} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
                     <X size={18} />
@@ -310,7 +441,116 @@ export default function UsersPage() {
                       )}
                     </div>
                   )}
+{modal === "counsellorStatus" && (
+  <div className="space-y-5">
 
+    {/* Status Selection */}
+    <div>
+      <label className="text-sm font-semibold text-gray-700 mb-3 block">
+        Counsellor Type
+      </label>
+
+      <div className="grid grid-cols-2 gap-3">
+
+        {/* Regular */}
+        <button
+          type="button"
+          onClick={() => {
+            setCounsellorStatus("regular")
+            setSelectedCourses([])
+          }}
+          className={`p-4 rounded-xl border text-left transition-all ${
+            counsellorStatus === "regular"
+              ? "border-blue-500 bg-blue-50 ring-2 ring-blue-100"
+              : "border-gray-200 hover:border-gray-300"
+          }`}
+        >
+          <div className="font-semibold text-sm">
+            Regular
+          </div>
+
+          <div className="text-xs text-gray-500 mt-1">
+            Can handle all courses
+          </div>
+        </button>
+
+        {/* Special */}
+        <button
+          type="button"
+          onClick={() => {
+            setCounsellorStatus("special")
+            fetchCourses()
+          }}
+          className={`p-4 rounded-xl border text-left transition-all ${
+            counsellorStatus === "special"
+              ? "border-purple-500 bg-purple-50 ring-2 ring-purple-100"
+              : "border-gray-200 hover:border-gray-300"
+          }`}
+        >
+          <div className="font-semibold text-sm">
+            Special
+          </div>
+
+          <div className="text-xs text-gray-500 mt-1">
+            Select specific courses
+          </div>
+        </button>
+
+      </div>
+    </div>
+
+    {/* Courses */}
+    {counsellorStatus === "special" && (
+      <div>
+
+        <div className="flex justify-between items-center mb-3">
+          <label className="text-sm font-semibold text-gray-700">
+            Select Courses
+          </label>
+
+          <span className="text-xs text-gray-500">
+            {selectedCourses.length} selected
+          </span>
+        </div>
+
+        {coursesLoading ? (
+          <div className="py-8 flex justify-center">
+            <Loader2 className="animate-spin text-blue-500" />
+          </div>
+        ) : courses.length === 0 ? (
+          <div className="text-center py-6 text-sm text-gray-500 border rounded-xl">
+            No courses available
+          </div>
+        ) : (
+          <div className="border border-gray-200 rounded-xl overflow-hidden max-h-64 overflow-y-auto">
+
+            {courses.map((course) => (
+              <label
+                key={course._id}
+                className="flex items-center gap-3 px-4 py-3 border-b last:border-b-0 border-gray-100 hover:bg-gray-50 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedCourses.includes(course._id)}
+                  onChange={() => toggleCourse(course._id)}
+                  className="w-4 h-4 accent-blue-600"
+                />
+
+                <span className="text-sm font-medium text-gray-700">
+                  {course.name}
+                </span>
+
+              </label>
+            ))}
+
+          </div>
+        )}
+
+      </div>
+    )}
+
+  </div>
+)}
                   {modal === "password" && (
                     <div className="space-y-1">
                       <label className="text-sm font-medium text-gray-700">New Password</label>
@@ -333,7 +573,13 @@ export default function UsersPage() {
                       Cancel
                     </button>
                     <button
-                      onClick={modal === "edit" ? saveEdit : resetPassword}
+                     onClick={
+  modal === "edit"
+    ? saveEdit
+    : modal === "counsellorStatus"
+    ? saveCounsellorStatus
+    : resetPassword
+}
                       disabled={isSubmitting}
                       className="px-5 py-2.5 text-sm font-medium text-white bg-[#1c2434] hover:bg-black rounded-xl transition-colors disabled:opacity-70 flex items-center gap-2"
                     >
@@ -346,6 +592,7 @@ export default function UsersPage() {
             </div>
           )}
         </AnimatePresence>
+        
       </div>
     </div>
   )
