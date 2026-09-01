@@ -10,6 +10,7 @@ import RecentActivityTable from "@/component/RecentActivityTable";
 import RecentLeads from "./Recentleads";
 import LeadPipeline from "./Leadpipeline";
 import TopCounsellors from "@/component/TopCounsellors";
+import SourceDistributionChart from "@/component/SourceDistributionChart";
 import TopEngaged from "@/component/TopEngaged";
 import DashboardSkeleton from "@/component/DashboardSkeleton";
 import { RefreshCcw } from "lucide-react";
@@ -86,6 +87,7 @@ export default function DashboardPage({id}) {
         <RecentActivityTable activities={dashboard.recentActivities} />
       </div>
 
+        {!id && <SourceDistributionChart rawData={dashboard.sourceDistribution} />}
       {/* Secondary metrics not shown in the reference image but present in your data */}
       
     </div>

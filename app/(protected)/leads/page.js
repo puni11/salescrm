@@ -1,8 +1,10 @@
 'use client'
 import React, { useState, useEffect, useRef } from "react";
+import {exportToExcel} from "@/lib/exportToExcel";
 import { 
   Search, Filter, Plus,
   EditIcon,
+  SheetIcon,
   
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -93,12 +95,12 @@ const statusDropdownRef = useRef(null);
   const [sourceFilter, setSourceFilter] = useState("All");
   const [profileFilter, setProfileFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("All"); // All, Today, Last3, Last7, Last30
-  const limit = 10;
+  const [limit, setLimit] = useState(10);
 
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, statusFilter, sourceFilter, profileFilter, dateFilter, fromFilter, courseFilter]);
+  }, [debouncedSearch, statusFilter, sourceFilter, profileFilter, dateFilter, fromFilter, courseFilter, limit]);
   useEffect(() => {
     fetchCounsellors(setCounsellors, setLoading);
     fetchCourse(setCourse, setLoading)
@@ -147,9 +149,13 @@ const statusDropdownRef = useRef(null);
   };
 
   useEffect(() => {
+    console.log("FILTER CHANGED:", {
+    statusFilter,
+    page,
+  });
     fetchLeads();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, debouncedSearch, statusFilter, sourceFilter, fromFilter, profileFilter, dateFilter, sort, fromDate, toDate, courseFilter, selectedCounsellor]);
+  }, [page, debouncedSearch, statusFilter, sourceFilter, fromFilter, profileFilter, dateFilter, sort, fromDate, toDate, courseFilter, selectedCounsellor, limit]);
 
   // 2. Update Lead Status
   const updateLeadStatus = async (id, newStatus) => {
@@ -190,22 +196,20 @@ const statusDropdownRef = useRef(null);
     fetchLeads();
   };
 useEffect(() => {
-  const handleClickOutside = (event) => {
-    if (
-      statusDropdownRef.current &&
-      !statusDropdownRef.current.contains(event.target)
-    ) {
-      setIsStatusOpen(false);
-      setIsInterestedOpen(false);
-    }
-  };
+    const handleClickOutside = (event) => {
+      // Use closest() to check if the click happened inside ANY status dropdown
+      if (!event.target.closest('.status-filter-container')) {
+        setIsStatusOpen(false);
+        setIsInterestedOpen(false);
+      }
+    };
 
-  document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
 
-  return () => {
-    document.removeEventListener("mousedown", handleClickOutside);
-  };
-}, []);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
   // 4. Add New Lead
   const handleAddLead = async (newLeadData) => {
     setLoading(true);
@@ -322,8 +326,7 @@ const formatDate = (value) => {
       </div>
 
 <div
- ref={statusDropdownRef}
-className={`${wrapperClasses} relative`}>
+className={`${wrapperClasses} relative status-filter-container`}>
   <MobileLabel text="Status" />
 
   <div className="relative">
@@ -556,7 +559,7 @@ className={`${wrapperClasses} relative`}>
           <p className="text-sm text-gray-500 mt-1">Manage and track your platform inquiries.</p>
         </div>
         <div className="flex flex-col sm:flex-row items-center">
-         <div className="relative flex-grow w-full md:w-auto md:max-w-md flex items-center gap-2 px-8 py-4">
+         <div className="relative flex-grow w-full md:w-auto md:max-w-md flex items-center gap-2 px-4 py-4">
           <div className="relative flex-grow">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
@@ -574,7 +577,7 @@ className={`${wrapperClasses} relative`}>
             <Filter size={20} />
           </button>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 mr-2 ">
           <button 
             onClick={() => setIsAddLeadOpen(true)}
             className="flex items-center  gap-2 px-4 py-2 bg-[#05335c] text-white rounded-lg cursor-pointer hover:bg-[#103758] font-medium transition-colors shadow-sm"
@@ -582,6 +585,29 @@ className={`${wrapperClasses} relative`}>
             <Plus size={18} />
             Add Lead
           </button>
+        </div>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => exportToExcel(leads)}
+            className="flex items-center  gap-2 px-8 py-2 border border-gray-200 bg-gray-50 text-black rounded-lg cursor-pointer hover:bg-gray-100 font-medium transition-colors shadow-sm"
+          >
+            <SheetIcon size={18} />
+            Export Excel
+          </button>
+        </div>
+        <div className="flex gap-3 flex-wrap items-center ml-4">
+          <select
+            value={limit}
+            onChange={(e) => setLimit(Number(e.target.value))}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+          >
+            <option value={10}>10 per page</option>
+            <option value={20}>20 per page</option>
+            <option value={50}>50 per page</option>
+            <option value={100}>100 per page</option>
+            <option value={200}>200 per page</option>
+            <option value={500}>500 per page</option>
+          </select>
         </div>
         </div>
       </header>

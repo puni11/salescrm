@@ -35,6 +35,7 @@ tomorrow.setDate(tomorrow.getDate() + 1);
       leadStatus,
       monthlyLeads,
       courseDistribution,
+      sourceDistribution,
       callAnalytics,
       engagementAnalytics,
       topCounsellors,
@@ -92,7 +93,30 @@ tomorrow.setDate(tomorrow.getDate() + 1);
         {$project:{_id:0,course:"$_id",count:1}},
         {$sort:{count:-1}}
       ]).toArray(),
-
+dm.aggregate([
+  {
+    $group: {
+      _id: {
+        $ifNull: ["$source", "Unknown"]
+      },
+      count: {
+        $sum: 1
+      }
+    }
+  },
+  {
+    $project: {
+      _id: 0,
+      source: "$_id",
+      count: 1
+    }
+  },
+  {
+    $sort: {
+      count: -1
+    }
+  }
+]).toArray(),
       callLogs.aggregate([
         {$group:{
           _id:"$call_type",
@@ -257,6 +281,7 @@ for (let i = 1; i <= 12; i++) {
       callSummary,
       engagementAnalytics,
       courseDistribution,
+      sourceDistribution,
       topCounsellors,
       recentLeads,
       recentActivities,
