@@ -32,7 +32,7 @@ export async function saveFacebookLead(lead, webhookData) {
   Object.assign(crmLead, config.defaults);
  const course = crmLead.course;
 
-   const assignedTo = await getLeadAssignment(course);
+   const assignedTo = await getLeadAssignment(db2, db, course);
   crmLead.assignedTo = assignedTo;
 
   // System values

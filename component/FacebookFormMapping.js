@@ -3,17 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Save, ArrowLeft, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
 import Link from "next/link";
+import { fetchCourse } from "@/lib/helper/helper";
 
-const courses = [
-  "Digital Marketing",
-  "Azure + Azure DevOps",
-  "Openshift + Kubernetes"
-];
+
 
 export default function FacebookFormMapping({ formId }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
+ const [course, setCourse] = useState([])
   const [form, setForm] = useState(null);
   const [crmFields, setCrmFields] = useState([]);
   const [mapping, setMapping] = useState({});
@@ -26,7 +23,8 @@ export default function FacebookFormMapping({ formId }) {
 
   useEffect(() => {
     initialize();
-  }, []);
+    fetchCourse(setCourse, setLoading)
+  }, [setCourse, setLoading]);
 
   async function initialize() {
     setLoading(true);
@@ -298,9 +296,9 @@ export default function FacebookFormMapping({ formId }) {
                     }
                   >
                     <option value="">Select Course</option>
-                    {courses.map((course) => (
-                      <option key={course} value={course}>
-                        {course}
+                    {course.map((course) => (
+                      <option key={course._id} value={course.name}>
+                        {course.name}
                       </option>
                     ))}
                   </select>
