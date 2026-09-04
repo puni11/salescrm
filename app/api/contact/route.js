@@ -7,7 +7,13 @@ import { ObjectId } from "mongodb";
 import welcomeHtml from "@/lib/emailHtml/welcomeHtml";
 import { getLeadAssignment } from "@/lib/leadAssignment";
 import { sendPushNotification } from "@/lib/sendPushNotification";
-
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Requested-With, Accept",
+  "Access-Control-Max-Age": "86400",
+};
 const specialCounsellorId = "6a6888f23bccf7d435b4340d" || "6a688b423bccf7d435b43411";
 export async function GET(req) {
   try {
@@ -622,11 +628,7 @@ const assignedTo = await getLeadAssignment(db, internalDb, course);
 
 export async function OPTIONS() {
   return new Response(null, {
-    status: 200,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    },
+    status: 204,
+    headers: corsHeaders,
   });
 }
