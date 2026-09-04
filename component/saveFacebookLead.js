@@ -3,13 +3,16 @@ import clientPromise from "@/lib/mongodb";
 
 export async function saveFacebookLead(lead, webhookData) {
   const client = await clientPromise;
+
   const db = client.db("internal");
-   const db2 = client.db("sales");
+  const db2 = client.db("sales");
 
   // Get mapping for the Facebook form
-  const config = await db.collection("facebook_field_mappings").findOne({
-    formId: webhookData.form_id,
-  });
+  const config = await db
+    .collection("facebook_field_mappings")
+    .findOne({
+      formId: webhookData.form_id,
+    });
 
   if (!config) {
     throw new Error(
@@ -18,21 +21,36 @@ export async function saveFacebookLead(lead, webhookData) {
   }
 
   const crmLead = {};
+  const unmappedFields = {};
 
-  // Map Facebook fields
+  // Map Facebook fields and save unmapped fields
   for (const field of lead.field_data || []) {
-    const crmField = config.mapping[field.name];
+    const crmField = config.mapping?.[field.name];
+    const value = field.values?.[0] ?? "";
 
-    if (!crmField) continue;
-
-    crmLead[crmField] = field.values?.[0] ?? "";
+    if (crmField) {
+      // Save according to CRM mapping
+      crmLead[crmField] = value;
+    } else {
+      // Save Facebook field without mapping
+      unmappedFields[field.name] = value;
+    }
   }
 
   // Apply default values
-  Object.assign(crmLead, config.defaults);
- const course = crmLead.course;
+  Object.assign(crmLead, config.defaults || {});
 
-   const assignedTo = await getLeadAssignment(db2, db, course);
+  // Save all unmapped Facebook fields
+  crmLead.otherFields = unmappedFields;
+
+  const course = crmLead.course;
+
+  const assignedTo = await getLeadAssignment(
+    db2,
+    db,
+    course
+  );
+
   crmLead.assignedTo = assignedTo;
 
   // System values
@@ -64,13 +82,16 @@ export async function saveFacebookLead(lead, webhookData) {
     createdTime: lead.created_time,
   };
 
-  // Check duplicate
-  const existingLead = await db2.collection("dm").findOne({
-    $or: [
-      { phone: crmLead.phone },
-    ],
-  });
+  // Check duplicate using phone only
+  let existingLead = null;
 
+  if (crmLead.phone?.trim()) {
+    existingLead = await db2.collection("dm").findOne({
+      phone: crmLead.phone.trim(),
+    });
+  }
+
+  // Duplicate lead
   if (existingLead) {
     await db2.collection("dm").updateOne(
       { _id: existingLead._id },
@@ -91,6 +112,7 @@ export async function saveFacebookLead(lead, webhookData) {
     };
   }
 
+  // Save new lead
   const result = await db2.collection("dm").insertOne(crmLead);
 
   return {
