@@ -67,7 +67,6 @@ export async function saveFacebookLead(lead, webhookData) {
   // Check duplicate
   const existingLead = await db2.collection("dm").findOne({
     $or: [
-      { email: crmLead.email },
       { phone: crmLead.phone },
     ],
   });
