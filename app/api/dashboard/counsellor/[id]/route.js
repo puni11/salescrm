@@ -49,9 +49,11 @@ export async function GET(req, { params }) {
 
     const counsellor = await users.findOne(
       {
-        _id: counsellorObjectId,
-        role: "counsellor",
-      },
+  _id: counsellorObjectId,
+  role: {
+    $in: ["counsellor", "manager"],
+  },
+},
       {
         projection: {
           name: 1,
@@ -93,10 +95,26 @@ export async function GET(req, { params }) {
     // FILTERS
     // ==============================
 
-    const leadFilter = {
-      "assignedTo._id": counsellorObjectId,
-    };
+   const SPECIAL_COUNSELLOR_ID = "6a87f6bcdde10a504a995702";
 
+const specialCourses = [
+  "Azure + Azure DevOps",
+  "RedHat + CKA Affordable Certification",
+];
+
+let leadFilter;
+
+if (id === SPECIAL_COUNSELLOR_ID) {
+  leadFilter = {
+    course: {
+      $in: specialCourses,
+    },
+  };
+} else {
+  leadFilter = {
+    "assignedTo._id": counsellorObjectId,
+  };
+}
     const callFilter = {
       userId: counsellorIdString,
     };

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 
-
 export async function GET(req, { params }) {
   try {
     const { id } = await params;
@@ -33,12 +32,16 @@ export async function GET(req, { params }) {
     const maxDuration = searchParams.get("maxDuration");
 
     const sortBy = searchParams.get("sortBy") || "call_time";
+
     const sortOrder =
       searchParams.get("sortOrder") === "asc" ? 1 : -1;
 
     const client = await clientPromise;
-
     const db = client.db("sales");
+
+    // --------------------------------------------------
+    // DATE HELPERS
+    // --------------------------------------------------
 
     const getDaysAgoSkippingSunday = (start, days) => {
       const d = new Date(start);
@@ -59,43 +62,74 @@ export async function GET(req, { params }) {
     const now = new Date();
 
     const fourDaysAgo = getDaysAgoSkippingSunday(now, 4);
-    const eightDaysAgo = getDaysAgoSkippingSunday(fourDaysAgo, 4);
+
+    const eightDaysAgo = getDaysAgoSkippingSunday(
+      fourDaysAgo,
+      4
+    );
 
     const pipeline = [];
 
     // --------------------------------------------------
     // 1. NORMALIZE CALL PHONE
+    // Handles:
+    // String
+    // Number
+    // Long
+    // Null
+    // Invalid values
     // --------------------------------------------------
 
     pipeline.push({
       $addFields: {
         normalizedPhone: {
-          $cond: [
-            {
-              $or: [
-                { $eq: ["$phone", null] },
-                { $eq: ["$phone", ""] },
-              ],
+          $let: {
+            vars: {
+              phoneString: {
+                $convert: {
+                  input: "$phone",
+                  to: "string",
+                  onError: "",
+                  onNull: "",
+                },
+              },
             },
-            null,
-            {
-              $substrCP: [
-                "$phone",
+
+            in: {
+              $cond: [
                 {
-                  $max: [
-                    0,
+                  $eq: ["$$phoneString", ""],
+                },
+
+                null,
+
+                {
+                  $substrCP: [
+                    "$$phoneString",
+
                     {
-                      $subtract: [
-                        { $strLenCP: "$phone" },
-                        10,
+                      $max: [
+                        0,
+
+                        {
+                          $subtract: [
+                            {
+                              $strLenCP:
+                                "$$phoneString",
+                            },
+
+                            10,
+                          ],
+                        },
                       ],
                     },
+
+                    10,
                   ],
                 },
-                10,
               ],
             },
-          ],
+          },
         },
       },
     });
@@ -113,38 +147,70 @@ export async function GET(req, { params }) {
         },
 
         pipeline: [
+          // ----------------------------------------------
+          // NORMALIZE LEAD PHONE
+          // ----------------------------------------------
+
           {
             $addFields: {
               normalizedPhone: {
-                $cond: [
-                  {
-                    $or: [
-                      { $eq: ["$phone", null] },
-                      { $eq: ["$phone", ""] },
-                    ],
+                $let: {
+                  vars: {
+                    phoneString: {
+                      $convert: {
+                        input: "$phone",
+                        to: "string",
+                        onError: "",
+                        onNull: "",
+                      },
+                    },
                   },
-                  null,
-                  {
-                    $substrCP: [
-                      "$phone",
+
+                  in: {
+                    $cond: [
                       {
-                        $max: [
-                          0,
-                          {
-                            $subtract: [
-                              { $strLenCP: "$phone" },
-                              10,
-                            ],
-                          },
+                        $eq: [
+                          "$$phoneString",
+                          "",
                         ],
                       },
-                      10,
+
+                      null,
+
+                      {
+                        $substrCP: [
+                          "$$phoneString",
+
+                          {
+                            $max: [
+                              0,
+
+                              {
+                                $subtract: [
+                                  {
+                                    $strLenCP:
+                                      "$$phoneString",
+                                  },
+
+                                  10,
+                                ],
+                              },
+                            ],
+                          },
+
+                          10,
+                        ],
+                      },
                     ],
                   },
-                ],
+                },
               },
             },
           },
+
+          // ----------------------------------------------
+          // MATCH PHONE
+          // ----------------------------------------------
 
           {
             $match: {
@@ -157,6 +223,10 @@ export async function GET(req, { params }) {
             },
           },
 
+          // ----------------------------------------------
+          // LATEST LEAD FIRST
+          // ----------------------------------------------
+
           {
             $sort: {
               createdAt: -1,
@@ -166,6 +236,10 @@ export async function GET(req, { params }) {
           {
             $limit: 1,
           },
+
+          // ----------------------------------------------
+          // LEAD FIELDS
+          // ----------------------------------------------
 
           {
             $project: {
@@ -186,6 +260,10 @@ export async function GET(req, { params }) {
       },
     });
 
+    // --------------------------------------------------
+    // 3. UNWIND LEAD
+    // --------------------------------------------------
+
     pipeline.push({
       $unwind: {
         path: "$lead",
@@ -194,7 +272,7 @@ export async function GET(req, { params }) {
     });
 
     // --------------------------------------------------
-    // 3. FILTERS
+    // 4. FILTERS
     // --------------------------------------------------
 
     const escapeRegex = (text) =>
@@ -206,8 +284,7 @@ export async function GET(req, { params }) {
     const match = {};
 
     // --------------------------------------------------
-    // IMPORTANT:
-    // ONLY SHOW CALLS FOR THIS COUNSELLOR ID
+    // ONLY SHOW CALLS FOR THIS COUNSELLOR
     // --------------------------------------------------
 
     match.userId = id;
@@ -296,7 +373,10 @@ export async function GET(req, { params }) {
 
     match.$and = [];
 
+    // --------------------------------------------------
     // COURSE FILTER
+    // --------------------------------------------------
+
     if (course) {
       match.$and.push({
         "lead.course": {
@@ -371,6 +451,10 @@ export async function GET(req, { params }) {
 
     pipeline.push({
       $facet: {
+        // ----------------------------------------------
+        // DATA
+        // ----------------------------------------------
+
         data: [
           {
             $skip: (page - 1) * pageSize,
@@ -405,6 +489,10 @@ export async function GET(req, { params }) {
             },
           },
         ],
+
+        // ----------------------------------------------
+        // STATS
+        // ----------------------------------------------
 
         stats: [
           {
@@ -476,7 +564,10 @@ export async function GET(req, { params }) {
                 $avg: "$duration_seconds",
               },
 
+              // ------------------------------------------
               // CURRENT 4 DAYS
+              // ------------------------------------------
+
               c4_total: {
                 $sum: {
                   $cond: [
@@ -488,6 +579,7 @@ export async function GET(req, { params }) {
                             fourDaysAgo,
                           ],
                         },
+
                         {
                           $ne: [
                             {
@@ -516,6 +608,7 @@ export async function GET(req, { params }) {
                             fourDaysAgo,
                           ],
                         },
+
                         {
                           $ne: [
                             {
@@ -525,6 +618,7 @@ export async function GET(req, { params }) {
                             1,
                           ],
                         },
+
                         {
                           $eq: [
                             "$call_type",
@@ -550,6 +644,7 @@ export async function GET(req, { params }) {
                             fourDaysAgo,
                           ],
                         },
+
                         {
                           $ne: [
                             {
@@ -559,6 +654,7 @@ export async function GET(req, { params }) {
                             1,
                           ],
                         },
+
                         {
                           $eq: [
                             "$call_type",
@@ -584,6 +680,7 @@ export async function GET(req, { params }) {
                             fourDaysAgo,
                           ],
                         },
+
                         {
                           $ne: [
                             {
@@ -593,6 +690,7 @@ export async function GET(req, { params }) {
                             1,
                           ],
                         },
+
                         {
                           $eq: [
                             "$call_type",
@@ -618,6 +716,7 @@ export async function GET(req, { params }) {
                             fourDaysAgo,
                           ],
                         },
+
                         {
                           $ne: [
                             {
@@ -627,6 +726,7 @@ export async function GET(req, { params }) {
                             1,
                           ],
                         },
+
                         {
                           $not: ["$lead._id"],
                         },
@@ -649,6 +749,7 @@ export async function GET(req, { params }) {
                             fourDaysAgo,
                           ],
                         },
+
                         {
                           $ne: [
                             {
@@ -666,7 +767,10 @@ export async function GET(req, { params }) {
                 },
               },
 
+              // ------------------------------------------
               // PREVIOUS 4 DAYS
+              // ------------------------------------------
+
               p4_total: {
                 $sum: {
                   $cond: [
@@ -678,12 +782,14 @@ export async function GET(req, { params }) {
                             eightDaysAgo,
                           ],
                         },
+
                         {
                           $lt: [
                             "$call_time",
                             fourDaysAgo,
                           ],
                         },
+
                         {
                           $ne: [
                             {
@@ -712,12 +818,14 @@ export async function GET(req, { params }) {
                             eightDaysAgo,
                           ],
                         },
+
                         {
                           $lt: [
                             "$call_time",
                             fourDaysAgo,
                           ],
                         },
+
                         {
                           $ne: [
                             {
@@ -727,6 +835,7 @@ export async function GET(req, { params }) {
                             1,
                           ],
                         },
+
                         {
                           $eq: [
                             "$call_type",
@@ -752,12 +861,14 @@ export async function GET(req, { params }) {
                             eightDaysAgo,
                           ],
                         },
+
                         {
                           $lt: [
                             "$call_time",
                             fourDaysAgo,
                           ],
                         },
+
                         {
                           $ne: [
                             {
@@ -767,6 +878,7 @@ export async function GET(req, { params }) {
                             1,
                           ],
                         },
+
                         {
                           $eq: [
                             "$call_type",
@@ -792,12 +904,14 @@ export async function GET(req, { params }) {
                             eightDaysAgo,
                           ],
                         },
+
                         {
                           $lt: [
                             "$call_time",
                             fourDaysAgo,
                           ],
                         },
+
                         {
                           $ne: [
                             {
@@ -807,6 +921,7 @@ export async function GET(req, { params }) {
                             1,
                           ],
                         },
+
                         {
                           $eq: [
                             "$call_type",
@@ -832,12 +947,14 @@ export async function GET(req, { params }) {
                             eightDaysAgo,
                           ],
                         },
+
                         {
                           $lt: [
                             "$call_time",
                             fourDaysAgo,
                           ],
                         },
+
                         {
                           $ne: [
                             {
@@ -847,8 +964,11 @@ export async function GET(req, { params }) {
                             1,
                           ],
                         },
+
                         {
-                          $not: ["$lead._id"],
+                          $not: [
+                            "$lead._id",
+                          ],
                         },
                       ],
                     },
@@ -869,12 +989,14 @@ export async function GET(req, { params }) {
                             eightDaysAgo,
                           ],
                         },
+
                         {
                           $lt: [
                             "$call_time",
                             fourDaysAgo,
                           ],
                         },
+
                         {
                           $ne: [
                             {
@@ -894,6 +1016,10 @@ export async function GET(req, { params }) {
             },
           },
         ],
+
+        // ----------------------------------------------
+        // TOTAL COUNT
+        // ----------------------------------------------
 
         totalCount: [
           {
@@ -927,7 +1053,10 @@ export async function GET(req, { params }) {
 
       if (prev > 0) {
         return Number(
-          (((cur - prev) / prev) * 100).toFixed(2)
+          (
+            ((cur - prev) / prev) *
+            100
+          ).toFixed(2)
         );
       }
 
@@ -953,6 +1082,7 @@ export async function GET(req, { params }) {
       incomingCalls: {
         count:
           rawStats.incomingCalls || 0,
+
         trend: calcTrend(
           rawStats.c4_incoming,
           rawStats.p4_incoming
@@ -962,6 +1092,7 @@ export async function GET(req, { params }) {
       outgoingCalls: {
         count:
           rawStats.outgoingCalls || 0,
+
         trend: calcTrend(
           rawStats.c4_outgoing,
           rawStats.p4_outgoing
@@ -971,6 +1102,7 @@ export async function GET(req, { params }) {
       missedCalls: {
         count:
           rawStats.missedCalls || 0,
+
         trend: calcTrend(
           rawStats.c4_missed,
           rawStats.p4_missed
@@ -980,6 +1112,7 @@ export async function GET(req, { params }) {
       unregisteredCalls: {
         count:
           rawStats.unregisteredCalls || 0,
+
         trend: calcTrend(
           rawStats.c4_unregistered,
           rawStats.p4_unregistered
@@ -988,8 +1121,11 @@ export async function GET(req, { params }) {
 
       averageCallTime: {
         count: Number(
-          (rawStats.averageCallTime || 0).toFixed(2)
+          (
+            rawStats.averageCallTime || 0
+          ).toFixed(2)
         ),
+
         trend: calcTrend(
           rawStats.c4_avgTime,
           rawStats.p4_avgTime
@@ -1017,6 +1153,7 @@ export async function GET(req, { params }) {
       stats,
 
       page,
+
       pageSize,
 
       total,
@@ -1026,7 +1163,8 @@ export async function GET(req, { params }) {
       ),
 
       hasNextPage:
-        page < Math.ceil(total / pageSize),
+        page <
+        Math.ceil(total / pageSize),
 
       hasPreviousPage:
         page > 1,

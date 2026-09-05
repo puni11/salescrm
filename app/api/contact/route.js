@@ -44,23 +44,23 @@ export async function GET(req) {
     const client = await clientPromise;
     const db = client.db("sales");
 
-    const query = {};
+const query = {};
+
 if (session.user.role !== "admin") {
-  if (
-    session.user.id === "6a33c7bc3d699a93dd2287f2"
-  ) {
-    query.$or = [
-      {
-        "assignedTo._id": new ObjectId(session.user.id),
-      },
-      {
-        course: {
-          $regex: "^Azure",
-          $options: "i",
-        },
-      },
-    ];
+  const SPECIAL_USER_ID = "6a87f6bcdde10a504a995702";
+
+  const SPECIAL_COURSES = [
+    "Azure + Azure DevOps",
+    "RedHat + CKA Affordable Certification",
+  ];
+
+  // Special user can see ALL leads from both courses
+  if (session.user.id === SPECIAL_USER_ID) {
+    query.course = {
+      $in: SPECIAL_COURSES,
+    };
   } else {
+    // Everyone else sees only their assigned leads
     query["assignedTo._id"] = new ObjectId(session.user.id);
   }
 }

@@ -23,7 +23,7 @@ import Skeleton from "@/component/Skeleton"
 export default function UsersPage() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
-
+const [viewCoursesUser, setViewCoursesUser] = useState(null);
   // Modal State
   const [modal, setModal] = useState(null)
   const [value, setValue] = useState("")
@@ -69,6 +69,10 @@ const fetchCourses = async () => {
     setCoursesLoading(false)
   }
 }
+const openAssignedCourses = (user) => {
+  setViewCoursesUser(user);
+  setModal("viewCourses");
+};
 const toggleCourse = (courseId) => {
   setSelectedCourses((prev) => {
     if (prev.includes(courseId)) {
