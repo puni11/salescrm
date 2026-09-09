@@ -10,7 +10,7 @@ import {
   Loader2 // Added for the loading state spinner
 } from "lucide-react";
 
-export default function FollowUpModal({ selectedLead, setFollowUpOpen }) {
+export default function FollowUpModal({ selectedLead, setFollowUpOpen, fetchLeads }) {
   // --- State ---
   const [followUpDate, setFollowUpDate] = useState(new Date());
   const [followUpTime, setFollowUpTime] = useState("09:00 AM");
@@ -166,7 +166,7 @@ export default function FollowUpModal({ selectedLead, setFollowUpOpen }) {
 
       // 3. Close the modal on success
       setFollowUpOpen(false);
-      window.location.reload(); // Refresh the page to reflect changes
+      fetchLeads(); // Refresh the page to reflect changes
     } catch (err) {
       setError(err.message);
     } finally {

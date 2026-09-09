@@ -828,7 +828,7 @@ className={`${wrapperClasses} relative status-filter-container`}>
     toast={toast}
   />
       )} 
-      {followUpOpen && <FolloUpModal selectedLead={selectedLeadId} setFollowUpOpen={setFollowUpOpen} />}
+      {followUpOpen && <FolloUpModal selectedLead={selectedLeadId} setFollowUpOpen={setFollowUpOpen} fetchLeads={fetchLeads} />}
       {otherCourse &&  <OtherCourseModal selectedLead={selectedLeadId} setOtherCourse={setOtherCourse} course={course} />}
       {changeCounsellorModal &&  <ChangeCounsellor selectedLead={selectedLeadId} counsellor={counsellors} setChangeCounsellorModal={setChangeCounsellorModal} />}
       <MobileFilter
