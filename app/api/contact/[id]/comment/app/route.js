@@ -6,7 +6,7 @@ export async function POST(req, { params }) {
   try {
     // ================= AUTH FROM TOKEN =================
     const auth = await getUserFromToken(req);
-
+    console.log(auth)
     if (!auth.success) {
       return Response.json(
         {
