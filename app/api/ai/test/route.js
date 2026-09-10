@@ -1,26 +1,7 @@
 import { NextResponse } from "next/server";
 
-export async function GET(request) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-
-    // Use existing ADMIN_KEY to protect this route
-    const providedKey = searchParams.get("key");
-
-    if (
-      !providedKey ||
-      !process.env.ADMIN_KEY ||
-      providedKey !== process.env.ADMIN_KEY
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Unauthorized",
-        },
-        { status: 401 }
-      );
-    }
-
     const envVariables = [
       // Database
       "MONGODB_URI",
@@ -75,21 +56,15 @@ export async function GET(request) {
       const value = process.env[name];
 
       variables[name] = {
-        exists: !!value,
+        exists: Boolean(value),
         length: value?.length || 0,
         preview: value
-          ? value.length > 8
-            ? `${value.slice(0, 4)}****${value.slice(-4)}`
-            : "********"
+          ? `${value.slice(0, 3)}****${value.slice(-3)}`
           : null,
       };
     }
 
-    const available = envVariables.filter(
-      (name) => !!process.env[name]
-    ).length;
-
-    const missing = envVariables.filter(
+    const missingVariables = envVariables.filter(
       (name) => !process.env[name]
     );
 
@@ -104,21 +79,19 @@ export async function GET(request) {
 
       summary: {
         total: envVariables.length,
-        available,
-        missing: missing.length,
+        available: envVariables.length - missingVariables.length,
+        missing: missingVariables.length,
       },
 
-      missingVariables: missing,
+      missingVariables,
 
       variables,
     });
   } catch (error) {
-    console.error("ENV CHECK ERROR:", error);
-
     return NextResponse.json(
       {
         success: false,
-        error: "Environment check failed",
+        error: error.message,
       },
       { status: 500 }
     );
