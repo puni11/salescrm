@@ -1,99 +1,77 @@
 import { NextResponse } from "next/server";
 
-export async function GET() {
-  try {
-    const envVariables = [
-      // Database
-      "MONGODB_URI",
+export async function GET(request) {
+  console.log("========================================");
+  console.log("ENV CHECK START");
+  console.log("========================================");
 
-      // Push Notifications
-      "NEXT_PUBLIC_VAPID_PUBLIC_KEY",
-      "VAPID_PRIVATE_KEY",
-      "VAPID_EMAIL",
+  console.log("VERCEL_ENV:", process.env.VERCEL_ENV);
+  console.log("VERCEL_URL:", process.env.VERCEL_URL);
+  console.log("VERCEL_GIT_COMMIT_REF:", process.env.VERCEL_GIT_COMMIT_REF);
 
-      // Google
-      "GOOGLE_PRIVATE_KEY",
-      "GOOGLE_CLIENT_EMAIL",
+  const envVariables = [
+    "MONGODB_URI",
 
-      // Meta
-      "META_APP_ID",
-      "META_APP_SECRET",
-      "META_ID",
-      "META_SECRET_KEY",
+    "NEXT_PUBLIC_VAPID_PUBLIC_KEY",
+    "VAPID_PRIVATE_KEY",
+    "VAPID_EMAIL",
 
-      // Facebook
-      "FACEBOOK_PAGE_ACCESS_TOKEN",
-      "FACEBOOK_VERIFY_TOKEN",
-      "FACEBOOK_PAGE_ID",
-      "FACEBOOK_CONFIGURATION_ID",
+    "GOOGLE_PRIVATE_KEY",
+    "GOOGLE_CLIENT_EMAIL",
 
-      // Application
-      "APP_URL",
-      "NEXT_PUBLIC_APP_URL",
+    "META_APP_ID",
+    "META_APP_SECRET",
+    "META_ID",
+    "META_SECRET_KEY",
 
-      // NextAuth
-      "NEXTAUTH_URL",
-      "NEXTAUTH_SECRET",
+    "APP_URL",
+    "NEXT_PUBLIC_APP_URL",
 
-      // Cron
-      "CRON_SECRET",
+    "FACEBOOK_PAGE_ACCESS_TOKEN",
+    "FACEBOOK_VERIFY_TOKEN",
+    "FACEBOOK_PAGE_ID",
+    "FACEBOOK_CONFIGURATION_ID",
 
-      // SMTP
-      "SMTP_USER",
-      "SMTP_PASS",
+    "NEXTAUTH_URL",
+    "NEXTAUTH_SECRET",
 
-      // WhatsApp
-      "WHATSAPP_API",
-      "WHATSAPP_API_URL",
+    "CRON_SECRET",
 
-      // Admin
-      "ADMIN_KEY",
-    ];
+    "SMTP_USER",
+    "SMTP_PASS",
 
-    const variables = {};
+    "WHATSAPP_API",
+    "WHATSAPP_API_URL",
 
-    for (const name of envVariables) {
-      const value = process.env[name];
+    "ADMIN_KEY",
+  ];
 
-      variables[name] = {
-        exists: Boolean(value),
-        length: value?.length || 0,
-        preview: value
-          ? `${value.slice(0, 3)}****${value.slice(-3)}`
-          : null,
-      };
-    }
+  const result = {};
 
-    const missingVariables = envVariables.filter(
-      (name) => !process.env[name]
+  for (const name of envVariables) {
+    const value = process.env[name];
+
+    console.log(
+      `[ENV] ${name}:`,
+      value ? `EXISTS (length: ${value.length})` : "MISSING"
     );
 
-    return NextResponse.json({
-      success: true,
-
-      vercel: {
-        environment: process.env.VERCEL_ENV || "local",
-        branch: process.env.VERCEL_GIT_COMMIT_REF || null,
-        url: process.env.VERCEL_URL || null,
-      },
-
-      summary: {
-        total: envVariables.length,
-        available: envVariables.length - missingVariables.length,
-        missing: missingVariables.length,
-      },
-
-      missingVariables,
-
-      variables,
-    });
-  } catch (error) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message,
-      },
-      { status: 500 }
-    );
+    result[name] = {
+      exists: Boolean(value),
+      length: value?.length || 0,
+    };
   }
+
+  console.log("========================================");
+  console.log("ENV CHECK END");
+  console.log("========================================");
+
+  return NextResponse.json({
+    success: true,
+
+    environment: process.env.VERCEL_ENV || "local",
+    branch: process.env.VERCEL_GIT_COMMIT_REF || null,
+
+    variables: result,
+  });
 }
