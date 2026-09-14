@@ -52,6 +52,7 @@ if (session.user.role !== "admin") {
   const SPECIAL_COURSES = [
     "Azure + Azure DevOps",
     "RedHat + CKA Affordable Certification",
+    "GenAi"
   ];
 
   // Special user can see ALL leads from both courses

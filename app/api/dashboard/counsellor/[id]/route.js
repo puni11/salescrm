@@ -100,6 +100,7 @@ export async function GET(req, { params }) {
 const specialCourses = [
   "Azure + Azure DevOps",
   "RedHat + CKA Affordable Certification",
+  "GenAi"
 ];
 
 let leadFilter;
