@@ -825,6 +825,8 @@ className={`${wrapperClasses} relative status-filter-container`}>
     setIsWhatsAppModalOpen={setIsWhatsAppModalOpen}
     whatsappMessage={whatsappMessage}
     setWhatsappMessage={setWhatsappMessage}
+    session={session}
+    course={selectedLead.course}
     toast={toast}
   />
       )} 
