@@ -226,6 +226,7 @@ const [isLeadInterestedOpen, setIsLeadInterestedOpen] = useState(false);
           <span>
             {[
               "Course Interested",
+              "Demo Requested",
               "Follow Up",
               "Other Course Interested",
             ].includes(selectedLead.status)
@@ -254,6 +255,7 @@ const [isLeadInterestedOpen, setIsLeadInterestedOpen] = useState(false);
 
             {[
               "Course Interested",
+              "Demo Requested",
               "Follow Up",
               "Other Course Interested",
             ].map((status) => (

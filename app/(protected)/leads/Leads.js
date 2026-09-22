@@ -38,6 +38,7 @@ const STATUS_OPTIONS = [
 
 const INTERESTED_STATUSES = [
   "Course Interested",
+  "Demo Requested",
   "Follow Up",
   "Other Course Interested",
 ];
