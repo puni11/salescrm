@@ -127,7 +127,7 @@ const [isLeadInterestedOpen, setIsLeadInterestedOpen] = useState(false);
                           <span className="flex flex-col">
                             <span className="text-xs text-gray-400 uppercase">Campaign</span>
                             <span className="font-medium text-gray-900">
-                              {selectedLead.campaign ? selectedLead.campaign.charAt(0).toUpperCase() + selectedLead.campaign.slice(1) : "N/A"}
+                              NA
                             </span>
                           </span>
                         </div>
@@ -137,7 +137,7 @@ const [isLeadInterestedOpen, setIsLeadInterestedOpen] = useState(false);
                           <span className="flex flex-col">
                             <span className="text-xs text-gray-400 uppercase">Search Term</span>
                             <span className="font-medium text-gray-900">
-                              {selectedLead.term || "N/A"}
+                              { "N/A"}
                             </span>
                           </span>
                         </div>
