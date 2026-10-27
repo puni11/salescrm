@@ -221,7 +221,8 @@ useEffect(() => {
 
     const res = await apiRequest(`/api/contact/admin`, {
       method: 'POST',
-      body: JSON.stringify(formattedData)
+      body: JSON.stringify({
+        ...formattedData, id:session.user.id, counsellorName:session.user.name})
     });
 
     if (!res.error) {
@@ -814,6 +815,7 @@ className={`${wrapperClasses} relative status-filter-container`}>
        <LeadAdd
     setIsAddLeadOpen={setIsAddLeadOpen}
     handleAddLead={handleAddLead}
+    counsellors={counsellors}
     PROFILES={PROFILES}
     course={course}
   />

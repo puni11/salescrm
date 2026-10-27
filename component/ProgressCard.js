@@ -26,7 +26,7 @@ export default function ProgressCard({ conversionRate }) {
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-xl font-bold text-gray-900">{pct}%</span>
+          <span className="text-xl font-bold text-gray-900">{pct/100}%</span>
           <span className="text-[10px] text-gray-400">converted</span>
         </div>
       </div>

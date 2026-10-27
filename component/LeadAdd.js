@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 export default function LeadAdd({setIsAddLeadOpen,
   handleAddLead,
   PROFILES,
+  counsellors,
 course
 }){
     return(
@@ -62,7 +63,17 @@ course
                             {PROFILES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
                           </select>
                         </div>
-        
+        <div className="space-y-1">
+                          <label className="text-sm font-medium text-gray-700">Select Counsellor</label>
+                          <select required name="counsellor" className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                            <option value="">Select...</option>
+                            {counsellors.map((counsellor) => (
+            <option key={counsellor.id} value={counsellor.id}>
+              {counsellor.name}
+            </option>
+          ))}
+                          </select>
+                        </div>
                         <div className="space-y-1 md:col-span-2 flex items-center gap-3">
                           <input type="checkbox" id="consent" name="consent" className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500" />
                           <label htmlFor="consent" className="text-sm font-medium text-gray-700">User has provided explicit consent to be contacted.</label>

@@ -1,5 +1,6 @@
 import { getLeadAssignment } from "@/lib/leadAssignment"
 import clientPromise from "@/lib/mongodb"
+import { ObjectId } from "mongodb"
 
 export async function POST(req) {
   try {
@@ -17,6 +18,9 @@ export async function POST(req) {
       campaign,
       term,
       content,
+      id,
+      counsellorName,
+      counsellor,
       gclid
     } = body
 
@@ -31,10 +35,9 @@ export async function POST(req) {
 
     const client = await clientPromise
     const db = client.db("sales")
-
-    // 3. Build New Lead Document following the updated model
+    const db2= client.db("internal")
+    const counsellorFind =  await db2.collection('users').findOne({_id: new ObjectId(counsellor)})
     const now = new Date()
-    const assignedTo = getLeadAssignment(course);
     const newLead = {
       name,
       email: email || "",
@@ -51,7 +54,10 @@ export async function POST(req) {
       ip,
       userAgent,
       status: "New Lead",
-      assignedTo: assignedTo || null,
+      assignedTo: {
+        _id: counsellorFind._id,
+        name: counsellorFind.name
+      },
       comments: [],
       createdAt: now,
       updatedAt: now

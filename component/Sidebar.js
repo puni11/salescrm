@@ -28,11 +28,18 @@ import {
   PhoneCall,
   LayoutDashboardIcon,
   HistoryIcon,
-  BookCheck
+  BookCheck,
+  Ad
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Image from "next/image";
-
+export  function FacebookIcon(){
+  return(
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" >
+    <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
+  </svg>
+  )
+}
 const NavItem = ({ href, icon: Icon, label, collapsed, active = false }) => (
   <Link
     href={href}
@@ -155,6 +162,15 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             collapsed={collapsed} 
             active={pathname.includes(`${session?.user?.role === 'admin'? `/call-logs` : `/counsellor/${session?.user?.id}/call-logs`}`)}
           />
+           {session?.user?.role === 'admin' && (
+            <NavItem 
+              href="/facebook-ads" 
+              icon={FacebookIcon} 
+              label="Ad Performance" 
+              collapsed={collapsed} 
+              active={pathname.includes("/facebook-ads")}
+            />
+          )}
            {session?.user?.role === 'admin' && (
             <NavItem 
               href="/course" 

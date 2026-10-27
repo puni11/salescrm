@@ -626,6 +626,7 @@ if (id === SPECIAL_COUNSELLOR_ID) {
             $in: [
               "Admission Done",
               "Converted",
+              "Registered",
               "Closed Won",
             ],
           },
