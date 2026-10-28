@@ -1,60 +1,52 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { 
-  LayoutDashboard, 
-  Settings, 
-  MessageSquareQuote,
-  ChevronLeft, 
-  Menu,
-  ShoppingBag,
-  User2,
-  FileText,
-  File,
-  LogOutIcon,
-  FileQuestion,
-  MailCheck,
-  UserCheck,
-  UserCircle,
-  MailIcon,
-  ListChecks,
-  BriefcaseBusiness,
-  X, // <-- Added X icon for mobile close button
-  User2Icon,
+import {
+  ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  Menu,
+  User2,
+  User2Icon,
+  LogOutIcon,
+  BriefcaseBusiness,
+  X,
   Settings2Icon,
   PhoneCall,
   LayoutDashboardIcon,
   HistoryIcon,
   BookCheck,
-  Ad
+  Monitor,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Image from "next/image";
-export  function FacebookIcon(){
-  return(
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" >
-    <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
-  </svg>
-  )
+
+export function FacebookIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+    </svg>
+  );
 }
+
+/* ---------------------------------- NavItem --------------------------------- */
 const NavItem = ({ href, icon: Icon, label, collapsed, active = false }) => (
   <Link
     href={href}
     title={collapsed ? label : undefined}
     className={`
       flex items-center gap-3 px-3 py-2.5 mx-3 rounded-lg transition-all duration-200 group
-      ${active 
-        ? "bg-gray-50/10 text-gray-50 border border-gray-300/20" 
+      ${active
+        ? "bg-gray-50/10 text-gray-50 border border-gray-300/20"
         : "text-gray-300 hover:bg-gray-50 hover:text-gray-900 border border-transparent"}
     `}
   >
     <div className="shrink-0 flex items-center justify-center">
-      <Icon 
-        size={20} 
-        className={active ? "text-gray-50" : "text-gray-300 group-hover:text-gray-600"} 
+      <Icon
+        size={20}
+        className={active ? "text-gray-50" : "text-gray-300 group-hover:text-gray-600"}
       />
     </div>
     <span
@@ -67,16 +59,115 @@ const NavItem = ({ href, icon: Icon, label, collapsed, active = false }) => (
   </Link>
 );
 
+/* ---------------------------------- NavGroup -------------------------------- */
+// A nav item that expands to show a submenu.
+// items = [{ href, label, active }]
+const NavGroup = ({ icon: Icon, label, collapsed, setCollapsed, active = false, items = [] }) => {
+  const [open, setOpen] = useState(active);
+
+  // Keep the group open when one of its children is the current page
+  useEffect(() => {
+    if (active) setOpen(true);
+  }, [active]);
+
+  const handleClick = () => {
+    const isDesktop =
+      typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
+
+    if (collapsed && isDesktop) {
+      // Sidebar is collapsed on desktop: expand it so the submenu is visible
+      setCollapsed(false);
+      setOpen(true);
+    } else {
+      setOpen((prev) => !prev);
+    }
+  };
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={handleClick}
+        aria-expanded={open}
+        title={collapsed ? label : undefined}
+        className={`
+          w-[calc(100%-1.5rem)] flex items-center gap-3 px-3 py-2.5 mx-3 rounded-lg transition-all duration-200 group
+          ${active
+            ? "bg-gray-50/10 text-gray-50 border border-gray-300/20"
+            : "text-gray-300 hover:bg-gray-50 hover:text-gray-900 border border-transparent"}
+        `}
+      >
+        <div className="shrink-0 flex items-center justify-center">
+          <Icon
+            size={20}
+            className={active ? "text-gray-50" : "text-gray-300 group-hover:text-gray-600"}
+          />
+        </div>
+        <span
+          className={`flex-1 text-left whitespace-nowrap text-sm font-medium tracking-wide transition-all duration-300 ${
+            collapsed ? "md:opacity-0 md:w-0 overflow-hidden" : "opacity-100 w-auto ml-1"
+          }`}
+        >
+          {label}
+        </span>
+        <ChevronDown
+          size={16}
+          className={`shrink-0 transition-transform duration-300 ${open ? "rotate-180" : ""} ${
+            collapsed ? "md:hidden" : ""
+          }`}
+        />
+      </button>
+
+      {/* Submenu (animated height) */}
+      <div
+        className={`grid transition-all duration-300 ease-in-out ${
+          open
+            ? collapsed
+              ? "grid-rows-[1fr] opacity-100 md:grid-rows-[0fr] md:opacity-0"
+              : "grid-rows-[1fr] opacity-100"
+            : "grid-rows-[0fr] opacity-0"
+        }`}
+      >
+        <div className="overflow-hidden">
+          <div className="ml-9 mr-3 mt-1 pl-3 border-l border-gray-300/20 space-y-1">
+            {items.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`
+                  block px-3 py-2 rounded-md text-sm whitespace-nowrap transition-colors
+                  ${item.active
+                    ? "bg-gray-50/10 text-gray-50 font-medium"
+                    : "text-gray-300 hover:bg-gray-50 hover:text-gray-900"}
+                `}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ---------------------------------- Sidebar --------------------------------- */
 export default function Sidebar({ session, collapsed, setCollapsed }) {
   const pathname = usePathname();
-  
-  // New state to control mobile overlay visibility
+
+  // Controls mobile overlay visibility
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+  const isAdmin = session?.user?.role === "admin";
+  const userId = session?.user?.id;
+
+  const interactionHref = isAdmin ? `/dashboard/interaction` : `/counsellor/${userId}/interaction`;
+  const callLogsHref = isAdmin ? `/call-logs` : `/counsellor/${userId}/call-logs`;
 
   return (
     <>
       {/* Mobile Hamburger Button (Floating) - Only visible on small screens */}
-      <button 
+      <button
         onClick={() => setIsMobileOpen(true)}
         className="md:hidden fixed top-4 left-4 z-40 p-2 bg-[#05335c] text-white rounded-lg shadow-lg"
       >
@@ -85,7 +176,7 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
 
       {/* Mobile Backdrop Overlay with Glass Blur */}
       {isMobileOpen && (
-        <div 
+        <div
           className="md:hidden fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-40 transition-opacity duration-300"
           onClick={() => setIsMobileOpen(false)}
         />
@@ -95,23 +186,27 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
       <div
         className={`
           fixed inset-y-0 left-0 z-50 h-screen bg-[#05335c] border-r border-gray-200 shadow-[4px_0_24px_rgba(0,0,0,0.02)]
-           transition-all duration-400 ease-in-out flex flex-col
-          md:relative md:translate-x-0 
-          ${isMobileOpen ? "translate-x-0 w-64" : "-translate-x-full"} 
+          transition-all duration-400 ease-in-out flex flex-col
+          md:relative md:translate-x-0
+          ${isMobileOpen ? "translate-x-0 w-64" : "-translate-x-full"}
           ${collapsed ? "md:w-20" : "md:w-64"}
         `}
       >
         {/* Header & Toggle */}
-        <div className={`h-16 flex items-center p-4 border-b border-gray-100 transition-all ${collapsed ? "md:justify-center justify-between" : "justify-between"}`}>
+        <div
+          className={`h-16 flex items-center p-4 border-b border-gray-100 transition-all ${
+            collapsed ? "md:justify-center justify-between" : "justify-between"
+          }`}
+        >
           {/* Always show logo on mobile, hide on desktop if collapsed */}
           <div className={`flex items-center gap-2.5 overflow-hidden pl-2 ${collapsed ? "md:hidden block" : "block"}`}>
             <Image
-  src="https://openshift.grras.com/frontassets/img/logo.png"
-  width={170}
-  height={70}
-  alt="logo"
-  className="w-auto h-10 filter brightness-0 invert"
-/>
+              src="https://openshift.grras.com/frontassets/img/logo.png"
+              width={170}
+              height={70}
+              alt="logo"
+              className="w-auto h-10 filter brightness-0 invert"
+            />
           </div>
 
           {/* Mobile Close Button */}
@@ -134,67 +229,80 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
 
         {/* Navigation */}
         <nav className="flex-1 py-6 space-y-1.5 overflow-y-auto overflow-x-hidden scrollbar-hide">
-            <NavItem 
-            href="/dashboard" 
-            icon={LayoutDashboardIcon} 
-            label="Dashboard" 
-            collapsed={collapsed} 
-             active={pathname === "/dashboard"}
+          <NavItem
+            href="/dashboard"
+            icon={LayoutDashboardIcon}
+            label="Dashboard"
+            collapsed={collapsed}
+            active={pathname === "/dashboard"}
           />
-          <NavItem 
-            href="/leads" 
-            icon={User2} 
-            label="Leads" 
-            collapsed={collapsed} 
-            active={pathname.includes("/leads")}
+
+          {/* Leads, now with a submenu */}
+         <NavItem
+            href={'/leads'}
+            icon={User2}
+            label="Leads"
+            collapsed={collapsed}
+            active={pathname.includes('leads')}
           />
-           <NavItem 
-            href={`${session?.user?.role === 'admin'? `/dashboard/interaction` : `/counsellor/${session?.user?.id}/interaction`}`}
-            icon={HistoryIcon} 
-            label="Lead Interaction" 
-            collapsed={collapsed} 
-            active={pathname.includes(`${session?.user?.role === 'admin'? `/dashboard/interaction` : `/counsellor/${session?.user?.id}/interaction`}`)}
+
+          <NavItem
+            href={interactionHref}
+            icon={HistoryIcon}
+            label="Lead Interaction"
+            collapsed={collapsed}
+            active={pathname.includes(interactionHref)}
           />
-            <NavItem 
-            href={`${session?.user?.role === 'admin'? `/call-logs` : `/counsellor/${session?.user?.id}/call-logs`}`}
-            icon={PhoneCall} 
-            label="Call Activity" 
-            collapsed={collapsed} 
-            active={pathname.includes(`${session?.user?.role === 'admin'? `/call-logs` : `/counsellor/${session?.user?.id}/call-logs`}`)}
+         
+          <NavItem
+            href={callLogsHref}
+            icon={PhoneCall}
+            label="Call Activity"
+            collapsed={collapsed}
+            active={pathname.includes(callLogsHref)}
           />
-           {session?.user?.role === 'admin' && (
-            <NavItem 
-              href="/facebook-ads" 
-              icon={FacebookIcon} 
-              label="Ad Performance" 
-              collapsed={collapsed} 
+
+          {isAdmin && (
+            <NavItem
+              href="/facebook-ads"
+              icon={FacebookIcon}
+              label="Ad Performance"
+              collapsed={collapsed}
               active={pathname.includes("/facebook-ads")}
             />
           )}
-           {session?.user?.role === 'admin' && (
-            <NavItem 
-              href="/course" 
-              icon={BookCheck} 
-              label="Course" 
-              collapsed={collapsed} 
-              active={pathname.includes("/course")}
-            />
+          {isAdmin && (
+             <NavGroup
+            icon={Monitor}
+            label="Learning"
+            collapsed={collapsed}
+            setCollapsed={setCollapsed}
+            active={pathname.includes("/batch")}
+            items={[
+              { href: "/batches", label: "Batch", active: pathname === "/batches" },
+              { href: "/course", label: "Course", active: pathname === "/course" },
+              { href: "/trainers", label: "Trainers", active: pathname === "/trainers" },
+              { href: "/categories", label: "Categories", active: pathname === "/categories" },
+              { href: "/tools", label: "Tools", active: pathname === "/tools" },
+            ]}
+          />
           )}
-          {session?.user?.role === 'admin' && (
-            <NavItem 
-              href="/staff" 
-              icon={BriefcaseBusiness} 
-              label="Staff" 
-              collapsed={collapsed} 
+        
+          {isAdmin && (
+            <NavItem
+              href="/staff"
+              icon={BriefcaseBusiness}
+              label="Staff"
+              collapsed={collapsed}
               active={pathname.includes("/staff")}
             />
           )}
-          {session?.user?.role === 'admin' && (
-            <NavItem 
-              href="/settings/integrations" 
-              icon={Settings2Icon} 
-              label="Integrations" 
-              collapsed={collapsed} 
+          {isAdmin && (
+            <NavItem
+              href="/settings/integrations"
+              icon={Settings2Icon}
+              label="Integrations"
+              collapsed={collapsed}
               active={pathname.includes("/settings/integrations")}
             />
           )}
@@ -205,17 +313,19 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
           <div className={`flex items-center ${collapsed ? "md:justify-center justify-start" : "gap-3"} mb-3`}>
             {/* Avatar */}
             <Link href="/profile" className="shrink-0">
-                {session?.user?.role === 'admin' ? (
-                  <div className="h-12 w-12 bg-[#05335c] rounded-full flex justify-center items-center text-white shadow-2xl"><User2Icon /></div>
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center shadow-inner hover:opacity-90 transition-opacity">
-                    <span className="text-amber-50 font-bold text-lg">
-                      {session?.user?.name?.charAt(0).toUpperCase() || "A"}
-                    </span> 
-                  </div>
-                )}
+              {isAdmin ? (
+                <div className="h-12 w-12 bg-[#05335c] rounded-full flex justify-center items-center text-white shadow-2xl">
+                  <User2Icon />
+                </div>
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center shadow-inner hover:opacity-90 transition-opacity">
+                  <span className="text-amber-50 font-bold text-lg">
+                    {session?.user?.name?.charAt(0).toUpperCase() || "A"}
+                  </span>
+                </div>
+              )}
             </Link>
-            
+
             {/* User Info - Hidden when collapsed on desktop, always visible on mobile */}
             <div className={`flex-1 min-w-0 ${collapsed ? "md:hidden block ml-3" : ""}`}>
               <Link href="/profile" className="block group">
@@ -230,15 +340,14 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
           </div>
 
           {/* Logout Button */}
-          <button 
+          <button
             onClick={() => signOut()}
             title={collapsed ? "Log out" : undefined}
             className={`
               flex items-center justify-center gap-2 w-full p-2.5 rounded-lg transition-all duration-200 font-medium
-              ${collapsed 
-                ? "md:text-gray-400 md:hover:text-red-600 md:hover:bg-red-50 text-gray-600 bg-white border border-gray-200" 
-                : "text-gray-600 bg-white border border-gray-200 shadow-sm hover:border-red-200 hover:text-red-600 hover:bg-red-50"
-              }
+              ${collapsed
+                ? "md:text-gray-400 md:hover:text-red-600 md:hover:bg-red-50 text-gray-600 bg-white border border-gray-200"
+                : "text-gray-600 bg-white border border-gray-200 shadow-sm hover:border-red-200 hover:text-red-600 hover:bg-red-50"}
             `}
           >
             <LogOutIcon size={18} className={collapsed ? "md:group-hover:text-red-500" : "text-gray-400 group-hover:text-red-500"} />
