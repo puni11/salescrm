@@ -19,6 +19,7 @@ import {
   HistoryIcon,
   BookCheck,
   Monitor,
+  Handshake,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Image from "next/image";
@@ -271,6 +272,14 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
               active={pathname.includes("/facebook-ads")}
             />
           )}
+            {/* Leads, now with a submenu */}
+         <NavItem
+            href={'/offerings'}
+            icon={Handshake}
+            label="Our Offerings"
+            collapsed={collapsed}
+            active={pathname.includes('offerings')}
+          />
           {isAdmin && (
              <NavGroup
             icon={Monitor}
@@ -280,6 +289,8 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             active={pathname.includes("/batch")}
             items={[
               { href: "/batches", label: "Batch", active: pathname === "/batches" },
+              
+              { href: "/students", label: "Students", active: pathname === "students" },
               { href: "/course", label: "Course", active: pathname === "/course" },
               { href: "/trainers", label: "Trainers", active: pathname === "/trainers" },
               { href: "/categories", label: "Categories", active: pathname === "/categories" },

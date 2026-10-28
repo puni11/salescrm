@@ -146,7 +146,7 @@ function validateBatch(body) {
 }
 
 async function validateReferences(db, batch) {
-  const course = await db.collection("courses").findOne({
+  const course = await db.collection("offeringCourses").findOne({
     _id: new ObjectId(batch.courseId),
   });
 
