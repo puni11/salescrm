@@ -5,11 +5,16 @@ import clientPromise from "@/lib/mongodb";
 
 const COLLECTION = "tools";
 const VALID_STATUSES = ["active", "inactive"];
+const MAX_SHORT_NAME_LENGTH = 20;
 
 async function getCollection() {
   const client = await clientPromise;
   const db = client.db("sales");
   return db.collection(COLLECTION);
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // GET: Fetch all tools or a single tool
@@ -45,7 +50,10 @@ export async function GET(request) {
 
       return NextResponse.json({
         success: true,
-        data: tool,
+        data: {
+          ...tool,
+          shortName: tool.shortName || "",
+        },
       });
     }
 
@@ -73,7 +81,10 @@ export async function GET(request) {
     return NextResponse.json({
       success: true,
       count: tools.length,
-      data: tools,
+      data: tools.map((tool) => ({
+        ...tool,
+        shortName: tool.shortName || "",
+      })),
     });
   } catch (error) {
     console.error("Get tools error:", error);
@@ -86,17 +97,34 @@ export async function GET(request) {
 }
 
 // POST: Create a new tool
-// Body: { "name": "WhatsApp", "status": "active" }
+// Body: { "name": "Kubernetes", "shortName": "K8s", "status": "active" }
 export async function POST(request) {
   try {
     const body = await request.json();
+
     const name =
       typeof body.name === "string" ? body.name.trim() : "";
+
+    const shortName =
+      typeof body.shortName === "string"
+        ? body.shortName.trim()
+        : "";
+
     const status = body.status ?? "active";
 
     if (!name) {
       return NextResponse.json(
         { success: false, message: "Tool name is required" },
+        { status: 400 }
+      );
+    }
+
+    if (shortName.length > MAX_SHORT_NAME_LENGTH) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Short name cannot exceed ${MAX_SHORT_NAME_LENGTH} characters`,
+        },
         { status: 400 }
       );
     }
@@ -114,7 +142,10 @@ export async function POST(request) {
     const collection = await getCollection();
 
     const existingTool = await collection.findOne({
-      name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+      name: {
+        $regex: `^${escapeRegex(name)}$`,
+        $options: "i",
+      },
     });
 
     if (existingTool) {
@@ -128,6 +159,7 @@ export async function POST(request) {
 
     const tool = {
       name,
+      shortName,
       status,
       createdAt: now,
       updatedAt: now,
@@ -156,9 +188,9 @@ export async function POST(request) {
   }
 }
 
-// PATCH: Update a tool's name or status
+// PATCH: Update a tool's name, shortName or status
 // URL: /api/tools?id=TOOL_ID
-// Body: { "name": "Updated Name", "status": "inactive" }
+// Body: { "name": "Kubernetes", "shortName": "K8s" }
 export async function PATCH(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -185,6 +217,27 @@ export async function PATCH(request) {
       updates.name = body.name.trim();
     }
 
+    if (Object.prototype.hasOwnProperty.call(body, "shortName")) {
+      if (typeof body.shortName !== "string") {
+        return NextResponse.json(
+          { success: false, message: "Short name must be a string" },
+          { status: 400 }
+        );
+      }
+
+      updates.shortName = body.shortName.trim();
+
+      if (updates.shortName.length > MAX_SHORT_NAME_LENGTH) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Short name cannot exceed ${MAX_SHORT_NAME_LENGTH} characters`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     if (Object.prototype.hasOwnProperty.call(body, "status")) {
       if (!VALID_STATUSES.includes(body.status)) {
         return NextResponse.json(
@@ -203,7 +256,7 @@ export async function PATCH(request) {
       return NextResponse.json(
         {
           success: false,
-          message: "Provide a name or status to update",
+          message: "Provide a name, shortName or status to update",
         },
         { status: 400 }
       );
@@ -225,7 +278,7 @@ export async function PATCH(request) {
       const duplicate = await collection.findOne({
         _id: { $ne: objectId },
         name: {
-          $regex: `^${updates.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+          $regex: `^${escapeRegex(updates.name)}$`,
           $options: "i",
         },
       });
@@ -253,7 +306,10 @@ export async function PATCH(request) {
     return NextResponse.json({
       success: true,
       message: "Tool updated successfully",
-      data: updatedTool,
+      data: {
+        ...updatedTool,
+        shortName: updatedTool.shortName || "",
+      },
     });
   } catch (error) {
     console.error("Update tool error:", error);

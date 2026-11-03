@@ -3,26 +3,41 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus, X, Loader2, Pencil, Trash2, Search, CalendarDays,
-  Users, Wrench, BookOpen, Type, CircleDot, Check,
-  CalendarCheck, Clock2,
-  Calendar
+  Users, Wrench, BookOpen, CircleDot, Check, Clock2, User,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import Link from "next/link";
 import BackButton from "@/lib/BackButton";
-const formatTime = (value) => {
-  if (!value) return "Time not set";
 
+/* ---------- helpers ---------- */
+
+const formatTime = (value) => {
+  if (!value) return "";
   const [hours, minutes] = value.split(":");
   const date = new Date();
   date.setHours(Number(hours), Number(minutes), 0, 0);
-
   return date.toLocaleTimeString("en-IN", {
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
     hour12: true,
   });
 };
+
+const formatDate = (value) => {
+  if (!value) return "Not set";
+  // Parse YYYY-MM-DD as a local date to avoid timezone shifts.
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const date = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(value);
+  if (Number.isNaN(date.getTime())) return "Invalid date";
+  return date.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+};
+
 const EMPTY_FORM = {
   name: "",
   courseId: "",
@@ -31,6 +46,7 @@ const EMPTY_FORM = {
   toolTrainerAssignments: {},
   startingDate: "",
   startingTime: "",
+  endingTime: "",
   status: "upcoming",
 };
 
@@ -41,7 +57,6 @@ const STATUS_OPTIONS = [
   { value: "completed", label: "Completed" },
 ];
 
-/* Notion tag colors per status */
 const statusStyles = {
   upcoming: "bg-[#D3E5EF] text-[#183347]",
   active: "bg-[#DBEDDB] text-[#1C3829]",
@@ -67,27 +82,77 @@ const tagColor = (key = "") => {
   return TAG_COLORS[hash % TAG_COLORS.length];
 };
 
-const GRID =
-  "grid grid-cols-[minmax(200px,1.5fr)_minmax(150px,1.1fr)_120px_110px_minmax(160px,1.3fr)_minmax(160px,1.3fr)_minmax(240px,2fr)_130px_76px]";
-
 const hoverBg = "hover:bg-[rgba(55,53,47,0.06)]";
+
+/* ---------- small building blocks ---------- */
 
 function Pill({ className = "", children }) {
   return (
     <span
-      className={`inline-flex max-w-full items-center truncate rounded-[3px] px-1.5 py-0.5 text-[13px] leading-5 ${className}`}
+      className={`inline-flex max-w-full items-center truncate rounded-[3px] px-1.5 py-0.5 text-[12px] leading-5 ${className}`}
     >
       {children}
     </span>
   );
 }
 
-function HeaderCell({ icon: Icon, children }) {
+/**
+ * One "slot" of the row: Ongoing or Up next.
+ * Same shape every time: label, topic, one line of meta.
+ */
+function SessionBlock({ label, dotClass, session, dateLabel, date }) {
   return (
-    <div className="flex items-center gap-1.5 px-2 py-1.5 text-[13px] text-[#787774]">
-      <Icon size={14} className="shrink-0 text-[#9B9A97]" />
-      <span className="truncate">{children}</span>
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5 text-xs text-[#787774]">
+        <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+        {label}
+      </div>
+
+      {session ? (
+        <>
+          <p className="mt-1 truncate text-sm font-medium text-[#37352F]">
+            {session.toolName || "Untitled topic"}
+          </p>
+          <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-[#787774]">
+            <User size={12} className="shrink-0 text-[#9B9A97]" />
+            {session.trainerName || "Trainer unavailable"}
+          </p>
+          {date && (
+            <p className="mt-0.5 text-xs text-[#9B9A97]">
+              {dateLabel} {formatDate(date)}
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="mt-1 text-sm text-[#C7C6C3]">Nothing scheduled</p>
+      )}
     </div>
+  );
+}
+
+function ToolChip({ name, state }) {
+  const styles = {
+    ongoing: "bg-[#DBEDDB] text-[#1C3829]",
+    upcoming: "bg-[rgba(55,53,47,0.06)] text-[#37352F]",
+    completed: "text-[#9B9A97]",
+  };
+  const titles = {
+    ongoing: "Ongoing",
+    upcoming: "Up next",
+    completed: "Completed or not yet scheduled",
+  };
+
+  return (
+    <span
+      title={titles[state]}
+      className={`inline-flex items-center gap-1 rounded-[3px] px-1.5 py-0.5 text-[12px] leading-5 ${styles[state]}`}
+    >
+      {state === "ongoing" && (
+        <span className="h-1.5 w-1.5 rounded-full bg-[#2F9E5B]" />
+      )}
+      {state === "completed" && <Check size={11} />}
+      {name}
+    </span>
   );
 }
 
@@ -113,6 +178,8 @@ function Property({ icon: Icon, label, hint, children }) {
 const fieldClass =
   "w-full rounded-[4px] bg-transparent px-2 py-1.5 text-sm text-[#37352F] outline-none transition-colors placeholder:text-[#C7C6C3] hover:bg-[rgba(55,53,47,0.06)] focus:bg-white focus:ring-2 focus:ring-[#2383E2]/40";
 
+/* ---------- main component ---------- */
+
 export default function BatchManager() {
   const [batches, setBatches] = useState([]);
   const [courses, setCourses] = useState([]);
@@ -134,38 +201,29 @@ export default function BatchManager() {
     try {
       setLoading(true);
 
-      const [batchRes, courseRes, toolRes, trainerRes] =
-        await Promise.all([
-          fetch("/api/batches"),
-          fetch("/api/course/details"),
-          fetch("/api/tools"),
-          fetch("/api/trainers"),
-        ]);
-
-      const responses = await Promise.all([
-        batchRes.json(),
-        courseRes.json(),
-        toolRes.json(),
-        trainerRes.json(),
+      const [batchRes, courseRes, toolRes, trainerRes] = await Promise.all([
+        fetch("/api/batches"),
+        fetch("/api/course/details"),
+        fetch("/api/tools"),
+        fetch("/api/trainers"),
       ]);
 
-      const [batchData, courseData, toolData, trainerData] = responses;
+      const [batchData, courseData, toolData, trainerData] =
+        await Promise.all([
+          batchRes.json(),
+          courseRes.json(),
+          toolRes.json(),
+          trainerRes.json(),
+        ]);
 
-      if (!batchRes.ok || !batchData.success) {
+      if (!batchRes.ok || !batchData.success)
         throw new Error(batchData.message || "Failed to load batches");
-      }
-
-      if (!courseRes.ok || !courseData.success) {
+      if (!courseRes.ok || !courseData.success)
         throw new Error(courseData.message || "Failed to load courses");
-      }
-
-      if (!toolRes.ok || !toolData.success) {
+      if (!toolRes.ok || !toolData.success)
         throw new Error(toolData.message || "Failed to load tools");
-      }
-
-      if (!trainerRes.ok || !trainerData.success) {
+      if (!trainerRes.ok || !trainerData.success)
         throw new Error(trainerData.message || "Failed to load trainers");
-      }
 
       setBatches(batchData.data || []);
       setCourses(courseData.data || []);
@@ -199,8 +257,10 @@ export default function BatchManager() {
     return batches.filter((batch) => {
       const matchesSearch =
         batch.name?.toLowerCase().includes(query) ||
-        courses.find((c) => String(c._id) === String(batch.courseId))
-          ?.name?.toLowerCase().includes(query);
+        courses
+          .find((c) => String(c._id) === String(batch.courseId))
+          ?.name?.toLowerCase()
+          .includes(query);
 
       const matchesStatus =
         statusFilter === "all" || batch.status === statusFilter;
@@ -215,31 +275,20 @@ export default function BatchManager() {
   const getTool = (id) =>
     tools.find((tool) => String(tool._id) === String(id));
 
+  // Prefer the tool's short name when available.
+  const getToolDisplayName = (toolOrId) => {
+    const tool =
+      typeof toolOrId === "object" && toolOrId !== null
+        ? toolOrId
+        : getTool(toolOrId);
+    return tool?.shortName?.trim() || tool?.name || "Tool";
+  };
+
   const getTrainer = (id) =>
     trainers.find((trainer) => String(trainer._id) === String(id));
 
-  const formatDate = (value) => {
-    if (!value) return "Not set";
-
-    // Parse YYYY-MM-DD as a local date to avoid timezone shifts.
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-
-    const date = match
-      ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
-      : new Date(value);
-
-    if (Number.isNaN(date.getTime())) return "Invalid date";
-
-    return date.toLocaleDateString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  };
-
   const openCreate = () => {
     setEditingId(null);
-
     setForm({
       ...EMPTY_FORM,
       courseId: courses[0]?._id || "",
@@ -247,13 +296,11 @@ export default function BatchManager() {
       trainers: [],
       toolTrainerAssignments: {},
     });
-
     setShowModal(true);
   };
 
   const openEdit = (batch) => {
     setEditingId(batch._id);
-
     setForm({
       name: batch.name || "",
       courseId: String(batch.courseId || ""),
@@ -269,15 +316,14 @@ export default function BatchManager() {
         : {},
       startingDate: batch.startingDate || "",
       startingTime: batch.startingTime || "",
+      endingTime: batch.endingTime || "",
       status: batch.status || "upcoming",
     });
-
     setShowModal(true);
   };
 
   const closeModal = () => {
     if (saving) return;
-
     setShowModal(false);
     setEditingId(null);
     setForm(EMPTY_FORM);
@@ -299,16 +345,10 @@ export default function BatchManager() {
         ? previous.tools.filter((item) => item !== id)
         : [...previous.tools, id];
 
-      const toolTrainerAssignments = {
-        ...previous.toolTrainerAssignments,
-      };
-
-      if (!tools.includes(id)) {
-        delete toolTrainerAssignments[id];
-      }
+      const toolTrainerAssignments = { ...previous.toolTrainerAssignments };
+      if (!tools.includes(id)) delete toolTrainerAssignments[id];
 
       const trainers = [...new Set(Object.values(toolTrainerAssignments))];
-
       return { ...previous, tools, trainers, toolTrainerAssignments };
     });
   };
@@ -330,15 +370,9 @@ export default function BatchManager() {
     }
 
     setForm((previous) => {
-      const toolTrainerAssignments = {
-        ...previous.toolTrainerAssignments,
-      };
-
-      if (trainerId) {
-        toolTrainerAssignments[toolId] = trainerId;
-      } else {
-        delete toolTrainerAssignments[toolId];
-      }
+      const toolTrainerAssignments = { ...previous.toolTrainerAssignments };
+      if (trainerId) toolTrainerAssignments[toolId] = trainerId;
+      else delete toolTrainerAssignments[toolId];
 
       return {
         ...previous,
@@ -351,25 +385,10 @@ export default function BatchManager() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!form.name.trim()) {
-      toast.error("Enter a batch name");
-      return;
-    }
-
-    if (!form.courseId) {
-      toast.error("Select a course");
-      return;
-    }
-
-    if (!form.startingDate) {
-      toast.error("Select a starting date");
-      return;
-    }
-
-    if (form.tools.length === 0) {
-      toast.error("Select at least one tool");
-      return;
-    }
+    if (!form.name.trim()) return toast.error("Enter a batch name");
+    if (!form.courseId) return toast.error("Select a course");
+    if (!form.startingDate) return toast.error("Select a starting date");
+    if (form.tools.length === 0) return toast.error("Select at least one tool");
 
     const assignments = form.tools.map((toolId) => ({
       toolId,
@@ -377,8 +396,7 @@ export default function BatchManager() {
     }));
 
     if (assignments.some((item) => !item.trainerId)) {
-      toast.error("Assign a trainer to every selected tool");
-      return;
+      return toast.error("Assign a trainer to every selected tool");
     }
 
     const invalidAssignment = assignments.some(({ toolId, trainerId }) => {
@@ -391,8 +409,9 @@ export default function BatchManager() {
     });
 
     if (invalidAssignment) {
-      toast.error("Each trainer must be active and teach their assigned tool");
-      return;
+      return toast.error(
+        "Each trainer must be active and teach their assigned tool"
+      );
     }
 
     const assignedTrainerIds = [
@@ -415,13 +434,13 @@ export default function BatchManager() {
             toolTrainerAssignments: assignments,
             startingDate: form.startingDate,
             startingTime: form.startingTime,
+            endingTime: form.endingTime,
             status: form.status,
           }),
         }
       );
 
       const data = await res.json();
-
       if (!res.ok || !data.success) {
         throw new Error(data.message || "Failed to save batch");
       }
@@ -433,7 +452,6 @@ export default function BatchManager() {
       setShowModal(false);
       setEditingId(null);
       setForm(EMPTY_FORM);
-
       await loadData();
     } catch (error) {
       toast.error(error.message || "Failed to save batch");
@@ -451,7 +469,6 @@ export default function BatchManager() {
       });
 
       const data = await res.json();
-
       if (!res.ok || !data.success) {
         throw new Error(data.message || "Failed to update batch");
       }
@@ -461,7 +478,6 @@ export default function BatchManager() {
           item._id === batch._id ? { ...item, status } : item
         )
       );
-
       toast.success("Batch status updated");
     } catch (error) {
       toast.error(error.message || "Failed to update status");
@@ -479,7 +495,6 @@ export default function BatchManager() {
       });
 
       const data = await res.json();
-
       if (!res.ok || !data.success) {
         throw new Error(data.message || "Failed to delete batch");
       }
@@ -487,7 +502,6 @@ export default function BatchManager() {
       setBatches((previous) =>
         previous.filter((item) => item._id !== batch._id)
       );
-
       toast.success("Batch deleted successfully");
     } catch (error) {
       toast.error(error.message || "Failed to delete batch");
@@ -504,9 +518,7 @@ export default function BatchManager() {
   const isFiltered = search || statusFilter !== "all";
 
   return (
-    <div
-      className="w-full text-[#37352F]"
-    >
+    <div className="w-full text-[#37352F]">
       {/* Page header */}
       <BackButton />
       <div className="mb-6">
@@ -518,12 +530,11 @@ export default function BatchManager() {
         </p>
       </div>
 
-      {/* View tabs + toolbar */}
+      {/* Tabs + toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E9E9E7]">
         <div className="flex flex-wrap items-center gap-1">
           {tabs.map(([key, label, count]) => {
             const selected = statusFilter === key;
-
             return (
               <button
                 key={key}
@@ -566,162 +577,114 @@ export default function BatchManager() {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <div className="min-w-[1180px]">
-          <div className={`${GRID} border-b border-[#E9E9E7]`}>
-            <HeaderCell icon={Type}>Name</HeaderCell>
-            <HeaderCell icon={BookOpen}>Course</HeaderCell>
-            <HeaderCell icon={CalendarDays}>Starting date</HeaderCell>
-             <HeaderCell icon={Clock2}>Batch timing</HeaderCell>
-             <HeaderCell icon={Check}>Ongoing</HeaderCell>
-<HeaderCell icon={CalendarCheck}>Next Topic</HeaderCell>
-            <HeaderCell icon={Wrench}>Tools</HeaderCell>
-            <HeaderCell icon={CircleDot}>Status</HeaderCell>
-            <div />
+      {/* List */}
+      <div>
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-sm text-[#9B9A97]">
+            <Loader2 size={16} className="animate-spin" /> Loading batches
           </div>
+        ) : filteredBatches.length === 0 ? (
+          <div className="py-14 text-center">
+            <p className="text-sm text-[#787774]">
+              {isFiltered
+                ? "No matching batches found."
+                : "No batches created yet."}
+            </p>
+            <p className="mt-1 text-xs text-[#9B9A97]">
+              Create a batch to organize a course and its trainers.
+            </p>
+            {!isFiltered && (
+              <button
+                onClick={openCreate}
+                className="mt-2 text-sm text-[#2383E2] hover:underline"
+              >
+                Create your first batch
+              </button>
+            )}
+          </div>
+        ) : (
+          filteredBatches.map((batch) => {
+            const course = getCourse(batch.courseId);
+            const batchTools = (batch.tools || [])
+              .map((id) => getTool(id))
+              .filter(Boolean);
 
-          {loading ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-sm text-[#9B9A97]">
-              <Loader2 size={16} className="animate-spin" /> Loading batches
-            </div>
-          ) : filteredBatches.length === 0 ? (
-            <div className="py-14 text-center">
-              <p className="text-sm text-[#787774]">
-                {isFiltered
-                  ? "No matching batches found."
-                  : "No batches created yet."}
-              </p>
-              <p className="mt-1 text-xs text-[#9B9A97]">
-                Create a batch to organize a course and its trainers.
-              </p>
-              {!isFiltered && (
-                <button
-                  onClick={openCreate}
-                  className="mt-2 text-sm text-[#2383E2] hover:underline"
-                >
-                  Create your first batch
-                </button>
-              )}
-            </div>
-          ) : (
-            filteredBatches.map((batch) => {
-              const course = getCourse(batch.courseId);
-              const batchTools = (batch.tools || [])
-                .map((id) => getTool(id)?.name)
-                .filter(Boolean);
+            const statusKey = batch.status || "inactive";
+            const timing =
+              batch.startingTime && batch.endingTime
+                ? `${formatTime(batch.startingTime)} – ${formatTime(batch.endingTime)}`
+                : formatTime(batch.startingTime) || "Time not set";
 
-              const batchAssignments = Array.isArray(batch.toolTrainerAssignments)
-                ? batch.toolTrainerAssignments
-                : [];
-              const batchTrainers = batchAssignments.length
-                ? batchAssignments.map((assignment) => {
-                    const toolName = getTool(assignment.toolId)?.name || "Tool";
-                    const trainerName = getTrainer(assignment.trainerId)?.name || "Trainer unavailable";
-                    return `${toolName}: ${trainerName}`;
-                  })
-                : (batch.trainers || [])
-                    .map((id) => getTrainer(id)?.name)
-                    .filter(Boolean);
-
-              const statusKey = batch.status || "inactive";
-
-              return (
-                <div
-                  key={batch._id}
-                  className={`group ${GRID} items-center border-b border-[#E9E9E7] transition-colors hover:bg-[rgba(55,53,47,0.03)]`}
-                >
-                  <Link
-                  href={`/batches/${batch._id}`}
-                    className="flex min-w-0 items-center gap-2 px-2 py-2.5 text-left"
-                  >
-                    <span className="shrink-0 text-base"><CalendarCheck size={16} /></span>
-                    <span className="truncate text-sm font-medium underline decoration-[#E3E2E0] decoration-1 underline-offset-[3px] group-hover:decoration-[#9B9A97]">
+            return (
+              <div
+                key={batch._id}
+                className="group border-b border-[#E9E9E7] px-2 py-4 transition-colors hover:bg-[rgba(55,53,47,0.025)]"
+              >
+                <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                  {/* Identity */}
+                  <div className="min-w-0 sm:col-span-2 lg:col-span-1">
+                    <div className="flex items-center gap-2">
+                    <Link
+                      href={`/batches/${batch._id}`}
+                      className="block truncate text-[15px] font-semibold text-[#37352F] hover:underline hover:decoration-[#9B9A97] hover:underline-offset-[3px]"
+                    >
                       {batch.name}
-                    </span>
-                  </Link>
-
-                  <div className="min-w-0 px-2 py-2.5">
-                    {course ? (
-                      <Pill className={tagColor(course._id)}>{course.name}</Pill>
-                    ) : (
-                      <span className="text-sm text-[#C7C6C3]">
-                        Course unavailable
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col gap-0.5 px-2 py-2.5">
-  <span className="text-sm text-[#37352F]">
-    {formatDate(batch.startingDate)}
-  </span>
-
- 
-</div>
-<div className="px-2 py-2.5">
-  <span className="flex items-center gap-1 text-sm text-[#787774]">
-    <Clock2 size={13} />
-    {formatTime(batch.startingTime)}
-  </span>
-</div>
-{/* Latest Session */}
-{/* Ongoing - Latest Finished Session */}
-<div className="min-w-0 px-2 py-2.5">
-  {batch.latestFinishedSession ? (
-    <Pill className="bg-[#DBEDDB] text-[#1C3829]">
-      {batch.latestFinishedSession.title}
-    </Pill>
-  ) : (
-    <span className="text-sm text-[#9B9A97]">
-      Not started
-    </span>
-  )}
-</div>
-
-{/* Next Topic - Upcoming Session */}
-{/* Next Topic - Upcoming Session */}
-<div className="min-w-0 px-2 py-2.5">
-  {batch.latestUpcomingSession ? (
-    <div className="flex flex-col items-start gap-1">
-      <Pill className="bg-[#D3E5EF] text-[#183347]">
-        {batch.latestUpcomingSession.title}
-      </Pill>
-<span className="flex items-center gap-3 text-xs text-[#787774]">
-      <span className="flex items-center gap-1 text-xs text-[#787774]">
-        <Calendar size={12} />
-        {formatDate(batch.latestUpcomingSession.date)}
-      </span>
-
-      <span className="flex items-center gap-1 text-xs text-[#787774]">
-        <Clock2 size={12} />
-        {formatTime(batch.latestUpcomingSession.time)}
-      </span>
-      </span>
-    </div>
-  ) : (
-    <span className="text-sm text-[#9B9A97]">No upcoming topic</span>
-  )}
-</div>
-                  <div className="flex min-w-0 ">
-                    {batchTools.length ? (
-                      batchTools.map((name) => (
-                        <Pill key={name} className={''}>
-                          {name},
+                    </Link>
+                     <div className="">
+                      {course ? (
+                        <Pill className={tagColor(course._id)}>
+                          Course - {course.name}
                         </Pill>
-                      ))
-                    ) : (
-                      <span className="text-sm text-[#C7C6C3]">Empty</span>
-                    )}
+                      ) : (
+                        <span className="text-xs text-[#C7C6C3]">
+                          Course unavailable
+                        </span>
+                      )}
+                    </div>
+                    </div>
+                   
+
+                    <div className="mt-2.5 space-y-1 text-xs text-[#787774]">
+                      <p className="flex items-center gap-1.5">
+                        <CalendarDays size={12} className="text-[#9B9A97]" />
+                        Starts {formatDate(batch.startingDate)}
+                      </p>
+                      <p className="flex items-center gap-1.5">
+                        <Clock2 size={12} className="text-[#9B9A97]" />
+                        {timing}
+                      </p>
+                    </div>
                   </div>
 
-                 
+                  {/* Ongoing */}
+                  <SessionBlock
+                    label="Ongoing"
+                    dotClass="bg-[#2F9E5B]"
+                    session={batch.latestOngoingSession}
+                    dateLabel="Ends"
+                    date={batch.latestOngoingSession?.endDate}
+                  />
 
-                  <div className="px-2 py-2.5">
+                  {/* Up next */}
+                  <SessionBlock
+                    label="Up next"
+                    dotClass="bg-[#2383E2]"
+                    session={batch.latestUpcomingSession}
+                    dateLabel="Starts"
+                    /* If your API returns a startDate for upcoming sessions it is used; otherwise falls back to endDate as before. */
+                    date={
+                      batch.latestUpcomingSession?.startDate ||
+                      batch.latestUpcomingSession?.endDate
+                    }
+                  />
+
+                  {/* Status + actions */}
+                  <div className="flex items-start justify-between gap-2 sm:col-span-2 lg:col-span-1 lg:flex-col lg:items-end lg:justify-start">
                     <select
                       aria-label={`Change status for ${batch.name}`}
                       value={statusKey}
                       onChange={(e) => changeStatus(batch, e.target.value)}
-                      className={`cursor-pointer appearance-none rounded-[3px] border-0 px-1.5 py-0.5 text-[13px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-[#2383E2]/40 ${
+                      className={`cursor-pointer appearance-none rounded-[3px] border-0 px-2 py-0.5 text-[13px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-[#2383E2]/40 ${
                         statusStyles[statusKey] || statusStyles.inactive
                       }`}
                     >
@@ -731,46 +694,68 @@ export default function BatchManager() {
                         </option>
                       ))}
                     </select>
-                  </div>
 
-                  <div className="flex items-center justify-center gap-0.5">
-                    <button
-                      onClick={() => openEdit(batch)}
-                      aria-label={`Edit ${batch.name}`}
-                      className={`rounded-[4px] p-1.5 text-[#787774] opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100 ${hoverBg}`}
-                    >
-                      <Pencil size={14} />
-                    </button>
-                    <button
-                      onClick={() => deleteBatch(batch)}
-                      disabled={deletingId === batch._id}
-                      aria-label={`Delete ${batch.name}`}
-                      className={`rounded-[4px] p-1.5 text-[#787774] transition-opacity hover:bg-[#FFE2DD] hover:text-[#E03E3E] focus:opacity-100 group-hover:opacity-100 ${
-                        deletingId === batch._id ? "opacity-100" : "opacity-0"
-                      }`}
-                    >
-                      {deletingId === batch._id ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <Trash2 size={14} />
-                      )}
-                    </button>
-                    
+                    <div className="flex items-center gap-0.5 lg:opacity-0 lg:transition-opacity lg:focus-within:opacity-100 lg:group-hover:opacity-100">
+                      <button
+                        onClick={() => openEdit(batch)}
+                        aria-label={`Edit ${batch.name}`}
+                        className={`rounded-[4px] p-1.5 text-[#787774] ${hoverBg}`}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={() => deleteBatch(batch)}
+                        disabled={deletingId === batch._id}
+                        aria-label={`Delete ${batch.name}`}
+                        className="rounded-[4px] p-1.5 text-[#787774] transition-colors hover:bg-[#FFE2DD] hover:text-[#E03E3E]"
+                      >
+                        {deletingId === batch._id ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
-              );
-            })
-          )}
 
-          {!loading && (
-            <button
-              onClick={openCreate}
-              className={`flex w-full items-center gap-2 px-2 py-2 text-left text-sm text-[#9B9A97] transition-colors ${hoverBg}`}
-            >
-              <Plus size={15} /> New batch
-            </button>
-          )}
-        </div>
+                {/* Tools */}
+                <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
+                  <Wrench size={12} className="mr-0.5 text-[#9B9A97]" />
+                  {batchTools.length ? (
+                    batchTools.map((tool) => {
+                      const state =
+                        batch.latestOngoingSession?.toolName === tool.name
+                          ? "ongoing"
+                          : batch.latestUpcomingSession?.toolName === tool.name
+                          ? "upcoming"
+                          : "completed";
+
+                      return (
+                        <ToolChip
+                          key={tool._id}
+                          name={getToolDisplayName(tool)}
+                          state={state}
+                        />
+                      );
+                    })
+                  ) : (
+                    <span className="text-xs text-[#C7C6C3]">No tools</span>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+
+        {!loading && (
+          <button
+            onClick={openCreate}
+            className={`flex w-full items-center gap-2 px-2 py-2.5 text-left text-sm text-[#9B9A97] transition-colors ${hoverBg}`}
+          >
+            <Plus size={15} /> New batch
+          </button>
+        )}
       </div>
 
       {!loading && filteredBatches.length > 0 && (
@@ -779,7 +764,7 @@ export default function BatchManager() {
         </p>
       )}
 
-      {/* Modal / page peek */}
+      {/* Modal */}
       {showModal && (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgba(15,15,15,0.6)] p-4 sm:py-12"
@@ -851,28 +836,36 @@ export default function BatchManager() {
                       type="date"
                       value={form.startingDate}
                       onChange={(e) =>
-                        setForm((p) => ({
-                          ...p,
-                          startingDate: e.target.value,
-                        }))
+                        setForm((p) => ({ ...p, startingDate: e.target.value }))
                       }
                       className={fieldClass}
                     />
                   </Property>
+
                   <Property icon={Clock2} label="Starting time">
                     <input
                       required
                       type="time"
                       value={form.startingTime}
                       onChange={(e) =>
-                        setForm((p) => ({
-                          ...p,
-                          startingTime: e.target.value,
-                        }))
+                        setForm((p) => ({ ...p, startingTime: e.target.value }))
                       }
                       className={fieldClass}
                     />
                   </Property>
+
+                  <Property icon={Clock2} label="Ending time">
+                    <input
+                      required
+                      type="time"
+                      value={form.endingTime}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, endingTime: e.target.value }))
+                      }
+                      className={fieldClass}
+                    />
+                  </Property>
+
                   <Property icon={CircleDot} label="Status">
                     <select
                       value={form.status}
@@ -917,7 +910,7 @@ export default function BatchManager() {
                               }`}
                             >
                               {checked && <Check size={13} />}
-                              {tool.name}
+                              {getToolDisplayName(tool)}
                               {tool.status === "inactive" && (
                                 <span className="text-[#9B9A97]">(Inactive)</span>
                               )}
@@ -958,7 +951,9 @@ export default function BatchManager() {
                             >
                               <div>
                                 <p className="text-sm font-medium text-[#37352F]">
-                                  {tool?.name || "Unknown tool"}
+                                  {getToolDisplayName(tool) === "Tool"
+                                    ? "Unknown tool"
+                                    : getToolDisplayName(tool)}
                                 </p>
                                 <p className="text-xs text-[#9B9A97]">
                                   Choose who teaches this tool
@@ -986,7 +981,8 @@ export default function BatchManager() {
 
                               {eligibleTrainers.length === 0 && (
                                 <p className="text-xs text-red-600 sm:col-span-2">
-                                  No active trainer teaches this tool. Update the trainer's tool assignments first.
+                                  No active trainer teaches this tool. Update the
+                                  trainer&apos;s tool assignments first.
                                 </p>
                               )}
                             </div>
@@ -1022,8 +1018,8 @@ export default function BatchManager() {
                   {saving
                     ? "Saving..."
                     : editingId
-                      ? "Save changes"
-                      : "Create batch"}
+                    ? "Save changes"
+                    : "Create batch"}
                 </button>
               </div>
             </form>

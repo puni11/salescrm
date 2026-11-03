@@ -23,7 +23,7 @@ import {
   BookOpen,
 } from "lucide-react";
 
-const TABS = ["Overview", "Students", "Sessions", "Tools", "Trainers"];
+const TABS = ["Overview", "Students", "Tools Planing", "Tools", "Trainers"];
 
 /* ---------- Notion palette ---------- */
 const ink = "text-[#37352f]";
@@ -243,12 +243,12 @@ function ConfirmDialog({ confirm, busy, onCancel, onConfirm }) {
 
 /* ---------- Main page ---------- */
 const EMPTY_SESSION = {
-  title: "",
   date: "",
+  endDate: "",
   time: "10:00",
   toolId: "",
   notes: "",
-  status: "pending",
+  status: "upcoming",
 };
 
 export default function BatchDetails({ batchId, onBack }) {
@@ -338,21 +338,22 @@ export default function BatchDetails({ batchId, onBack }) {
     setEditStudent(student);
   };
 
-  const openSessionEditor = (session) => {
-    setSessionForm(
-      session
-        ? {
-            title: session.title,
-            date: session.date,
-            time: session.time,
-            toolId: session.toolId || "",
-            notes: session.notes || "",
-            status: session.status,
-          }
-        : EMPTY_SESSION
-    );
-    setSessionModal(session || {});
-  };
+const openSessionEditor = (session) => {
+  setSessionForm(
+    session
+      ? {
+          date: session.date || "",
+          endDate: session.endDate || session.date || "",
+          time: session.time || "10:00",
+          toolId: session.toolId || "",
+          notes: session.notes || "",
+          status: session.status || "pending",
+        }
+      : { ...EMPTY_SESSION }
+  );
+
+  setSessionModal(session || {});
+};
 
   const submitBatch = (e) => {
     e.preventDefault();
@@ -368,17 +369,40 @@ export default function BatchDetails({ batchId, onBack }) {
     });
   };
 
-  const submitSession = (e) => {
-    e.preventDefault();
-    const editing = Boolean(sessionModal?.id);
-    run(() =>
-      request(
-        sessionsEndpoint,
-        editing ? "PATCH" : "POST",
-        editing ? { sessionId: sessionModal.id, ...sessionForm } : sessionForm
-      )
-    );
+const submitSession = (e) => {
+  e.preventDefault();
+
+  if (!sessionForm.date || !sessionForm.endDate || !sessionForm.time) {
+    window.alert("Please fill in starting date, ending date and time.");
+    return;
+  }
+
+  if (sessionForm.endDate < sessionForm.date) {
+    window.alert("Ending date cannot be before starting date.");
+    return;
+  }
+
+  const editing = Boolean(sessionModal?.id);
+
+  const payload = {
+    date: sessionForm.date,
+    endDate: sessionForm.endDate,
+    time: sessionForm.time,
+    toolId: sessionForm.toolId,
+    notes: sessionForm.notes,
+    status: sessionForm.status,
   };
+
+  run(() =>
+    request(
+      sessionsEndpoint,
+      editing ? "PATCH" : "POST",
+      editing
+        ? { sessionId: sessionModal.id, ...payload }
+        : payload
+    )
+  );
+};
 
   const toggleSession = (session) =>
     run(() =>
@@ -499,7 +523,7 @@ export default function BatchDetails({ batchId, onBack }) {
           {TABS.map((item) => {
             const count =
               item === "Students" ? students.length
-              : item === "Sessions" ? sessions.length
+              : item === "Tools Planing" ? sessions.length
               : item === "Tools" ? tools.length
               : item === "Trainers" ? trainers.length
               : null;
@@ -597,100 +621,168 @@ export default function BatchDetails({ batchId, onBack }) {
             </section>
           )}
 
-          {/* ---------- Sessions ---------- */}
-          {tab === "Sessions" && (
-            <section>
-              <SectionTitle
-                title="Sessions"
-                hint={`${sessionsDone} of ${sessions.length} completed`}
-                action={
-                  <Btn variant="primary" onClick={() => openSessionEditor(null)}>
-                    <Plus size={14} /> New session
-                  </Btn>
-                }
-              />
+         {/* ---------- Sessions ---------- */}
+{tab === "Tools Planing" && (
+  <section>
+    <SectionTitle
+      title="Tools Planing "
+      hint={`${sessionsDone} of ${sessions.length} completed`}
+      action={
+        <Btn
+          variant="primary"
+          onClick={() => openSessionEditor(null)}
+        >
+          <Plus size={14} />
+         Add New Tool
+        </Btn>
+      }
+    />
 
-              {sessions.length ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[720px] text-left text-sm">
-                    <thead className={`border-y ${line} text-xs ${muted}`}>
-                      <tr>
-                        <th className="px-3 py-2 font-normal">Session</th>
-                        <th className="px-3 py-2 font-normal">Date</th>
-                        <th className="px-3 py-2 font-normal">Time</th>
-                        <th className="px-3 py-2 font-normal">Tool</th>
-                        <th className="px-3 py-2 font-normal">Status</th>
-                        <th className="px-3 py-2 text-right font-normal" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sessions.map((session) => (
-                        <tr key={session.id} className={`border-b ${line} ${hoverBg}`}>
-                          <td className="px-3 py-2.5">
-                            <p className="font-medium">{session.title}</p>
-                            {session.notes && (
-                              <p className={`max-w-xs truncate text-xs ${muted}`}>{session.notes}</p>
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5">{formatDate(session.date)}</td>
-                          <td className="px-3 py-2.5">{formatTime(session.time)}</td>
-                          <td className="px-3 py-2.5">
-                            {session.toolId ? (
-                              <Tag color="blue">{toolName(session.toolId) || "Unknown tool"}</Tag>
-                            ) : (
-                              <span className={muted}>All tools</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <button
-                              onClick={() => toggleSession(session)}
-                              disabled={saving}
-                              title="Click to switch status"
-                            >
-                              <Tag color={session.status === "completed" ? "green" : "yellow"}>
-                                {session.status === "completed" && <Check size={12} />}
-                                {session.status}
-                              </Tag>
-                            </button>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <div className="flex justify-end gap-0.5">
-                              <IconBtn onClick={() => openSessionEditor(session)} title="Edit session">
-                                <Pencil size={14} />
-                              </IconBtn>
-                              <IconBtn
-                                danger
-                                title="Delete session"
-                                onClick={() =>
-                                  ask({
-                                    title: "Delete session?",
-                                    message: `Delete "${session.title}" on ${formatDate(session.date)}?`,
-                                    confirmLabel: "Delete",
-                                    danger: true,
-                                    onConfirm: () =>
-                                      run(() =>
-                                        request(
-                                          `${sessionsEndpoint}?sessionId=${session.id}`,
-                                          "DELETE"
-                                        )
-                                      ),
-                                  })
-                                }
-                              >
-                                <Trash2 size={14} />
-                              </IconBtn>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <Empty text="No sessions yet. Add the first one with New session." />
-              )}
-            </section>
-          )}
+    {sessions.length ? (
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[800px] text-left text-sm">
+          <thead className={`border-y ${line} text-xs ${muted}`}>
+            <tr>
+              <th className="px-3 py-2 font-normal">Start Date</th>
+               <th className="px-3 py-2 font-normal">End Date</th>
+              <th className="px-3 py-2 font-normal">Tool</th>
+              <th className="px-3 py-2 font-normal">Notes</th>
+              <th className="px-3 py-2 font-normal">Status</th>
+              <th className="px-3 py-2 text-right font-normal">
+                Actions
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {sessions.map((session) => (
+              <tr
+                key={session.id}
+                className={`border-b ${line} ${hoverBg}`}
+              >
+                {/* Date range */}
+                <td className="px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <CalendarDays
+                      size={14}
+                      className={muted}
+                    />
+
+                    <div>
+                      <p className="font-medium">
+                        {formatDate(session.date)}
+                      </p>
+
+                      
+                    </div>
+                  </div>
+                </td>
+                <td className="px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <CalendarDays
+                      size={14}
+                      className={muted}
+                    />
+
+                    <div>
+                      <p className="font-medium">
+                        {formatDate(session.endDate)}
+                      </p>
+
+                      
+                    </div>
+                  </div>
+                </td>
+                {/* Tool */}
+                <td className="px-3 py-2.5">
+                  {session.toolId ? (
+                    <Tag color="blue">
+                      {toolName(session.toolId) || "Unknown tool"}
+                    </Tag>
+                  ) : (
+                    <span className={muted}>All tools</span>
+                  )}
+                </td>
+
+                {/* Notes */}
+                <td className="max-w-xs px-3 py-2.5">
+                  <span
+                    className={`block truncate ${muted}`}
+                    title={session.notes || ""}
+                  >
+                    {session.notes || "—"}
+                  </span>
+                </td>
+
+                {/* Status */}
+                <td className="px-3 py-2.5">
+                  <button
+                    onClick={() => toggleSession(session)}
+                    disabled={saving}
+                    title="Click to switch status"
+                  >
+                    <Tag
+                      color={
+                        session.status === "completed"
+                          ? "green"
+                          : "yellow"
+                      }
+                    >
+                      {session.status === "completed" && (
+                        <Check size={12} />
+                      )}
+                      {session.status || "pending"}
+                    </Tag>
+                  </button>
+                </td>
+
+                {/* Actions */}
+                <td className="px-3 py-2.5">
+                  <div className="flex justify-end gap-0.5">
+                    <IconBtn
+                      onClick={() => openSessionEditor(session)}
+                      title="Edit session"
+                    >
+                      <Pencil size={14} />
+                    </IconBtn>
+
+                    <IconBtn
+                      danger
+                      title="Delete session"
+                      onClick={() =>
+                        ask({
+                          title: "Delete session?",
+                          message: `Delete session from ${formatDate(
+                            session.date
+                          )} to ${formatDate(
+                            session.endDate || session.date
+                          )}?`,
+                          confirmLabel: "Delete",
+                          danger: true,
+                          onConfirm: () =>
+                            run(() =>
+                              request(
+                                `${sessionsEndpoint}?sessionId=${session.id}`,
+                                "DELETE"
+                              )
+                            ),
+                        })
+                      }
+                    >
+                      <Trash2 size={14} />
+                    </IconBtn>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <Empty text="No sessions yet. Add the first one with New session." />
+    )}
+  </section>
+)}
 
           {/* ---------- Tools ---------- */}
           {tab === "Tools" && (
@@ -901,58 +993,143 @@ export default function BatchDetails({ batchId, onBack }) {
         </Modal>
       )}
 
-      {/* ---------- Add / edit session ---------- */}
-      {sessionModal && (
-        <Modal
-          title={sessionModal.id ? "Edit session" : "New session"}
-          onClose={() => setSessionModal(null)}
-        >
-          <form onSubmit={submitSession} className="space-y-4">
-            <Field label="Session title">
-              <input required className={inputClass} placeholder="e.g. Kubernetes networking"
-                value={sessionForm.title}
-                onChange={(e) => setSessionForm({ ...sessionForm, title: e.target.value })} />
-            </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Date">
-                <input type="date" required className={inputClass} value={sessionForm.date}
-                  onChange={(e) => setSessionForm({ ...sessionForm, date: e.target.value })} />
-              </Field>
-              <Field label="Time">
-                <input type="time" required className={inputClass} value={sessionForm.time}
-                  onChange={(e) => setSessionForm({ ...sessionForm, time: e.target.value })} />
-              </Field>
-              <Field label="Tool">
-                <select className={inputClass} value={sessionForm.toolId}
-                  onChange={(e) => setSessionForm({ ...sessionForm, toolId: e.target.value })}>
-                  <option value="">All tools</option>
-                  {tools.map((tool) => (
-                    <option key={tool.id} value={tool.id}>{tool.name}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Status">
-                <select className={inputClass} value={sessionForm.status}
-                  onChange={(e) => setSessionForm({ ...sessionForm, status: e.target.value })}>
-                  <option value="pending">Pending</option>
-                  <option value="completed">Completed</option>
-                </select>
-              </Field>
-            </div>
-            <Field label="Notes (optional)">
-              <textarea rows={3} className={inputClass} value={sessionForm.notes}
-                onChange={(e) => setSessionForm({ ...sessionForm, notes: e.target.value })} />
-            </Field>
-            <div className="flex justify-end gap-2 pt-2">
-              <Btn type="button" variant="outline" onClick={() => setSessionModal(null)}>Cancel</Btn>
-              <Btn variant="primary" disabled={saving}>
-                {saving ? "Saving..." : sessionModal.id ? "Save changes" : "Add session"}
-              </Btn>
-            </div>
-          </form>
-        </Modal>
-      )}
+     {/* ---------- Add / edit session ---------- */}
+{sessionModal && (
+  <Modal
+    title={sessionModal.id ? "Edit Tool Learning" : "Tool Learning"}
+    onClose={() => setSessionModal(null)}
+  >
+    <form onSubmit={submitSession} className="space-y-4">
 
+      {/* Starting and ending dates */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Starting Date">
+          <input
+            type="date"
+            required
+            className={inputClass}
+            value={sessionForm.date}
+            onChange={(e) =>
+              setSessionForm((current) => ({
+                ...current,
+                date: e.target.value,
+                endDate:
+                  current.endDate &&
+                  current.endDate < e.target.value
+                    ? e.target.value
+                    : current.endDate,
+              }))
+            }
+          />
+        </Field>
+
+        <Field label="Ending Date">
+          <input
+            type="date"
+            required
+            min={sessionForm.date || undefined}
+            className={inputClass}
+            value={sessionForm.endDate}
+            onChange={(e) =>
+              setSessionForm((current) => ({
+                ...current,
+                endDate: e.target.value,
+              }))
+            }
+          />
+        </Field>
+
+        <Field label="Time">
+          <input
+            type="time"
+            required
+            className={inputClass}
+            value={sessionForm.time}
+            onChange={(e) =>
+              setSessionForm({
+                ...sessionForm,
+                time: e.target.value,
+              })
+            }
+          />
+        </Field>
+
+        <Field label="Tool">
+          <select
+            className={inputClass}
+            value={sessionForm.toolId}
+            onChange={(e) =>
+              setSessionForm({
+                ...sessionForm,
+                toolId: e.target.value,
+              })
+            }
+          >
+            <option value="">All tools</option>
+
+            {tools.map((tool) => (
+              <option key={tool.id} value={tool.id}>
+                {tool.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Status">
+          <select
+            className={inputClass}
+            value={sessionForm.status}
+            onChange={(e) =>
+              setSessionForm({
+                ...sessionForm,
+                status: e.target.value,
+              })
+            }
+          >
+            <option value="upcoming">Upcoming</option>
+            <option value="ongoing">Ongoing</option>
+            <option value="completed">Completed</option>
+          </select>
+        </Field>
+      </div>
+
+      {/* Notes */}
+      <Field label="Notes (optional)">
+        <textarea
+          rows={3}
+          className={inputClass}
+          placeholder="Add session notes..."
+          value={sessionForm.notes}
+          onChange={(e) =>
+            setSessionForm({
+              ...sessionForm,
+              notes: e.target.value,
+            })
+          }
+        />
+      </Field>
+
+      {/* Actions */}
+      <div className="flex justify-end gap-2 pt-2">
+        <Btn
+          type="button"
+          variant="outline"
+          onClick={() => setSessionModal(null)}
+        >
+          Cancel
+        </Btn>
+
+        <Btn variant="primary" disabled={saving}>
+          {saving
+            ? "Saving..."
+            : sessionModal.id
+              ? "Save changes"
+              : "Add session"}
+        </Btn>
+      </div>
+    </form>
+  </Modal>
+)}
       {/* ---------- Are you sure? ---------- */}
       {confirm && (
         <ConfirmDialog

@@ -10,6 +10,7 @@ import toast from "react-hot-toast";
 
 const EMPTY_FORM = {
   name: "",
+  shortName: "",
   status: "active",
 };
 
@@ -107,7 +108,9 @@ export default function ToolManager() {
     const query = search.trim().toLowerCase();
 
     return tools.filter((tool) => {
-      const matchesSearch = tool.name?.toLowerCase().includes(query);
+      const matchesSearch =
+        tool.name?.toLowerCase().includes(query) ||
+        tool.shortName?.toLowerCase().includes(query);
       const matchesStatus =
         statusFilter === "all" || tool.status === statusFilter;
 
@@ -125,6 +128,7 @@ export default function ToolManager() {
     setEditingId(tool._id);
     setForm({
       name: tool.name || "",
+      shortName: tool.shortName || "",
       status: tool.status || "active",
     });
     setShowModal(true);
@@ -170,6 +174,7 @@ export default function ToolManager() {
           },
           body: JSON.stringify({
             name,
+            shortName: form.shortName.trim(),
             status: form.status,
           }),
         }
@@ -384,8 +389,15 @@ export default function ToolManager() {
                     onClick={() => openEdit(tool)}
                     className="flex min-w-0 items-center gap-2 px-2 py-2.5 text-left"
                   ><span className="shrink-0 text-base"><ToolboxIcon size={16}/></span>
-                    <span className="truncate text-sm font-medium underline decoration-[#E3E2E0] decoration-1 underline-offset-[3px] group-hover:decoration-[#9B9A97]">
-                      {tool.name}
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate text-sm font-medium underline decoration-[#E3E2E0] decoration-1 underline-offset-[3px] group-hover:decoration-[#9B9A97]">
+                        {tool.name}
+                      </span>
+                      {tool.shortName && (
+                        <span className="mt-0.5 truncate text-xs text-[#9B9A97]">
+                          Short Name : {tool.shortName}
+                        </span>
+                      )}
                     </span>
                   </button>
 
@@ -513,7 +525,23 @@ export default function ToolManager() {
                   e.g. Kubernetes, Docker, RedHat
                 </p>
 
-                <div className="mt-4 border-b border-[#E9E9E7] pb-4">
+                <div className="mt-4 space-y-3 border-b border-[#E9E9E7] pb-4">
+                  <Property icon={Type} label="Short name">
+                    <input
+                      type="text"
+                      maxLength={20}
+                      value={form.shortName}
+                      onChange={(e) =>
+                        setForm((previous) => ({
+                          ...previous,
+                          shortName: e.target.value,
+                        }))
+                      }
+                      placeholder="e.g. K8s, AWS, RH"
+                      className={fieldClass}
+                    />
+                  </Property>
+
                   <Property icon={CircleDot} label="Status">
                     <select
                       value={form.status}
