@@ -6,7 +6,11 @@ import usePushNotifications from "@/hooks/usePushNotifications";
 import NotificationPermissionPopup from "./NotificationPermissionPopup";
 import useDailyFollowups from "@/hooks/useDailyFollowups";
 import DailyFollowupScreen from "./DailyFollowupScreen";
-export default function ClientLayout({ session, children }) {
+import WhatsAppGlobalListener from "./whatsApp/WhatsAppGlobalListener";
+import WhatsAppNotification from "./whatsApp/WhatsAppNotification";
+import PageLoader from "./NewComp/PageLoader";
+export default function ClientLayout({ session, children }) { 
+  console.log("ClientLayout session:", session);
   const [collapsed, setCollapsed] = useState(false);
   const [showNotificationPopup, setShowNotificationPopup] = useState(false);
     const {
@@ -39,9 +43,12 @@ const { enableNotifications } = usePushNotifications();
     <div className="flex h-screen overflow-hidden font-sans w-full">
       
       {/* Sidebar Component */}
+      <WhatsAppGlobalListener />
+      <WhatsAppNotification session={session} />
       <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} session={session} />
 
       {/* Main Content */}
+     
       <div className="flex-1 overflow-y-auto font-sans">
 
         <div className="p-6">{children}</div>

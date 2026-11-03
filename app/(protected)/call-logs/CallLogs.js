@@ -1,85 +1,190 @@
 'use client'
-import React, { useState, useEffect } from "react";
-import { 
-  Search, Filter, X, CheckCircle, Minus,
-  AlertCircle, Clock, TrendingUp, TrendingDown, Calendar,
-  PhoneIncoming, PhoneOutgoing, PhoneMissed, UserMinus, Activity,
-  RefreshCw
+import React, { useState, useEffect, useRef } from "react";
+import {
+  Search, Filter, X, RefreshCw, AlertCircle, ChevronLeft, ChevronRight,
+  TrendingUp, TrendingDown, Minus, Activity, Clock,
+  PhoneIncoming, PhoneOutgoing, PhoneMissed, UserMinus,
+  User, Calendar, Phone, BookOpen,
+  Smartphone,
+  Headphones,
 } from "lucide-react";
 import BackButton from "@/lib/BackButton";
-import { useRouter } from "next/navigation";
 import { fetchCounsellors } from "@/lib/helper/helper";
 
-// --- CUSTOM HOOKS ---
+/* ---------- Notion-style tokens ---------- */
+const FONT =
+  'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif';
+const BORDER = "border-[rgba(55,53,47,0.09)]";
+const BORDER_STRONG = "border-[rgba(55,53,47,0.16)]";
+const MUTED = "text-[rgba(55,53,47,0.65)]";
+const FAINT = "text-[rgba(55,53,47,0.5)]";
+const HOVER = "hover:bg-[rgba(55,53,47,0.06)]";
+
+const TAG = {
+  gray: "bg-[#e3e2e0] text-[#32302c]",
+  green: "bg-[#dbeddb] text-[#1c3829]",
+  blue: "bg-[#d3e5ef] text-[#183347]",
+  red: "bg-[#ffe2dd] text-[#5d1715]",
+  orange: "bg-[#fadec9] text-[#49290e]",
+  purple: "bg-[#e8deee] text-[#412454]",
+};
+
+const CALL_TYPES = ["Inbound", "Outbound", "Missed"];
+const CALL_TYPE_TAG = {
+  INCOMING: { label: "Inbound", color: "green" },
+  OUTGOING: { label: "Outbound", color: "blue" },
+  MISSED: { label: "Missed", color: "red" },
+};
+
+/* ---------- Hooks / helpers ---------- */
 function useDebounce(value, delay) {
-  const [debouncedValue, setDebouncedValue] = useState(value);
+  const [debounced, setDebounced] = useState(value);
   useEffect(() => {
-    const handler = setTimeout(() => setDebouncedValue(value), delay);
-    return () => clearTimeout(handler);
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
   }, [value, delay]);
-  return debouncedValue;
+  return debounced;
 }
 
-// --- MOCK API REQUESTER ---
 const apiRequest = async (url, options = {}) => {
   try {
     const res = await fetch(url, {
-      headers: { 'Content-Type': 'application/json', ...options.headers },
-      ...options
+      ...options,
+      headers: { "Content-Type": "application/json", ...options.headers },
     });
     if (res.status === 401 || res.status === 403) return { unauthorized: true };
     const data = await res.json();
     return { data, error: !res.ok };
   } catch (err) {
+    if (err.name === "AbortError") return { aborted: true, error: true };
     console.error("API Error:", err);
     return { error: true, message: err.message };
   }
 };
 
-// --- CONSTANTS ---
-const CALL_TYPES = ["Inbound", "Outbound", "Missed"];
+const formatDuration = (seconds) => {
+  if (!seconds && seconds !== 0) return "N/A";
+  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+};
 
-export default function CallLogsPage({id}) {
+const formatTime = (totalSeconds) => {
+  if (!totalSeconds) return "0m 0s";
+  return `${Math.floor(totalSeconds / 60)}m ${Math.round(totalSeconds % 60)}s`;
+};
+
+const getDaysAgoSkippingSunday = (start, days) => {
+  const d = new Date(start);
+  let count = 0;
+  while (count < days) {
+    d.setDate(d.getDate() - 1);
+    if (d.getDay() !== 0) count++;
+  }
+  return d;
+};
+
+const trendWindowLabel = (fromDate, toDate) => {
+  const opts = { month: "short", day: "numeric" };
+  if (fromDate || toDate) {
+    const f = fromDate ? new Date(fromDate).toLocaleDateString("en-US", opts) : "Start";
+    const t = toDate ? new Date(toDate).toLocaleDateString("en-US", opts) : "Today";
+    return `Selected: ${f} – ${t}`;
+  }
+  const now = new Date();
+  const start = getDaysAgoSkippingSunday(now, 4);
+  return `${start.toLocaleDateString("en-US", opts)} – ${now.toLocaleDateString("en-US", opts)}`;
+};
+
+/* ---------- Small components (defined outside so they don't remount) ---------- */
+const Tag = ({ color = "gray", children }) => (
+  <span
+    className={`inline-flex items-center rounded px-1.5 text-[13px] leading-[20px] whitespace-nowrap ${TAG[color]}`}
+  >
+    {children}
+  </span>
+);
+
+const TrendLine = ({ trend, label }) => {
+  if (trend === undefined || trend === null) return null;
+  const up = trend > 0;
+  const down = trend < 0;
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 text-xs">
+      <span
+        className={`inline-flex items-center gap-0.5 font-medium ${
+          up ? "text-[#0f7b6c]" : down ? "text-[#e03e3e]" : FAINT
+        }`}
+      >
+        {up ? <TrendingUp size={12} /> : down ? <TrendingDown size={12} /> : <Minus size={12} />}
+        {Math.abs(trend)}%
+      </span>
+      <span className={FAINT}>{label}</span>
+    </div>
+  );
+};
+
+const STAT_CARDS = [
+  { key: "totalCalls", label: "Total calls", icon: Activity },
+  { key: "averageCallTime", label: "Avg. call time", icon: Clock, format: formatTime },
+  { key: "incomingCalls", label: "Incoming", icon: PhoneIncoming },
+  { key: "outgoingCalls", label: "Outgoing", icon: PhoneOutgoing },
+  { key: "missedCalls", label: "Missed", icon: PhoneMissed },
+  { key: "unregisteredCalls", label: "Unregistered", icon: UserMinus },
+];
+
+const Th = ({ icon: Icon, children }) => (
+  <th className={`px-2 py-1.5 text-[13px] font-normal whitespace-nowrap ${FAINT}`}>
+    <span className="inline-flex items-center gap-1.5">
+      <Icon size={14} />
+      {children}
+    </span>
+  </th>
+);
+
+/* ---------- Page ---------- */
+export default function CallLogsPage({ id, session }) {
   const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // logs request only
+  const [error, setError] = useState(false);
   const [unauthorized, setUnauthorized] = useState(false);
   const [counsellors, setCounsellors] = useState([]);
   const [stats, setStats] = useState(null);
-  const router = useRouter();
-  // UI States
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
-  
-  // Filters & Pagination
+
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(0);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 500);
-  
+
   const [courseFilter, setCourseFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
   const [callTypeFilter, setCallTypeFilter] = useState("");
   const [selectedCounsellor, setSelectedCounsellor] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  
+
   const pageSize = 20;
 
-  // Reset page when filters change
+  // Used to ignore responses from older requests
+  const reqRef = useRef(0);
+  const abortRef = useRef(null);
+
+  // FIX: counsellors loading must NOT control the table's loading state.
+  // Previously setLoading was passed in, so loading flipped to false while
+  // the logs request was still running -> "No call logs found" flashed.
   useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, statusFilter, callTypeFilter, courseFilter, selectedCounsellor, fromDate, toDate]);
+    if (!id) fetchCounsellors(setCounsellors, () => {});
+  }, [id]);
 
- useEffect(() => {
-  if (!id) {
-    fetchCounsellors(setCounsellors, setLoading);
-  }
-}, [id]);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
- 
-
-  // --- API INTEGRATION ---
   const fetchLogs = async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const reqId = ++reqRef.current;
+
     setLoading(true);
+    setError(false);
+
     try {
       const params = new URLSearchParams({
         page,
@@ -87,14 +192,17 @@ export default function CallLogsPage({id}) {
         search: debouncedSearch,
         ...(fromDate && { from: fromDate }),
         ...(toDate && { to: toDate }),
-        ...(statusFilter && { status: statusFilter }),
         ...(courseFilter && { course: courseFilter }),
         ...(callTypeFilter && { callType: callTypeFilter }),
         ...(selectedCounsellor && { counsellor: selectedCounsellor }),
       });
 
-      // NOTE: Adjust this route if your API is named differently (e.g., /api/calls)
-      const res = await apiRequest(`${!id ? `/api/call-logs?${params.toString()}` : `/api/call-logs/${id}?${params.toString()}` }`);
+      const url = id
+        ? `/api/call-logs/${id}?${params.toString()}`
+        : `/api/call-logs?${params.toString()}`;
+
+      const res = await apiRequest(url, { signal: controller.signal });
+      if (reqId !== reqRef.current) return; // a newer request took over
 
       if (res.unauthorized) {
         setUnauthorized(true);
@@ -107,504 +215,423 @@ export default function CallLogsPage({id}) {
         setStats(res.data.stats || null);
       } else {
         setLogs([]);
+        setError(true);
       }
-    } catch (error) {
-      console.error("Failed to fetch logs", error);
+    } catch (err) {
+      if (reqId === reqRef.current) {
+        console.error("Failed to fetch logs", err);
+        setLogs([]);
+        setError(true);
+      }
     } finally {
-      setLoading(false);
+      if (reqId === reqRef.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, debouncedSearch, statusFilter, callTypeFilter, courseFilter, selectedCounsellor, fromDate, toDate]);
-const TrendBadge = ({ trend, fromDate, toDate }) => {
-  if (trend === undefined || trend === null) return null;
-  
-  const isPositive = trend > 0;
-  const isNegative = trend < 0;
-  
-  let dynamicDateText = "";
+  }, [page, debouncedSearch, callTypeFilter, courseFilter, selectedCounsellor, fromDate, toDate]);
 
-  if (fromDate || toDate) {
-    // If user has selected a custom date range in the filters
-    const formatOpts = { month: 'short', day: 'numeric' };
-    const fDate = fromDate ? new Date(fromDate).toLocaleDateString('en-US', formatOpts) : "Start";
-    const tDate = toDate ? new Date(toDate).toLocaleDateString('en-US', formatOpts) : "Today";
-    
-    dynamicDateText = `Selected: ${fDate} - ${tDate}`;
-  } else {
-    // Default: Show Today and 4 days prior (skipping Sundays)
-    const getDaysAgoSkippingSunday = (start, days) => {
-      let d = new Date(start);
-      let count = 0;
-      while (count < days) {
-        d.setDate(d.getDate() - 1);
-        if (d.getDay() !== 0) count++; 
-      }
-      return d;
-    };
-
-    const now = new Date(); // Today
-    const fourDaysAgo = getDaysAgoSkippingSunday(now, 4); // 4 working days ago
-
-    const formatOpts = { month: 'short', day: 'numeric' };
-    const startDate = fourDaysAgo.toLocaleDateString('en-US', formatOpts);
-    const endDate = now.toLocaleDateString('en-US', formatOpts);
-    
-    // Now it displays the current period
-    dynamicDateText = `${startDate} - ${endDate}`;
-  }
-
-  return (
-    <div className="flex items-center gap-1.5 text-[13px] mt-1">
-      {isPositive && (
-        <span className="flex items-center font-medium text-emerald-600 bg-emerald-50/50 px-1.5 py-0.5 rounded">
-          <TrendingUp size={14} className="mr-1" />
-          {trend}%
-        </span>
-      )}
-      {isNegative && (
-        <span className="flex items-center font-medium text-rose-600 bg-rose-50/50 px-1.5 py-0.5 rounded">
-          <TrendingDown size={14} className="mr-1" />
-          {Math.abs(trend)}%
-        </span>
-      )}
-      {trend === 0 && (
-        <span className="flex items-center font-medium text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">
-          <Minus size={14} className="mr-1" />
-          0%
-        </span>
-      )}
-      <span className="text-gray-400 text-xs whitespace-nowrap">{dynamicDateText}</span>
-    </div>
-  );
-};
-  // --- HELPERS ---
-  const formatDuration = (seconds) => {
-    if (!seconds && seconds !== 0) return "N/A";
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}m ${s}s`;
+  // Reset page in the same event that changes a filter -> only one request fires
+  const onFilter = (setter) => (e) => {
+    setter(e.target.value);
+    setPage(1);
   };
 
+  const hasFilters = Boolean(
+    search || courseFilter || callTypeFilter || selectedCounsellor || fromDate || toDate
+  );
 
+  const clearFilters = () => {
+    setSearch("");
+    setCourseFilter("");
+    setCallTypeFilter("");
+    setSelectedCounsellor("");
+    setFromDate("");
+    setToDate("");
+    setPage(1);
+  };
 
-  // Reusable Filter Render Logic
+  const windowLabel = trendWindowLabel(fromDate, toDate);
+
+  /* ---------- Filters ---------- */
+  const fieldClasses = `h-8 rounded-md border ${BORDER_STRONG} bg-white px-2 text-[13px] text-[#37352f] outline-none transition-colors ${HOVER} focus:ring-2 focus:ring-[#2383e2]/40`;
+
   const renderFilters = (isMobile = false) => {
-    const inputClasses = "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition-all focus:border-transparent focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500";
-    const wrapperClasses = isMobile ? "flex flex-col gap-1.5 mt-2 first:mt-0" : "flex items-center gap-2";
-    const labelClasses = "text-xs font-bold uppercase tracking-wide text-gray-500";
-
-    const MobileLabel = ({ text }) => (
-      isMobile ? <label className={labelClasses}>{text}</label> : null
-    );
+    const wrap = isMobile ? "flex flex-col gap-1.5" : "flex items-center";
+    const Label = ({ text }) =>
+      isMobile ? <label className={`text-xs ${FAINT}`}>{text}</label> : null;
 
     return (
       <>
-        {/* Custom Date Range */}
-        <div className={wrapperClasses}>
-          <MobileLabel text="Date Range" />
-          <div className="flex w-full items-center gap-2">
-            <input 
-              type="date" 
-              value={fromDate} 
-              onChange={(e) => setFromDate(e.target.value)} 
-              className={`flex-1 ${inputClasses}`} 
+        <div className={wrap}>
+          <Label text="Date range" />
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              aria-label="From date"
+              value={fromDate}
+              onChange={onFilter(setFromDate)}
+              className={`${fieldClasses} ${isMobile ? "flex-1" : ""}`}
             />
-            <span className="text-sm font-medium text-gray-400">to</span>
-            <input 
-              type="date" 
-              value={toDate} 
-              onChange={(e) => setToDate(e.target.value)} 
-              className={`flex-1 ${inputClasses}`} 
+            <span className={`text-[13px] ${FAINT}`}>to</span>
+            <input
+              type="date"
+              aria-label="To date"
+              value={toDate}
+              onChange={onFilter(setToDate)}
+              className={`${fieldClasses} ${isMobile ? "flex-1" : ""}`}
             />
           </div>
         </div>
 
-        {/* Call Type */}
-        <div className={wrapperClasses}>
-          <MobileLabel text="Call Type" />
-          <select 
-            value={callTypeFilter} 
-            onChange={(e) => setCallTypeFilter(e.target.value)} 
-            className={inputClasses}
-          >
-            <option value="">All Call Types</option>
-            {CALL_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
+        <div className={wrap}>
+          <Label text="Call type" />
+          <select value={callTypeFilter} onChange={onFilter(setCallTypeFilter)} className={fieldClasses}>
+            <option value="">All call types</option>
+            {CALL_TYPES.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
           </select>
         </div>
 
-        {/* Course */}
-        <div className={wrapperClasses}>
-          <MobileLabel text="Course" />
-          <select
-            value={courseFilter}
-            onChange={(e) => setCourseFilter(e.target.value)}
-            className={inputClasses}
-          >
-            <option value="">All Courses</option>
+        <div className={wrap}>
+          <Label text="Course" />
+          <select value={courseFilter} onChange={onFilter(setCourseFilter)} className={fieldClasses}>
+            <option value="">All courses</option>
             <option value="Digital Marketing">Digital Marketing</option>
             <option value="Azure + Azure DevOps">Azure + Azure DevOps</option>
           </select>
         </div>
 
-        {/* Counsellor */}
-        {!id &&
-        <div className={wrapperClasses}>
-          <MobileLabel text="Counsellor" />
-          <select
-            value={selectedCounsellor}
-            onChange={(e) => setSelectedCounsellor(e.target.value)}
-            className={inputClasses}
-          >
-            <option value="">All Counsellors</option>
-            {counsellors.map((counsellor) => (
-              <option key={counsellor.id || counsellor.name} value={counsellor.name}>
-                {counsellor.name}
-              </option>
-            ))}
-          </select>
-        </div> }
+        {!id && (
+          <div className={wrap}>
+            <Label text="Counsellor" />
+            <select value={selectedCounsellor} onChange={onFilter(setSelectedCounsellor)} className={fieldClasses}>
+              <option value="">All counsellors</option>
+              {counsellors.map((c) => (
+                <option key={c.id || c.name} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </>
     );
   };
-const formatTime = (totalSeconds) => {
-  if (!totalSeconds) return "0m 0s";
-  const mins = Math.floor(totalSeconds / 60);
-  const secs = Math.round(totalSeconds % 60);
-  return `${mins}m ${secs}s`;
-};
+
+  /* ---------- Unauthorized ---------- */
   if (unauthorized) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="flex min-h-screen items-center justify-center bg-white" style={{ fontFamily: FONT }}>
         <div className="text-center">
-          <AlertCircle className="mx-auto h-12 w-12 text-red-500 mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900">Access Denied</h1>
-          <p className="text-gray-500 mt-2">You don't have permission to view this page.</p>
+          <AlertCircle className="mx-auto mb-3 h-10 w-10 text-[#e03e3e]" />
+          <h1 className="text-xl font-semibold text-[#37352f]">Access denied</h1>
+          <p className={`mt-1 text-sm ${MUTED}`}>You don&apos;t have permission to view this page.</p>
         </div>
       </div>
     );
   }
 
+  /* ---------- Render ---------- */
   return (
-    <div className="min-h-screen flex flex-col font-sans text-gray-900 px-4 py-8 ">
-        <div className="flex flex-row gap-3">
-      <BackButton />
-<button
-  onClick={() => fetchLogs()}
-  className={`flex items-center rounded-lg gap-2 px-4 py-2 text-xs cursor-pointer font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 hover:text-gray-900 transition-colors shadow-sm w-fit `}
->
-  <RefreshCw size={16} />
-  Refresh
-</button>
-      </div>
-      {/* Header */}
-      <header className=" px-4 sm:px-0 py-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Call Logs</h1>
-          <p className="text-sm text-gray-500 mt-1">View and monitor all calling activity.</p>
-        </div>
-        <div className="relative flex-grow w-full md:w-auto md:max-w-md flex items-center gap-2">
-          <div className="relative flex-grow">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input
-              type="text"
-              placeholder="Search phone, name, email..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-            />
-          </div>
+    <div className="min-h-screen bg-white text-[#37352f]">
+      <div className="mx-auto w-full px-4 pb-20 pt-4 sm:px-10 lg:px-16">
+        {/* Top bar */}
+        <div className="flex items-center gap-2">
+          <BackButton />
           <button
-            onClick={() => setIsMobileFiltersOpen(true)}
-            className="md:hidden flex-shrink-0 p-2.5 bg-gray-50 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 hover:text-blue-600 transition-colors"
+            onClick={fetchLogs}
+            disabled={loading}
+            className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] ${MUTED} transition-colors ${HOVER} disabled:opacity-50`}
           >
-            <Filter size={20} />
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            Refresh
           </button>
         </div>
-      </header>
-      <div className="hidden md:flex bg-white px-4 sm:px-8 py-4 border rounded-lg border-gray-200 gap-3 flex-wrap items-center z-10">
-        {renderFilters(false)}
-      </div>
-{/* --- SUMMARY CARDS GRID --- */}
-{/* --- MINIMALIST SUMMARY CARDS --- */}
-{stats && (
-  <div className="px-4 sm:px-0 py-2">
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-      
-      {/* Total Calls */}
-      <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300">
-        <div className="flex justify-between items-start mb-4">
-          <div className="flex items-center gap-2">
-            <Activity size={16} className="text-gray-400" />
-            <h2 className="text-sm font-medium text-gray-700">Total Calls</h2>
-          </div>
-          
+        <h1 className="mt-3 text-[40px] font-bold leading-[1.2] tracking-[-0.01em]">Call logs</h1>
+        <p className={`mt-1 text-[15px] ${MUTED}`}>View and monitor all calling activity.</p>
+
+        {/* Stats strip */}
+        <div className={`mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-md border ${BORDER} bg-[rgba(55,53,47,0.09)] md:grid-cols-3 xl:grid-cols-6`}>
+          {STAT_CARDS.map(({ key, label, icon: Icon, format }) => {
+            const s = stats?.[key];
+            return (
+              <div key={key} className="bg-white px-4 py-3.5">
+                <div className={`flex items-center gap-1.5 text-[13px] ${MUTED}`}>
+                  <Icon size={14} />
+                  {label}
+                </div>
+                {stats ? (
+                  <>
+                    <div className="mt-1.5 text-[28px] font-semibold leading-8 tracking-tight">
+                      {format ? format(s?.count || 0) : s?.count || 0}
+                    </div>
+                    <TrendLine trend={s?.trend} label={windowLabel} />
+                  </>
+                ) : (
+                  <div className="mt-2 animate-pulse space-y-2">
+                    <div className="h-7 w-16 rounded bg-[rgba(55,53,47,0.08)]" />
+                    <div className="h-3 w-24 rounded bg-[rgba(55,53,47,0.06)]" />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-        <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
-          {stats.totalCalls?.count || 0}
-        </h3>
-        <TrendBadge trend={stats.totalCalls?.trend} fromDate={fromDate} toDate={toDate}/>
-      </div>
 
-      {/* Avg Call Time */}
-      <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300">
-        <div className="flex justify-between items-start mb-4">
-          <div className="flex items-center gap-2">
-            <Activity size={16} className="text-gray-400" />
-            <h2 className="text-sm font-medium text-gray-700">Avg. Call Time</h2>
+        {/* Toolbar */}
+        <div className={`mt-8 flex flex-wrap items-center gap-2 border-b ${BORDER} pb-2`}>
+          <div className="hidden flex-wrap items-center gap-2 md:flex">
+            {renderFilters(false)}
+            {hasFilters && (
+              <button
+                onClick={clearFilters}
+                className={`inline-flex h-8 items-center gap-1 rounded-md px-2 text-[13px] text-[#e03e3e] transition-colors hover:bg-[#ffe2dd]/60`}
+              >
+                <X size={14} />
+                Clear
+              </button>
+            )}
           </div>
-         
-        </div>
-        <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
-          {formatTime(stats.averageCallTime?.count || 0)}
-        </h3>
-         <TrendBadge trend={stats.averageCallTime?.trend} fromDate={fromDate} toDate={toDate} />
-      </div>
 
-      {/* Incoming */}
-      <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300">
-        <div className="flex justify-between items-start mb-4">
-          <div className="flex items-center gap-2">
-            <PhoneIncoming size={16} className="text-gray-400" />
-            <h2 className="text-sm font-medium text-gray-700">Incoming</h2>
+          <div className="flex w-full items-center gap-2 md:ml-auto md:w-auto">
+            <div className="relative w-full md:w-64">
+              <Search size={15} className={`absolute left-2.5 top-1/2 -translate-y-1/2 ${FAINT}`} />
+              <input
+                type="text"
+                placeholder="Search phone, name, email…"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                className={`h-8 w-full rounded-md border ${BORDER_STRONG} bg-[rgba(55,53,47,0.03)] pl-8 pr-2 text-[13px] outline-none transition-colors placeholder:text-[rgba(55,53,47,0.4)] focus:bg-white focus:ring-2 focus:ring-[#2383e2]/40`}
+              />
+            </div>
+            <button
+              onClick={() => setIsMobileFiltersOpen(true)}
+              aria-label="Open filters"
+              className={`relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border ${BORDER_STRONG} ${MUTED} transition-colors ${HOVER} md:hidden`}
+            >
+              <Filter size={15} />
+              {hasFilters && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[#2383e2]" />}
+            </button>
           </div>
-          
         </div>
-        <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
-          {stats.incomingCalls?.count || 0}
-        </h3>
-        <TrendBadge trend={stats.incomingCalls?.trend} fromDate={fromDate} toDate={toDate} />
-      </div>
 
-      {/* Outgoing */}
-      <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300">
-        <div className="flex justify-between items-start mb-4">
-          <div className="flex items-center gap-2">
-            <PhoneOutgoing size={16} className="text-gray-400" />
-            <h2 className="text-sm font-medium text-gray-700">Outgoing</h2>
-          </div>
-          
-        </div>
-        <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
-          {stats.outgoingCalls?.count || 0}
-        </h3>
-        <TrendBadge trend={stats.outgoingCalls?.trend} fromDate={fromDate} toDate={toDate}/>
-      </div>
+        {/* Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead>
+              <tr className={`border-b ${BORDER}`}>
+                <Th icon={User}>Lead</Th>
+                <Th icon={Smartphone}>Mobile</Th>
+                <Th icon={Calendar}>Call time</Th>
+                <Th icon={Phone}>Type &amp; duration</Th>
+                <Th icon={Phone}>Course &amp; counsello</Th>
+                <Th icon={Headphones}>Counsellor</Th>
+              </tr>
+            </thead>
 
-      {/* Missed */}
-      <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300">
-        <div className="flex justify-between items-start mb-4">
-          <div className="flex items-center gap-2">
-            <PhoneMissed size={16} className="text-gray-400" />
-            <h2 className="text-sm font-medium text-gray-700">Missed</h2>
-          </div>
-          
-        </div>
-        <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
-          {stats.missedCalls?.count || 0}
-        </h3>
-        <TrendBadge trend={stats.missedCalls?.trend} fromDate={fromDate} toDate={toDate}/>
-      </div>
-
-      {/* Unregistered */}
-      <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300">
-        <div className="flex justify-between items-start mb-4">
-          <div className="flex items-center gap-2">
-            <UserMinus size={16} className="text-gray-400" />
-            <h2 className="text-sm font-medium text-gray-700">Unregistered</h2>
-          </div>
-          
-        </div>
-        <h3 className="text-4xl font-semibold text-gray-900 tracking-tight mb-4">
-          {stats.unregisteredCalls?.count || 0}
-        </h3>
-        <TrendBadge trend={stats.unregisteredCalls?.trend} fromDate={fromDate} toDate={toDate}/>
-      </div>
-
-    </div>
-  </div>
-)}
-      {/* Filters Bar (Desktop) */}
-      
-
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-auto p-2 sm:p-0 relative">
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200">
-                <tr>
-                 
-                  <th className="px-6 py-4">Lead Details</th>
-                  <th className="px-6 py-4">Call Details</th>
-                   <th className="px-6 py-4">Call Time & Type</th>
-                  <th className="px-6 py-4">Course & Counsellor</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {loading ? (
-                  // Skeleton Loader
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i} className="animate-pulse">
-                      <td className="px-6 py-4">
-                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-                        <div className="h-3 bg-gray-200 rounded w-1/3"></div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="h-6 bg-gray-200 rounded-full w-24"></div>
-                      </td>
-                    </tr>
-                  ))
-                ) : logs.length === 0 ? (
-                  // Empty State
-                  <tr>
-                    <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
-                      <div className="flex flex-col items-center justify-center">
-                        <Filter className="h-10 w-10 text-gray-300 mb-3" />
-                        <p className="text-lg font-medium text-gray-900">No call logs found</p>
-                        <p className="text-sm">Try adjusting your filters or search query.</p>
-                      </div>
+            <tbody>
+              {loading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i} className={`animate-pulse border-b ${BORDER}`}>
+                    <td className="px-2 py-3">
+                      <div className="mb-2 h-4 w-40 rounded bg-[rgba(55,53,47,0.08)]" />
+                      <div className="h-3 w-56 rounded bg-[rgba(55,53,47,0.06)]" />
+                    </td>
+                    <td className="px-2 py-3">
+                      <div className="mb-2 h-4 w-28 rounded bg-[rgba(55,53,47,0.08)]" />
+                      <div className="h-3 w-16 rounded bg-[rgba(55,53,47,0.06)]" />
+                    </td>
+                    <td className="px-2 py-3">
+                      <div className="mb-2 h-4 w-20 rounded bg-[rgba(55,53,47,0.08)]" />
+                      <div className="h-3 w-14 rounded bg-[rgba(55,53,47,0.06)]" />
+                    </td>
+                    <td className="px-2 py-3">
+                      <div className="mb-2 h-4 w-32 rounded bg-[rgba(55,53,47,0.08)]" />
+                      <div className="h-3 w-24 rounded bg-[rgba(55,53,47,0.06)]" />
                     </td>
                   </tr>
-                ) : (
-                  // Data Rows
-                  logs.map((log) => {
-                    const parsedDate = log.call_time ? new Date(log.call_time) : null;
-                    const lead = log.lead || {};
+                ))
+              ) : error ? (
+                <tr>
+                  <td colSpan={4} className="px-2 py-16 text-center">
+                    <AlertCircle className="mx-auto mb-2 h-6 w-6 text-[#e03e3e]" />
+                    <p className="text-[15px] font-medium">Couldn&apos;t load call logs</p>
+                    <p className={`mt-1 text-[13px] ${MUTED}`}>Check your connection and try again.</p>
+                    <button
+                      onClick={fetchLogs}
+                      className={`mt-3 inline-flex h-8 items-center gap-1.5 rounded-md border ${BORDER_STRONG} px-3 text-[13px] transition-colors ${HOVER}`}
+                    >
+                      <RefreshCw size={13} />
+                      Try again
+                    </button>
+                  </td>
+                </tr>
+              ) : logs.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-2 py-16 text-center">
+                    <p className="text-[15px] font-medium">No call logs found</p>
+                    <p className={`mt-1 text-[13px] ${MUTED}`}>
+                      {hasFilters ? "Try changing or clearing your filters." : "New calls will appear here."}
+                    </p>
+                    {hasFilters && (
+                      <button
+                        onClick={clearFilters}
+                        className={`mt-3 inline-flex h-8 items-center rounded-md border ${BORDER_STRONG} px-3 text-[13px] transition-colors ${HOVER}`}
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ) : (
+                logs.map((log) => {
+                  const date = log.call_time ? new Date(log.call_time) : null;
+                  const lead = log.lead || {};
+                  const type = CALL_TYPE_TAG[log.call_type];
+                  const agent = log.counsellorName || "Unknown";
 
-                    return (
-                      <tr key={log._id} className="hover:bg-blue-50 transition-colors">
-                      
-                        <td className="px-6 py-4 font-medium text-gray-900">
-                          {lead.name ? (
-                            <>
-                              <div className="font-medium text-gray-900">{lead.name}</div>
-                              <div className="text-gray-500 text-xs mt-1">{lead.phone} - {lead.email || 'No email'}</div>
-                            </>
-                          ) : (
-                            <span className="text-gray-900">
-                              {log.phone || 'Unknown Lead'}
-                              <div className="text-gray-500 text-xs mt-1">Number Not Registered</div>
-                            </span>
-                          )}
-                        </td>
+                  return (
+                    <tr key={log._id} className={`border-b ${BORDER} transition-colors hover:bg-[rgba(55,53,47,0.03)]`}>
+                      <td className="px-2 py-2.5 align-top">
+                        {lead.name ? (
+                          <>
+                            <div className="text-[14px] font-medium">{lead.name}</div>
+                            <div className={`mt-0.5 text-xs ${MUTED}`}>
+                             {lead.email || "No email"}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-[14px] font-medium">{log.phone || "Unknown number"}</div>
+                            <div className="mt-1">
+                              <Tag color="orange">Not registered</Tag>
+                            </div>
+                          </>
+                        )}
+                      </td>
+   <td className="px-2 py-2.5 align-top whitespace-nowrap">
+
+                        <div className={`mt-1 flex items-center gap-1 text-xs ${MUTED}`}>
+                          <Clock size={12} />
+                          {(log.phone)}
+                        </div>
+                      </td>
+                      <td className="px-2 py-2.5 align-top whitespace-nowrap">
+                        {date ? (
+                          <>
+                            <div className="text-[14px]">
+                              {date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </div>
+                            <div className={`mt-0.5 text-xs ${MUTED}`}>
+                              {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          </>
+                        ) : (
+                          <span className={FAINT}>—</span>
+                        )}
+                      </td>
+
+                      <td className="px-2 py-2.5 align-top whitespace-nowrap">
+                        <Tag color={type?.color || "gray"}>{type?.label || log.call_type || "Not connected"}</Tag>
+                        <div className={`mt-1 flex items-center gap-1 text-xs ${MUTED}`}>
+                          <Clock size={12} />
+                          {formatDuration(log.duration_seconds)}
+                        </div>
+                      </td>
+
+                      <td className="px-2 py-2.5 align-top">
+                        {lead.course ? <Tag color="purple">{lead.course}</Tag> : <span className={FAINT}>—</span>}
                        
-                          <td className="px-6 py-4">
-                          {parsedDate ? (
-                            <>
-                              <div className="text-gray-900 flex items-center gap-1">
-                                <Calendar size={14} className="text-gray-400"/>
-                                {parsedDate.toLocaleDateString()}
-                              </div>
-                              <div className="text-gray-500 text-xs mt-1 flex items-center gap-1">
-                                <Clock size={14} className="text-gray-400"/>
-                                {parsedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </div>
-                            </>
-                          ) : (
-                            <span className="text-gray-400">N/A</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-gray-900 capitalize">{log.call_type || 'Call Not Connected'}</div>
-                          <div className="text-gray-500 text-xs mt-1 flex items-center gap-1">
-                            <Clock size={12}/> {formatDuration(log.duration_seconds)}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-gray-900 font-medium">{lead.course || 'N/A'}</div>
-                          <div className="text-gray-500 text-xs mt-1">
-  Agent: {log.counsellorName || 'Unknown'}
-</div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                      </td>
+                      <td className="px-2 py-2.5 align-top">
+                        <div className={`mt-1 flex items-center gap-1.5 text-xs ${MUTED}`}>
+                          <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#e3e2e0] text-[10px] font-medium text-[#32302c]">
+                            {agent.charAt(0).toUpperCase()}
+                          </span>
+                          {id? session.user.name : agent}
+                        </div>
+                       
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
-        
-        {/* Pagination Controls */}
-        {!loading && pages > 1 && (
-          <div className="flex justify-between items-center mt-6">
-            <p className="text-sm text-gray-500">
+
+        {/* Pagination */}
+        {!loading && !error && pages > 1 && (
+          <div className="mt-4 flex items-center justify-between">
+            <p className={`text-[13px] ${MUTED}`}>
               Page {page} of {pages}
             </p>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               <button
                 disabled={page === 1}
                 onClick={() => setPage((p) => p - 1)}
-                className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 bg-white text-sm font-medium hover:bg-gray-50 transition-colors"
+                className={`inline-flex h-8 items-center gap-1 rounded-md border ${BORDER_STRONG} px-2.5 text-[13px] transition-colors ${HOVER} disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent`}
               >
+                <ChevronLeft size={14} />
                 Previous
               </button>
               <button
                 disabled={page === pages}
                 onClick={() => setPage((p) => p + 1)}
-                className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 bg-white text-sm font-medium hover:bg-gray-50 transition-colors"
+                className={`inline-flex h-8 items-center gap-1 rounded-md border ${BORDER_STRONG} px-2.5 text-[13px] transition-colors ${HOVER} disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent`}
               >
                 Next
+                <ChevronRight size={14} />
               </button>
             </div>
           </div>
         )}
-      </main>
+      </div>
 
-      {/* --- MOBILE FILTERS DRAWER (Bottom Sheet) --- */}
+      {/* Mobile filters sheet */}
       <div
-        className={`fixed inset-0 z-[70] md:hidden transition-opacity duration-300 ${
-          isMobileFiltersOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        className={`fixed inset-0 z-[70] md:hidden transition-opacity duration-200 ${
+          isMobileFiltersOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
         }`}
       >
+        <div className="absolute inset-0 bg-black/30" onClick={() => setIsMobileFiltersOpen(false)} />
         <div
-          className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"
-          onClick={() => setIsMobileFiltersOpen(false)}
-        />
-        <div className={`absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl transition-transform duration-300 transform p-5 pb-8 ${isMobileFiltersOpen ? "translate-y-0" : "translate-y-full" }`}>
-          <div className="flex justify-between items-center mb-5 border-b border-gray-100 pb-4">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <Filter size={20} className="text-blue-600"/>
-              Filters
-            </h2>
+          className={`absolute inset-x-0 bottom-0 rounded-t-xl bg-white p-4 pb-6 shadow-[0_-8px_30px_rgba(15,15,15,0.15)] transition-transform duration-200 ${
+            isMobileFiltersOpen ? "translate-y-0" : "translate-y-full"
+          }`}
+        >
+          <div className={`mb-4 flex items-center justify-between border-b ${BORDER} pb-3`}>
+            <h2 className="text-[15px] font-semibold">Filters</h2>
             <button
               onClick={() => setIsMobileFiltersOpen(false)}
-              className="p-2 text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-full transition-colors"
+              aria-label="Close filters"
+              className={`rounded-md p-1.5 ${MUTED} ${HOVER}`}
             >
-              <X size={20} />
+              <X size={18} />
             </button>
           </div>
 
-          <div className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto px-1">
-            {renderFilters(true)}
-          </div>
+          <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto">{renderFilters(true)}</div>
 
-          <div className="mt-6 pt-4 border-t border-gray-100">
+          <div className="mt-5 flex gap-2">
+            {hasFilters && (
+              <button
+                onClick={clearFilters}
+                className={`h-9 flex-1 rounded-md border ${BORDER_STRONG} text-[14px] ${HOVER}`}
+              >
+                Clear
+              </button>
+            )}
             <button
               onClick={() => setIsMobileFiltersOpen(false)}
-              className="w-full py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors shadow-sm flex items-center justify-center gap-2"
+              className="h-9 flex-1 rounded-md bg-[#2383e2] text-[14px] font-medium text-white transition-colors hover:bg-[#0b6fd1]"
             >
-              <CheckCircle size={18} />
-              Apply Filters
+              Done
             </button>
           </div>
         </div>

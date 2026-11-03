@@ -8,6 +8,8 @@ export const dynamic = "force-dynamic";
 const DB_NAME = "sales";
 const STUDENT_COLLECTION = "dm";
 const BATCH_COLLECTION = "batches";
+const ASSIGNMENT_COLLECTION = "student_batch_assignments";
+
 const ALLOWED_STATUSES = ["registered", "converted"];
 
 async function getDb() {
@@ -15,13 +17,18 @@ async function getDb() {
   return client.db(DB_NAME);
 }
 
-function idString(value) {
-  return value == null ? "" : String(value);
-}
+const idString = (value) => (value == null ? "" : String(value));
 
-function getPaymentInfo(totalFee, paidFee) {
-  const total = Number(totalFee) || 0;
-  const paid = Number(paidFee) || 0;
+function calculatePayment(totalFee, payments = [], legacyPaidFee = 0) {
+  const total = Math.max(Number(totalFee) || 0, 0);
+  const legacyPaid = Math.max(Number(legacyPaidFee) || 0, 0);
+
+  const paymentTotal = (Array.isArray(payments) ? payments : []).reduce(
+    (sum, payment) => sum + Math.max(Number(payment.amount) || 0, 0),
+    0
+  );
+
+  const paid = legacyPaid + paymentTotal;
   const balanceDue = Math.max(total - paid, 0);
 
   let paymentStatus = "due";
@@ -37,36 +44,53 @@ function getPaymentInfo(totalFee, paidFee) {
     paidFee: paid,
     balanceDue,
     paymentStatus,
+    legacyPaidFee: legacyPaid,
   };
 }
 
-/**
- * GET
- * Returns registered/converted students, available batches,
- * course names, tools, trainers and current fee information.
- */
+function normalizePayments(payments) {
+  return (Array.isArray(payments) ? payments : []).map((payment) => ({
+    id: idString(payment._id || payment.id),
+    amount: Number(payment.amount) || 0,
+    paidAt: payment.paidAt || payment.paymentDate || null,
+    createdAt: payment.createdAt || null,
+  }));
+}
+
+// GET: Students, batches and all batch assignments with payment history.
 export async function GET() {
   try {
     const db = await getDb();
 
-    const [students, batches, tools, courses, trainers] =
-      await Promise.all([
-        db.collection(STUDENT_COLLECTION)
-          .find({
-            status: { $regex: /^(registered|converted)$/i },
-          })
-          .sort({ createdAt: -1 })
-          .toArray(),
+    const [
+      students,
+      batches,
+      tools,
+      courses,
+      trainers,
+      assignments,
+    ] = await Promise.all([
+      db.collection(STUDENT_COLLECTION)
+        .find({
+          status: { $regex: /^(registered|converted)$/i },
+        })
+        .sort({ createdAt: -1 })
+        .toArray(),
 
-        db.collection(BATCH_COLLECTION)
-          .find({})
-          .sort({ startingDate: 1 })
-          .toArray(),
+      db.collection(BATCH_COLLECTION)
+        .find({})
+        .sort({ startingDate: 1 })
+        .toArray(),
 
-        db.collection("tools").find({}).toArray(),
-        db.collection("courses").find({}).toArray(),
-        db.collection("trainers").find({}).toArray(),
-      ]);
+      db.collection("tools").find({}).toArray(),
+      db.collection("courses").find({}).toArray(),
+      db.collection("trainers").find({}).toArray(),
+
+      db.collection(ASSIGNMENT_COLLECTION)
+        .find({})
+        .sort({ assignedAt: -1 })
+        .toArray(),
+    ]);
 
     const toolMap = new Map(
       tools.map((tool) => [
@@ -100,86 +124,105 @@ export async function GET() {
         courseMap.get(idString(batch.courseId)) || "Unknown course",
       startingDate: batch.startingDate || "",
       status: batch.status || "upcoming",
+      fee: Number(batch.fee) || 0,
 
       tools: (batch.tools || []).map((toolId) => {
         const id = idString(toolId);
 
-        return (
-          toolMap.get(id) || {
-            id,
-            name: "Unknown tool",
-          }
-        );
+        return toolMap.get(id) || {
+          id,
+          name: "Unknown tool",
+        };
       }),
 
       toolTrainerAssignments: (
         batch.toolTrainerAssignments || []
-      ).map((assignment) => ({
-        toolId: idString(assignment.toolId),
-        trainerId: idString(assignment.trainerId),
+      ).map((item) => ({
+        toolId: idString(item.toolId),
+        trainerId: idString(item.trainerId),
         trainerName:
-          trainerMap.get(idString(assignment.trainerId)) ||
-          "Unknown trainer",
+          trainerMap.get(idString(item.trainerId)) || "Unknown trainer",
       })),
     }));
 
-    const formattedStudents = students.map((student) => {
-      const assignment = student.batchAssignment || null;
+    const batchMap = new Map(
+      formattedBatches.map((batch) => [batch.id, batch])
+    );
 
-      const batch = assignment
-        ? formattedBatches.find(
-            (item) =>
-              item.id === idString(assignment.batchId)
-          )
-        : null;
+    const assignmentsByStudent = new Map();
 
-      let formattedAssignment = null;
+    for (const assignment of assignments) {
+      const studentId = idString(assignment.studentId);
+      const batch = batchMap.get(idString(assignment.batchId));
 
-      if (assignment) {
-        const totalFee = Number(assignment.totalFee) || 0;
-        const paidFee = Number(assignment.paidFee) || 0;
+      const payments = normalizePayments(assignment.payments);
 
-        const paymentInfo = getPaymentInfo(
-          totalFee,
-          paidFee
-        );
+      const paymentInfo = calculatePayment(
+        assignment.totalFee,
+        payments,
+        assignment.legacyPaidFee ??
+          (assignment.payments ? 0 : assignment.paidFee)
+      );
 
-        formattedAssignment = {
-          ...assignment,
-          batchId: idString(assignment.batchId),
-          batchName:
-            batch?.name ||
-            assignment.batchName ||
-            "Batch unavailable",
+      const formatted = {
+        ...assignment,
 
-          courseId: idString(assignment.courseId),
+        id: idString(assignment._id),
+        studentId,
+        batchId: idString(assignment.batchId),
 
-          toolIds: (assignment.toolIds || []).map(idString),
+        batchName:
+          batch?.name || assignment.batchName || "Batch unavailable",
 
-          toolNames: (assignment.toolIds || []).map(
-            (toolId) =>
-              toolMap.get(idString(toolId))?.name ||
-              "Unknown tool"
-          ),
+        courseId: idString(assignment.courseId),
 
-          totalFee: paymentInfo.totalFee,
-          paidFee: paymentInfo.paidFee,
-          balanceDue: paymentInfo.balanceDue,
-          paymentStatus: paymentInfo.paymentStatus,
-        };
+        mode: assignment.mode || "full_course",
+
+        toolIds: (assignment.toolIds || []).map(idString),
+
+        toolNames: (assignment.toolIds || []).map(
+          (toolId) =>
+            toolMap.get(idString(toolId))?.name || "Unknown tool"
+        ),
+
+        payments,
+
+        ...paymentInfo,
+
+        toolTrainerAssignments: (
+          assignment.toolTrainerAssignments || []
+        ).map((item) => ({
+          toolId: idString(item.toolId),
+
+          toolName:
+            toolMap.get(idString(item.toolId))?.name || "Unknown tool",
+
+          trainerId: idString(item.trainerId),
+
+          trainerName:
+            trainerMap.get(idString(item.trainerId)) || "Unknown trainer",
+        })),
+      };
+
+      if (!assignmentsByStudent.has(studentId)) {
+        assignmentsByStudent.set(studentId, []);
       }
 
-      return {
-        id: idString(student._id),
-        name: student.name || "",
-        email: student.email || "",
-        phone: student.phone ? String(student.phone) : "",
-        status: student.status,
-        course: student.course || "",
-        createdAt: student.createdAt || null,
-        batchAssignment: formattedAssignment,
-      };
-    });
+      assignmentsByStudent.get(studentId).push(formatted);
+    }
+
+    const formattedStudents = students.map((student) => ({
+      id: idString(student._id),
+      name: student.name || "",
+      email: student.email || "",
+      phone: student.phone ? String(student.phone) : "",
+      status: student.status,
+      course: student.course || "",
+      createdAt: student.createdAt || null,
+
+      batchAssignments:
+        assignmentsByStudent.get(idString(student._id)) || [],
+    }));
 
     return NextResponse.json({
       success: true,
@@ -194,18 +237,15 @@ export async function GET() {
     return NextResponse.json(
       {
         success: false,
-        message: "Failed to fetch students and batches",
+        message:
+          error.message || "Failed to fetch students and batches",
       },
       { status: 500 }
     );
   }
 }
 
-/**
- * POST
- * Assigns or updates a student's batch, learning plan,
- * selected tools, trainers and fee/payment information.
- */
+// POST: Create/update a student's batch assignment and append dated payments.
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -213,7 +253,6 @@ export async function POST(request) {
     const studentId = idString(body.studentId);
     const batchId = idString(body.batchId);
     const mode = body.mode;
-    const selectedToolIds = body.toolIds;
 
     if (
       !ObjectId.isValid(studentId) ||
@@ -239,28 +278,12 @@ export async function POST(request) {
     }
 
     const totalFee = Number(body.totalFee ?? 0);
-    const paidFee = Number(body.paidFee ?? 0);
 
-    if (
-      !Number.isFinite(totalFee) ||
-      !Number.isFinite(paidFee) ||
-      totalFee < 0 ||
-      paidFee < 0
-    ) {
+    if (!Number.isFinite(totalFee) || totalFee < 0) {
       return NextResponse.json(
         {
           success: false,
-          message: "Fees must be valid non-negative numbers",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (paidFee > totalFee) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Paid amount cannot exceed the total fee",
+          message: "Total fee must be a valid non-negative number",
         },
         { status: 400 }
       );
@@ -268,11 +291,18 @@ export async function POST(request) {
 
     const db = await getDb();
 
-    const student = await db
-      .collection(STUDENT_COLLECTION)
-      .findOne({
-        _id: new ObjectId(studentId),
-      });
+    const studentObjectId = new ObjectId(studentId);
+    const batchObjectId = new ObjectId(batchId);
+
+    const [student, batch] = await Promise.all([
+      db.collection(STUDENT_COLLECTION).findOne({
+        _id: studentObjectId,
+      }),
+
+      db.collection(BATCH_COLLECTION).findOne({
+        _id: batchObjectId,
+      }),
+    ]);
 
     if (!student) {
       return NextResponse.json(
@@ -281,26 +311,7 @@ export async function POST(request) {
       );
     }
 
-    if (
-      !ALLOWED_STATUSES.includes(
-        String(student.status || "").toLowerCase()
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Only registered or converted students can be assigned",
-        },
-        { status: 400 }
-      );
-    }
-
-    const batch = await db
-      .collection(BATCH_COLLECTION)
-      .findOne({
-        _id: new ObjectId(batchId),
-      });
+   
 
     if (!batch) {
       return NextResponse.json(
@@ -325,18 +336,19 @@ export async function POST(request) {
     }
 
     const batchToolIds = (batch.tools || []).map(idString);
+
     let toolIds;
 
     if (mode === "full_course") {
       toolIds = batchToolIds;
     } else {
+      const selectedToolIds = body.toolIds;
+
       if (
         !Array.isArray(selectedToolIds) ||
         selectedToolIds.length === 0 ||
         !selectedToolIds.every(
-          (id) =>
-            typeof id === "string" &&
-            ObjectId.isValid(id)
+          (id) => typeof id === "string" && ObjectId.isValid(id)
         )
       ) {
         return NextResponse.json(
@@ -350,14 +362,11 @@ export async function POST(request) {
 
       toolIds = [...new Set(selectedToolIds)];
 
-      if (
-        toolIds.some((id) => !batchToolIds.includes(id))
-      ) {
+      if (toolIds.some((id) => !batchToolIds.includes(id))) {
         return NextResponse.json(
           {
             success: false,
-            message:
-              "Selected tools must belong to this batch",
+            message: "Selected tools must belong to this batch",
           },
           { status: 400 }
         );
@@ -377,84 +386,220 @@ export async function POST(request) {
     const toolTrainerAssignments = (
       batch.toolTrainerAssignments || []
     )
-      .filter((assignment) =>
-        toolIds.includes(idString(assignment.toolId))
-      )
-      .map((assignment) => ({
-        toolId: idString(assignment.toolId),
-        trainerId: idString(assignment.trainerId),
+      .filter((item) => toolIds.includes(idString(item.toolId)))
+      .map((item) => ({
+        toolId: idString(item.toolId),
+        trainerId: idString(item.trainerId),
       }));
 
-    const paymentInfo = getPaymentInfo(totalFee, paidFee);
+    const collection = db.collection(ASSIGNMENT_COLLECTION);
 
-    const assignment = {
-      batchId: batch._id,
-      batchName: batch.name,
+    const filter = {
+      studentId: studentObjectId,
+      batchId: batchObjectId,
+    };
+
+    const existing = await collection.findOne(filter);
+    const now = new Date();
+
+    // Keep existing payments and preserve old undated paid amounts.
+    const legacyPaidFee =
+      Number(
+        existing?.legacyPaidFee ??
+          (existing && !Array.isArray(existing.payments)
+            ? existing.paidFee
+            : 0)
+      ) || 0;
+
+    const payments = Array.isArray(existing?.payments)
+      ? [...existing.payments]
+      : [];
+
+    let newPaymentAmount = 0;
+
+    if (
+      body.paymentAmount !== undefined &&
+      body.paymentAmount !== null &&
+      body.paymentAmount !== ""
+    ) {
+      newPaymentAmount = Number(body.paymentAmount);
+    } else if (
+      body.paidFee !== undefined &&
+      body.paidFee !== null &&
+      body.paidFee !== ""
+    ) {
+      // Backward compatibility with the old cumulative paidFee field.
+      const requestedPaid = Number(body.paidFee);
+
+      const currentPaid =
+        legacyPaidFee +
+        payments.reduce(
+          (sum, payment) => sum + (Number(payment.amount) || 0),
+          0
+        );
+
+      newPaymentAmount = requestedPaid - currentPaid;
+    }
+
+    if (
+      !Number.isFinite(newPaymentAmount) ||
+      newPaymentAmount < 0
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Payment amount must be a valid non-negative number",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (newPaymentAmount > 0) {
+      const paidAt = body.paymentDate
+        ? new Date(body.paymentDate)
+        : now;
+
+      if (Number.isNaN(paidAt.getTime())) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Please provide a valid payment date",
+          },
+          { status: 400 }
+        );
+      }
+
+      payments.push({
+        _id: new ObjectId(),
+        amount: newPaymentAmount,
+        paidAt,
+        createdAt: now,
+      });
+    }
+
+    const paymentInfo = calculatePayment(
+      totalFee,
+      payments,
+      legacyPaidFee
+    );
+
+    if (paymentInfo.paidFee > totalFee) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Total payments cannot exceed the total fee",
+        },
+        { status: 400 }
+      );
+    }
+
+    const update = {
+      studentId: studentObjectId,
+      batchId: batchObjectId,
+
+      batchName: batch.name || "Unnamed batch",
       courseId: batch.courseId || null,
 
       mode,
       toolIds,
       toolTrainerAssignments,
 
-      // Fee information persisted in MongoDB.
-      ...paymentInfo,
+      totalFee,
+      legacyPaidFee,
+      payments,
 
-      assignedAt: new Date(),
+      paidFee: paymentInfo.paidFee,
+      balanceDue: paymentInfo.balanceDue,
+      paymentStatus: paymentInfo.paymentStatus,
+
+      updatedAt: now,
     };
 
-    await db.collection(STUDENT_COLLECTION).updateOne(
-      { _id: student._id },
+    await collection.updateOne(
+      filter,
       {
-        $set: {
-          batchAssignment: assignment,
-          updatedAt: new Date(),
+        $set: update,
+        $setOnInsert: {
+          createdAt: now,
+          assignedAt: now,
         },
-      }
+      },
+      { upsert: true }
     );
+await db.collection(BATCH_COLLECTION).updateOne(
+  { _id: batchObjectId },
+  {
+    $addToSet: {
+      studentIds: studentObjectId,
+    },
+  }
+);
+    const saved = await collection.findOne(filter);
 
     return NextResponse.json({
       success: true,
-      message: "Batch assigned successfully",
+
+      message:
+        newPaymentAmount > 0
+          ? "Batch assignment and payment saved successfully"
+          : existing
+            ? "Batch assignment updated successfully"
+            : "New batch assigned successfully",
+
       data: {
+        id: idString(saved?._id),
         studentId,
         batchId,
-        batchName: batch.name,
+        batchName: batch.name || "Unnamed batch",
         mode,
         toolIds,
         toolTrainerAssignments,
-        ...paymentInfo,
+
+        payments: normalizePayments(saved?.payments),
+
+        ...calculatePayment(
+          saved?.totalFee,
+          saved?.payments,
+          saved?.legacyPaidFee
+        ),
+
+        assignedAt:
+          saved?.assignedAt || saved?.createdAt || now,
       },
     });
   } catch (error) {
-    console.error("Assign batch error:", error);
+    console.error("Assign batch/payment error:", error);
 
     return NextResponse.json(
       {
         success: false,
-        message: "Failed to assign batch",
+        message:
+          error.message || "Failed to save batch assignment",
       },
       { status: 500 }
     );
   }
 }
 
-/**
- * DELETE
- * Removes a student's batch assignment and its associated
- * fee information without deleting the student.
- *
- * DELETE /api/student-batch-assignments?studentId=...
- */
+// DELETE: Remove only one student's specific batch assignment.
 export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const studentId = searchParams.get("studentId");
 
-    if (!studentId || !ObjectId.isValid(studentId)) {
+    const studentId = searchParams.get("studentId");
+    const batchId = searchParams.get("batchId");
+
+    if (
+      !studentId ||
+      !batchId ||
+      !ObjectId.isValid(studentId) ||
+      !ObjectId.isValid(batchId)
+    ) {
       return NextResponse.json(
         {
           success: false,
-          message: "A valid student ID is required",
+          message: "Valid student ID and batch ID are required",
         },
         { status: 400 }
       );
@@ -463,32 +608,32 @@ export async function DELETE(request) {
     const db = await getDb();
 
     const result = await db
-      .collection(STUDENT_COLLECTION)
-      .updateOne(
-        { _id: new ObjectId(studentId) },
-        {
-          $unset: {
-            batchAssignment: "",
-          },
-          $set: {
-            updatedAt: new Date(),
-          },
-        }
-      );
+      .collection(ASSIGNMENT_COLLECTION)
+      .deleteOne({
+        studentId: new ObjectId(studentId),
+        batchId: new ObjectId(batchId),
+      });
 
-    if (!result.matchedCount) {
+    if (!result.deletedCount) {
       return NextResponse.json(
         {
           success: false,
-          message: "Student not found",
+          message: "Batch assignment not found",
         },
         { status: 404 }
       );
     }
-
+await db.collection(BATCH_COLLECTION).updateOne(
+  { _id: new ObjectId(batchId) },
+  {
+    $pull: {
+      studentIds: new ObjectId(studentId),
+    },
+  }
+);
     return NextResponse.json({
       success: true,
-      message: "Batch assignment and associated fee information removed",
+      message: "Student batch assignment removed successfully",
     });
   } catch (error) {
     console.error("Remove batch assignment error:", error);

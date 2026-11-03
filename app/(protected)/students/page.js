@@ -163,7 +163,12 @@ export default function StudentBatchAssignmentsPage() {
   const [mode, setMode] = useState("full_course");
   const [selectedTools, setSelectedTools] = useState([]);
   const [totalFee, setTotalFee] = useState("");
-  const [paidFee, setPaidFee] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentDate, setPaymentDate] = useState(() => {
+    const today = new Date();
+    const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000);
+    return localDate.toISOString().slice(0, 10);
+  });
   const [removingId, setRemovingId] = useState(null);
 
   const loadData = async () => {
@@ -201,32 +206,36 @@ export default function StudentBatchAssignmentsPage() {
     const query = search.trim().toLowerCase();
 
     return students.filter((student) => {
+      const assignments = student.batchAssignments || [];
       const matchesSearch = [
         student.name,
         student.email,
         student.phone,
         student.course,
-        student.batchAssignment?.batchName,
+        ...assignments.flatMap((item) => [item.batchName, item.batch?.name]),
       ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query));
 
       const status = String(student.status).toLowerCase();
-
       const matchesStatus = statusFilter === "all" || status === statusFilter;
-
       return matchesSearch && matchesStatus;
     });
   }, [students, search, statusFilter]);
 
   const assignedCount = students.filter(
-    (student) => student.batchAssignment
+    (student) => (student.batchAssignments || []).length > 0
   ).length;
 
   const pendingFees = useMemo(
     () =>
       students.reduce(
-        (sum, student) => sum + (getFeeInfo(student.batchAssignment)?.due || 0),
+        (sum, student) =>
+          sum + (student.batchAssignments || []).reduce(
+            (assignmentSum, assignment) =>
+              assignmentSum + (getFeeInfo(assignment)?.due || 0),
+            0
+          ),
         0
       ),
     [students]
@@ -240,37 +249,35 @@ export default function StudentBatchAssignmentsPage() {
   );
 
   const totalFeeNum = Number(totalFee) || 0;
-  const paidFeeNum = Number(paidFee) || 0;
-  const balanceDue = Math.max(totalFeeNum - paidFeeNum, 0);
-  const overpaid = paidFeeNum > totalFeeNum;
+  const paymentAmountNum = Number(paymentAmount) || 0;
+
+  const selectedAssignment = (selectedStudent?.batchAssignments || []).find(
+    (item) => String(item.batchId) === String(selectedBatchId)
+  );
+
+  const alreadyPaid =
+    Number(selectedAssignment?.legacyPaidFee) +
+    (selectedAssignment?.payments || []).reduce(
+      (sum, payment) => sum + (Number(payment.amount) || 0),
+      0
+    );
+
+  const projectedPaid = alreadyPaid + paymentAmountNum;
+  const balanceDue = Math.max(totalFeeNum - projectedPaid, 0);
+  const overpaid = projectedPaid > totalFeeNum;
 
   const openAssignModal = (student) => {
     setSelectedStudent(student);
-
-    const currentAssignment = student.batchAssignment;
-
-    const batchId = currentAssignment?.batchId || "";
-
-    setSelectedBatchId(batchId);
-    setMode(
-      currentAssignment?.mode === "selected_tools"
-        ? "selected_tools"
-        : "full_course"
-    );
-
-    setSelectedTools(currentAssignment?.toolIds?.map(String) || []);
-
-    setTotalFee(
-      currentAssignment?.totalFee != null
-        ? String(currentAssignment.totalFee)
-        : ""
-    );
-    setPaidFee(
-      currentAssignment?.paidFee != null
-        ? String(currentAssignment.paidFee)
-        : ""
-    );
-
+    setSelectedBatchId("");
+    setMode("full_course");
+    setSelectedTools([]);
+    setTotalFee("");
+    setPaymentAmount("");
+    setPaymentDate(() => {
+      const today = new Date();
+      const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000);
+      return localDate.toISOString().slice(0, 10);
+    });
     setShowModal(true);
   };
 
@@ -283,7 +290,8 @@ export default function StudentBatchAssignmentsPage() {
     setSelectedTools([]);
     setMode("full_course");
     setTotalFee("");
-    setPaidFee("");
+    setPaymentAmount("");
+    setPaymentDate("");
   };
 
   useEffect(() => {
@@ -298,11 +306,33 @@ export default function StudentBatchAssignmentsPage() {
 
   const changeBatch = (batchId) => {
     setSelectedBatchId(batchId);
-
     const batch = batches.find((item) => item.id === batchId);
+    const existingAssignment = (selectedStudent?.batchAssignments || []).find(
+      (item) => String(item.batchId) === String(batchId)
+    );
 
-    setSelectedTools(batch?.tools.map((tool) => tool.id) || []);
-    setTotalFee(batch?.fee != null ? String(batch.fee) : "");
+    if (existingAssignment) {
+      setMode(existingAssignment.mode === "selected_tools" ? "selected_tools" : "full_course");
+      setSelectedTools(existingAssignment.toolIds?.map(String) || []);
+      setTotalFee(existingAssignment.totalFee != null ? String(existingAssignment.totalFee) : "");
+      // A new installment is entered separately; existing payments remain in history.
+      setPaymentAmount("");
+      setPaymentDate(() => {
+        const today = new Date();
+        const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000);
+        return localDate.toISOString().slice(0, 10);
+      });
+    } else {
+      setMode("full_course");
+      setSelectedTools(batch?.tools?.map((tool) => tool.id) || []);
+      setTotalFee(batch?.fee != null ? String(batch.fee) : "");
+      setPaymentAmount("");
+      setPaymentDate(() => {
+        const today = new Date();
+        const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000);
+        return localDate.toISOString().slice(0, 10);
+      });
+    }
   };
 
   const toggleTool = (toolId) => {
@@ -326,13 +356,18 @@ export default function StudentBatchAssignmentsPage() {
       return;
     }
 
-    if (totalFeeNum < 0 || paidFeeNum < 0) {
+    if (totalFeeNum < 0 || paymentAmountNum < 0) {
       toast.error("Fees cannot be negative");
       return;
     }
 
-    if (paidFeeNum > totalFeeNum) {
-      toast.error("Paid amount cannot exceed the total fee");
+    if (paymentAmountNum > 0 && !paymentDate) {
+      toast.error("Select the payment date");
+      return;
+    }
+
+    if (overpaid) {
+      toast.error("Payment amount cannot exceed the remaining balance");
       return;
     }
 
@@ -353,7 +388,8 @@ export default function StudentBatchAssignmentsPage() {
               ? selectedBatch?.tools.map((tool) => tool.id) || []
               : selectedTools,
           totalFee: totalFeeNum,
-          paidFee: paidFeeNum,
+          paymentAmount: paymentAmountNum,
+          paymentDate,
         }),
       });
 
@@ -363,7 +399,11 @@ export default function StudentBatchAssignmentsPage() {
         throw new Error(result.message || "Failed to assign batch");
       }
 
-      toast.success("Batch assigned successfully");
+      toast.success(
+        paymentAmountNum > 0
+          ? "Batch assignment and payment saved"
+          : "Batch assignment saved"
+      );
       setShowModal(false);
       setSelectedStudent(null);
 
@@ -375,34 +415,36 @@ export default function StudentBatchAssignmentsPage() {
     }
   };
 
-  const removeAssignment = async (student) => {
-    if (!student.batchAssignment) return;
-
+  const removeAssignment = async (student, assignment) => {
+    if (!assignment?.batchId) return;
     const confirmed = window.confirm(
-      `Remove the batch assignment for ${student.name || "this student"}?`
+      `Remove ${assignment.batchName || assignment.batch?.name || "this batch"} from ${student.name || "this student"}?`
     );
-
     if (!confirmed) return;
 
+    const removingKey = `${student.id}-${assignment.batchId}`;
     try {
-      setRemovingId(student.id);
-
+      setRemovingId(removingKey);
       const response = await fetch(
-        `${API}?studentId=${encodeURIComponent(student.id)}`,
+        `${API}?studentId=${encodeURIComponent(student.id)}&batchId=${encodeURIComponent(assignment.batchId)}`,
         { method: "DELETE" }
       );
-
       const result = await response.json();
-
       if (!response.ok || !result.success) {
         throw new Error(result.message || "Failed to remove assignment");
       }
 
       toast.success("Batch assignment removed");
-
       setStudents((previous) =>
         previous.map((item) =>
-          item.id === student.id ? { ...item, batchAssignment: null } : item
+          item.id === student.id
+            ? {
+                ...item,
+                batchAssignments: (item.batchAssignments || []).filter(
+                  (a) => String(a.batchId) !== String(assignment.batchId)
+                ),
+              }
+            : item
         )
       );
     } catch (error) {
@@ -549,10 +591,14 @@ export default function StudentBatchAssignmentsPage() {
             </div>
           ) : (
             filteredStudents.map((student) => {
-              const assignment = student.batchAssignment;
-              const fee = getFeeInfo(assignment);
-              const converted =
-                String(student.status).toLowerCase() === "converted";
+              const assignments = student.batchAssignments || [];
+              const totalFee = assignments.reduce((sum, item) => sum + (Number(item.totalFee) || 0), 0);
+              const totalPaid = assignments.reduce((sum, item) => sum + (Number(item.paidFee) || 0), 0);
+              const totalDue = assignments.reduce(
+                (sum, item) => sum + Math.max((Number(item.totalFee) || 0) - (Number(item.paidFee) || 0), 0),
+                0
+              );
+              const converted = String(student.status).toLowerCase() === "converted";
 
               return (
                 <div
@@ -560,160 +606,51 @@ export default function StudentBatchAssignmentsPage() {
                   className={`group ${GRID} border-b border-[#E9E9E7] transition-colors hover:bg-[rgba(55,53,47,0.03)]`}
                 >
                   <Cell>
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#E3E2E0]">
-                      <UserRound size={12} className="text-[#787774]" />
-                    </span>
-                    <span className="truncate font-medium">
-                      {student.name || "Unnamed student"}
-                    </span>
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#E3E2E0]"><UserRound size={12} className="text-[#787774]" /></span>
+                    <span className="truncate font-medium">{student.name || "Unnamed student"}</span>
                   </Cell>
-
+                  <Cell><span className="truncate text-[#787774]">{student.email || "No email"}</span></Cell>
+                  <Cell><span className="truncate tabular-nums text-[#787774]">{student.phone || "No phone"}</span></Cell>
                   <Cell>
-                    <span className="truncate text-[#787774]">
-                      {student.email || "No email"}
-                    </span>
+                    {student.course ? <Tagged className={tagColor(student.course)}>{student.course}</Tagged> : <span className="text-[#C7C6C3]">—</span>}
                   </Cell>
-
                   <Cell>
-                    <span className="truncate tabular-nums text-[#787774]">
-                      {student.phone || "No phone"}
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-sm leading-5 ${converted ? "bg-[#DBEDDB] text-[#1C3829]" : "bg-[#D3E5EF] text-[#183347]"}`}>
+                      <span className={`h-2 w-2 rounded-full ${converted ? "bg-[#4DAB9A]" : "bg-[#2383E2]"}`} />{student.status}
                     </span>
                   </Cell>
-
                   <Cell>
-                    {student.course ? (
-                      <Tagged className={tagColor(student.course)}>
-                        {student.course}
-                      </Tagged>
-                    ) : (
-                      <span className="text-[#C7C6C3]">—</span>
-                    )}
+                    <div className="flex flex-wrap gap-1">
+                      {assignments.length ? assignments.map((a) => (
+                        <button key={a.batchId} type="button" onClick={() => openAssignModal(student)} title="Manage batch" className="max-w-full">
+                          <Tagged className={tagColor(a.batchName || a.batch?.name)}>{a.batchName || a.batch?.name || "Batch"}</Tagged>
+                        </button>
+                      )) : <button type="button" onClick={() => openAssignModal(student)} className={`inline-flex items-center gap-1 rounded-[4px] px-1.5 py-0.5 text-sm text-[#9B9A97] ${hoverBg}`}><Plus size={14} /> Assign batch</button>}
+                    </div>
                   </Cell>
-
                   <Cell>
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-sm leading-5 ${
-                        converted
-                          ? "bg-[#DBEDDB] text-[#1C3829]"
-                          : "bg-[#D3E5EF] text-[#183347]"
-                      }`}
-                    >
-                      <span
-                        className={`h-2 w-2 rounded-full ${
-                          converted ? "bg-[#4DAB9A]" : "bg-[#2383E2]"
-                        }`}
-                      />
-                      {student.status}
-                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {assignments.length ? assignments.map((a) => <Tagged key={a.batchId} className={a.mode === "full_course" ? "bg-[#DBEDDB] text-[#1C3829]" : "bg-[#FDECC8] text-[#402C1B]"}>{a.mode === "full_course" ? "Full course" : "Selected tools"}</Tagged>) : <span className="text-[#C7C6C3]">—</span>}
+                    </div>
                   </Cell>
-
                   <Cell>
-                    {assignment ? (
-                      <button
-                        type="button"
-                        onClick={() => openAssignModal(student)}
-                        title="Change batch"
-                        className="max-w-full rounded-[3px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2383E2]/40"
-                      >
-                        <Tagged className={tagColor(assignment.batchName)}>
-                          {assignment.batchName}
-                        </Tagged>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => openAssignModal(student)}
-                        className={`inline-flex items-center gap-1 rounded-[4px] px-1.5 py-0.5 text-sm text-[#9B9A97] ${hoverBg}`}
-                      >
-                        <Plus size={14} /> Assign batch
-                      </button>
-                    )}
+                    <div className="flex flex-wrap gap-1">
+                      {[...new Set(assignments.flatMap((a) => a.toolNames || a.selectedTools?.map((t) => t.name) || []))].length
+                        ? [...new Set(assignments.flatMap((a) => a.toolNames || a.selectedTools?.map((t) => t.name) || []))].map((name) => <Tagged key={name} className={tagColor(name)}>{name}</Tagged>)
+                        : <span className="text-[#C7C6C3]">—</span>}
+                    </div>
                   </Cell>
-
                   <Cell>
-                    {assignment ? (
-                      <Tagged
-                        className={
-                          assignment.mode === "full_course"
-                            ? "bg-[#DBEDDB] text-[#1C3829]"
-                            : "bg-[#FDECC8] text-[#402C1B]"
-                        }
-                      >
-                        {assignment.mode === "full_course"
-                          ? "Full course"
-                          : "Selected tools"}
-                      </Tagged>
-                    ) : (
-                      <span className="text-[#C7C6C3]">—</span>
-                    )}
+                    {assignments.length ? <span title={`Total ${formatCurrency(totalFee)} · Paid ${formatCurrency(totalPaid)} · Due ${formatCurrency(totalDue)}`} className="truncate text-sm text-[#787774]">{totalDue > 0 ? `${formatCurrency(totalDue)} due` : formatCurrency(totalFee)}</span> : <span className="text-[#C7C6C3]">—</span>}
                   </Cell>
-
-                  <Cell>
-                    {assignment?.toolNames?.length ? (
-                      assignment.toolNames.map((name, index) => (
-                        <Tagged
-                          key={`${name}-${index}`}
-                          className={tagColor(name)}
-                        >
-                          {name}
-                        </Tagged>
-                      ))
-                    ) : (
-                      <span className="text-[#C7C6C3]">—</span>
-                    )}
-                  </Cell>
-
-                  <Cell>
-                    {fee ? (
-                      <span
-                        title={`Total ${formatCurrency(
-                          fee.total
-                        )} · Paid ${formatCurrency(fee.paid)}`}
-                        className="flex min-w-0 items-center gap-1.5"
-                      >
-                        <Tagged className={fee.color}>{fee.label}</Tagged>
-                        <span className="truncate tabular-nums text-[#787774]">
-                          {fee.due > 0
-                            ? `${formatCurrency(fee.due)} due`
-                            : formatCurrency(fee.total)}
-                        </span>
-                      </span>
-                    ) : (
-                      <span className="text-[#C7C6C3]">—</span>
-                    )}
-                  </Cell>
-
                   <Cell last className="justify-center gap-0.5 px-1">
-                    <button
-                      type="button"
-                      onClick={() => openAssignModal(student)}
-                      aria-label={assignment ? "Change batch" : "Assign batch"}
-                      title={assignment ? "Change batch" : "Assign batch"}
-                      className={`rounded-[4px] p-1.5 text-[#787774] opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100 ${hoverBg}`}
-                    >
-                      <Pencil size={14} />
-                    </button>
-
-                    {assignment && (
-                      <button
-                        type="button"
-                        title="Remove batch assignment"
-                        aria-label="Remove batch assignment"
-                        disabled={removingId === student.id}
-                        onClick={() => removeAssignment(student)}
-                        className={`rounded-[4px] p-1.5 text-[#787774] transition-opacity hover:bg-[#FFE2DD] hover:text-[#E03E3E] focus:opacity-100 group-hover:opacity-100 ${
-                          removingId === student.id
-                            ? "opacity-100"
-                            : "opacity-0"
-                        }`}
-                      >
-                        {removingId === student.id ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <Trash2 size={14} />
-                        )}
-                      </button>
-                    )}
+                    <button type="button" onClick={() => openAssignModal(student)} aria-label="Assign another batch" title="Assign another batch" className={`rounded-[4px] p-1.5 text-[#787774] opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100 ${hoverBg}`}><Plus size={15} /></button>
+                    {assignments.map((a) => {
+                      const key = `${student.id}-${a.batchId}`;
+                      return <button key={key} type="button" title={`Remove ${a.batchName || a.batch?.name || "batch"}`} aria-label="Remove batch assignment" disabled={removingId === key} onClick={() => removeAssignment(student, a)} className={`rounded-[4px] p-1.5 text-[#787774] transition-opacity hover:bg-[#FFE2DD] hover:text-[#E03E3E] focus:opacity-100 group-hover:opacity-100 ${removingId === key ? "opacity-100" : "opacity-0"}`}>
+                        {removingId === key ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      </button>;
+                    })}
                   </Cell>
                 </div>
               );
@@ -970,36 +907,84 @@ export default function StudentBatchAssignmentsPage() {
 
                           <label className="block">
                             <span className="mb-1 block text-xs text-[#9B9A97]">
-                              Amount paid
+                              New payment amount
                             </span>
                             <input
                               type="number"
                               min="0"
                               step="1"
                               inputMode="numeric"
-                              value={paidFee}
-                              onChange={(e) => setPaidFee(e.target.value)}
-                              placeholder="0"
+                              value={paymentAmount}
+                              onChange={(e) => setPaymentAmount(e.target.value)}
+                              placeholder="Enter installment amount"
+                              className={fieldClass}
+                            />
+                          </label>
+
+                          <label className="block">
+                            <span className="mb-1 block text-xs text-[#9B9A97]">
+                              Payment date
+                            </span>
+                            <input
+                              type="date"
+                              value={paymentDate}
+                              max={new Date().toLocaleDateString("en-CA")}
+                              onChange={(e) => setPaymentDate(e.target.value)}
                               className={fieldClass}
                             />
                           </label>
                         </div>
 
-                        <div className="mt-2 flex items-center justify-between rounded-[4px] bg-[#F7F6F3] px-2.5 py-2 text-sm">
-                          <span className="text-[#787774]">Balance due</span>
-                          <span
-                            className={`font-medium tabular-nums ${
-                              overpaid ? "text-[#E03E3E]" : ""
-                            }`}
-                          >
-                            {formatCurrency(balanceDue)}
-                          </span>
+                        <div className="mt-2 space-y-2 rounded-[4px] bg-[#F7F6F3] px-2.5 py-2 text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#787774]">Previously paid</span>
+                            <span className="font-medium tabular-nums">{formatCurrency(alreadyPaid)}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#787774]">This payment</span>
+                            <span className="font-medium tabular-nums">{formatCurrency(paymentAmountNum)}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#787774]">Total paid after saving</span>
+                            <span className="font-medium tabular-nums">{formatCurrency(projectedPaid)}</span>
+                          </div>
+                          <div className="flex items-center justify-between border-t border-[#E3E2E0] pt-2">
+                            <span className="text-[#787774]">Balance due</span>
+                            <span className={`font-semibold tabular-nums ${overpaid ? "text-[#E03E3E]" : ""}`}>
+                              {formatCurrency(balanceDue)}
+                            </span>
+                          </div>
                         </div>
 
                         {overpaid && (
                           <p className="mt-1.5 text-xs text-[#E03E3E]">
-                            Amount paid is more than the total fee.
+                            New payment exceeds the remaining balance.
                           </p>
+                        )}
+
+                        {selectedAssignment?.payments?.length > 0 && (
+                          <div className="mt-4">
+                            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#9B9A97]">
+                              Payment history
+                            </p>
+                            <div className="max-h-40 overflow-y-auto rounded-[4px] border border-[#E3E2E0]">
+                              {[...selectedAssignment.payments]
+                                .sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt))
+                                .map((payment, index) => (
+                                  <div
+                                    key={payment.id || payment._id || index}
+                                    className="flex items-center justify-between gap-3 border-b border-[#E9E9E7] px-3 py-2 last:border-b-0"
+                                  >
+                                    <span className="text-xs text-[#787774]">
+                                      {formatDate(payment.paidAt || payment.paymentDate)}
+                                    </span>
+                                    <span className="text-sm font-medium text-[#1C7C45]">
+                                      {formatCurrency(payment.amount)}
+                                    </span>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
                         )}
                       </Property>
                     </>

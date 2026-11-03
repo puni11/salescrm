@@ -4,12 +4,25 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Plus, X, Loader2, Pencil, Trash2, Search, CalendarDays,
   Users, Wrench, BookOpen, Type, CircleDot, Check,
-  CalendarCheck,
+  CalendarCheck, Clock2,
+  Calendar
 } from "lucide-react";
 import toast from "react-hot-toast";
 import Link from "next/link";
 import BackButton from "@/lib/BackButton";
+const formatTime = (value) => {
+  if (!value) return "Time not set";
 
+  const [hours, minutes] = value.split(":");
+  const date = new Date();
+  date.setHours(Number(hours), Number(minutes), 0, 0);
+
+  return date.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
 const EMPTY_FORM = {
   name: "",
   courseId: "",
@@ -17,6 +30,7 @@ const EMPTY_FORM = {
   trainers: [],
   toolTrainerAssignments: {},
   startingDate: "",
+  startingTime: "",
   status: "upcoming",
 };
 
@@ -54,7 +68,7 @@ const tagColor = (key = "") => {
 };
 
 const GRID =
-  "grid grid-cols-[minmax(200px,1.6fr)_minmax(150px,1.2fr)_120px_minmax(160px,1.4fr)_minmax(160px,1.4fr)_130px_76px]";
+  "grid grid-cols-[minmax(200px,1.5fr)_minmax(150px,1.1fr)_120px_110px_minmax(160px,1.3fr)_minmax(160px,1.3fr)_minmax(240px,2fr)_130px_76px]";
 
 const hoverBg = "hover:bg-[rgba(55,53,47,0.06)]";
 
@@ -254,6 +268,7 @@ export default function BatchManager() {
           }, {})
         : {},
       startingDate: batch.startingDate || "",
+      startingTime: batch.startingTime || "",
       status: batch.status || "upcoming",
     });
 
@@ -399,6 +414,7 @@ export default function BatchManager() {
             trainers: assignedTrainerIds,
             toolTrainerAssignments: assignments,
             startingDate: form.startingDate,
+            startingTime: form.startingTime,
             status: form.status,
           }),
         }
@@ -557,8 +573,10 @@ export default function BatchManager() {
             <HeaderCell icon={Type}>Name</HeaderCell>
             <HeaderCell icon={BookOpen}>Course</HeaderCell>
             <HeaderCell icon={CalendarDays}>Starting date</HeaderCell>
+             <HeaderCell icon={Clock2}>Batch timing</HeaderCell>
+             <HeaderCell icon={Check}>Ongoing</HeaderCell>
+<HeaderCell icon={CalendarCheck}>Next Topic</HeaderCell>
             <HeaderCell icon={Wrench}>Tools</HeaderCell>
-            <HeaderCell icon={Users}>Trainers</HeaderCell>
             <HeaderCell icon={CircleDot}>Status</HeaderCell>
             <div />
           </div>
@@ -633,15 +651,62 @@ export default function BatchManager() {
                     )}
                   </div>
 
-                  <div className="px-2 py-2.5 text-sm text-[#787774]">
-                    {formatDate(batch.startingDate)}
-                  </div>
+                  <div className="flex flex-col gap-0.5 px-2 py-2.5">
+  <span className="text-sm text-[#37352F]">
+    {formatDate(batch.startingDate)}
+  </span>
 
-                  <div className="flex min-w-0 flex-wrap gap-1 px-2 py-2.5">
+ 
+</div>
+<div className="px-2 py-2.5">
+  <span className="flex items-center gap-1 text-sm text-[#787774]">
+    <Clock2 size={13} />
+    {formatTime(batch.startingTime)}
+  </span>
+</div>
+{/* Latest Session */}
+{/* Ongoing - Latest Finished Session */}
+<div className="min-w-0 px-2 py-2.5">
+  {batch.latestFinishedSession ? (
+    <Pill className="bg-[#DBEDDB] text-[#1C3829]">
+      {batch.latestFinishedSession.title}
+    </Pill>
+  ) : (
+    <span className="text-sm text-[#9B9A97]">
+      Not started
+    </span>
+  )}
+</div>
+
+{/* Next Topic - Upcoming Session */}
+{/* Next Topic - Upcoming Session */}
+<div className="min-w-0 px-2 py-2.5">
+  {batch.latestUpcomingSession ? (
+    <div className="flex flex-col items-start gap-1">
+      <Pill className="bg-[#D3E5EF] text-[#183347]">
+        {batch.latestUpcomingSession.title}
+      </Pill>
+<span className="flex items-center gap-3 text-xs text-[#787774]">
+      <span className="flex items-center gap-1 text-xs text-[#787774]">
+        <Calendar size={12} />
+        {formatDate(batch.latestUpcomingSession.date)}
+      </span>
+
+      <span className="flex items-center gap-1 text-xs text-[#787774]">
+        <Clock2 size={12} />
+        {formatTime(batch.latestUpcomingSession.time)}
+      </span>
+      </span>
+    </div>
+  ) : (
+    <span className="text-sm text-[#9B9A97]">No upcoming topic</span>
+  )}
+</div>
+                  <div className="flex min-w-0 ">
                     {batchTools.length ? (
                       batchTools.map((name) => (
-                        <Pill key={name} className={tagColor(name)}>
-                          {name}
+                        <Pill key={name} className={''}>
+                          {name},
                         </Pill>
                       ))
                     ) : (
@@ -649,17 +714,7 @@ export default function BatchManager() {
                     )}
                   </div>
 
-                  <div className="flex min-w-0 flex-wrap gap-1 px-2 py-2.5">
-                    {batchTrainers.length ? (
-                      batchTrainers.map((name) => (
-                        <Pill key={name} className={tagColor(name)}>
-                          {name}
-                        </Pill>
-                      ))
-                    ) : (
-                      <span className="text-sm text-[#C7C6C3]">Empty</span>
-                    )}
-                  </div>
+                 
 
                   <div className="px-2 py-2.5">
                     <select
@@ -804,7 +859,20 @@ export default function BatchManager() {
                       className={fieldClass}
                     />
                   </Property>
-
+                  <Property icon={Clock2} label="Starting time">
+                    <input
+                      required
+                      type="time"
+                      value={form.startingTime}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          startingTime: e.target.value,
+                        }))
+                      }
+                      className={fieldClass}
+                    />
+                  </Property>
                   <Property icon={CircleDot} label="Status">
                     <select
                       value={form.status}

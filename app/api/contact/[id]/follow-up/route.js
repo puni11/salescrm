@@ -130,27 +130,34 @@ export async function POST(request, { params }) {
     // Update lead status in dm
     // -----------------------------------
 
-    const result = await leadsCollection.updateOne(
-      {
-        _id: leadId,
-      },
-      {
-        $set: {
-          status: "Follow Up",
-          updatedAt: new Date(),
-        },
-      }
-    );
+    // -----------------------------------
+// Update lead status and tags
+// -----------------------------------
 
-    if (!result.acknowledged) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Follow-up created but failed to update lead status",
-        },
-        { status: 500 }
-      );
-    }
+const result = await leadsCollection.updateOne(
+  {
+    _id: leadId,
+  },
+  {
+    $set: {
+      status: "Cold",
+      updatedAt: new Date(),
+    },
+    $addToSet: {
+      tags: "Follow Up",
+    },
+  }
+);
+
+if (!result.acknowledged) {
+  return NextResponse.json(
+    {
+      success: false,
+      message: "Follow-up created but failed to update lead status",
+    },
+    { status: 500 }
+  );
+}
 
     // Get updated lead
     const updatedLead = await leadsCollection.findOne({

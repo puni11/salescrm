@@ -9,6 +9,7 @@ export default async function ProtectedLayout({children}) {
   }
     return(
         <main>
+          
             <ClientLayout session={session}>
           {children}
           </ClientLayout>

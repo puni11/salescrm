@@ -423,7 +423,7 @@ export default function CourseManager() {
           Courses
         </h1>
       </div>
-      <p className="ml-[46px] mt-1 text-sm text-[#787774]">
+      <p className=" mt-1 text-sm text-[#787774]">
         Manage course fees, tools, trainers, certification pitches,
         prerequisites and sales counsellors.
       </p>

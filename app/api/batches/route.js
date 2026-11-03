@@ -22,12 +22,14 @@ async function getCollection() {
   };
 }
 
+// Validate and normalize batch data
 function validateBatch(body) {
   const name =
     typeof body.name === "string" ? body.name.trim() : "";
 
   const courseId = String(body.courseId || "");
   const startingDate = body.startingDate;
+  const startingTime = body.startingTime;
   const status = body.status ?? "upcoming";
   const tools = body.tools;
   const assignments = body.toolTrainerAssignments;
@@ -43,9 +45,18 @@ function validateBatch(body) {
   if (
     typeof startingDate !== "string" ||
     !startingDate.trim() ||
-    Number.isNaN(Date.parse(startingDate))
+    !/^\d{4}-\d{2}-\d{2}$/.test(startingDate) ||
+    Number.isNaN(Date.parse(`${startingDate}T00:00:00`))
   ) {
     return { error: "A valid starting date is required" };
+  }
+
+  // Validate starting time (HH:mm, 24-hour format)
+  if (
+    typeof startingTime !== "string" ||
+    !/^([01]\d|2[0-3]):[0-5]\d$/.test(startingTime)
+  ) {
+    return { error: "A valid starting time is required" };
   }
 
   if (
@@ -126,9 +137,7 @@ function validateBatch(body) {
 
   const trainers = [
     ...new Set(
-      normalizedAssignments.map(
-        (item) => item.trainerId
-      )
+      normalizedAssignments.map((item) => item.trainerId)
     ),
   ];
 
@@ -140,11 +149,13 @@ function validateBatch(body) {
       trainers,
       toolTrainerAssignments: normalizedAssignments,
       startingDate,
+      startingTime,
       status,
     },
   };
 }
 
+// Validate course, tools and trainers
 async function validateReferences(db, batch) {
   const course = await db.collection("offeringCourses").findOne({
     _id: new ObjectId(batch.courseId),
@@ -158,10 +169,9 @@ async function validateReferences(db, batch) {
     (id) => new ObjectId(id)
   );
 
-  const foundTools = await db.collection("tools")
-    .countDocuments({
-      _id: { $in: toolIds },
-    });
+  const foundTools = await db.collection("tools").countDocuments({
+    _id: { $in: toolIds },
+  });
 
   if (foundTools !== toolIds.length) {
     return "One or more selected tools do not exist";
@@ -189,9 +199,7 @@ async function validateReferences(db, batch) {
   );
 
   for (const assignment of batch.toolTrainerAssignments) {
-    const trainer = trainerMap.get(
-      assignment.trainerId
-    );
+    const trainer = trainerMap.get(assignment.trainerId);
 
     if (!trainer) {
       return "Assigned trainer does not exist";
@@ -213,6 +221,7 @@ async function validateReferences(db, batch) {
   return null;
 }
 
+// Find duplicate batch names
 async function findDuplicateName(
   collection,
   name,
@@ -252,22 +261,172 @@ export async function GET(request) {
 
     const { collection } = await getCollection();
 
-    if (id) {
-      if (!ObjectId.isValid(id)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Invalid batch ID",
+    if (id && !ObjectId.isValid(id)) {
+      return NextResponse.json(
+        { success: false, message: "Invalid batch ID" },
+        { status: 400 }
+      );
+    }
+
+    if (status && !VALID_STATUSES.includes(status)) {
+      return NextResponse.json(
+        { success: false, message: "Invalid batch status" },
+        { status: 400 }
+      );
+    }
+
+    if (courseId && !ObjectId.isValid(courseId)) {
+      return NextResponse.json(
+        { success: false, message: "Invalid course ID" },
+        { status: 400 }
+      );
+    }
+
+    const filter = {};
+
+    if (id) filter._id = new ObjectId(id);
+    if (status) filter.status = status;
+    if (courseId) filter.courseId = courseId;
+
+    // Use consistent local date/time for session comparisons.
+    const now = new Date();
+
+    const today = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+    ].join("-");
+
+    const currentTime = [
+      String(now.getHours()).padStart(2, "0"),
+      String(now.getMinutes()).padStart(2, "0"),
+    ].join(":");
+
+    const batches = await collection.aggregate([
+      {
+        $match: filter,
+      },
+
+      // Upcoming session
+      {
+        $lookup: {
+          from: "sessions",
+          let: { batchObjectId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$batchId", "$$batchObjectId"] },
+                    { $ne: ["$status", "completed"] },
+                    {
+                      $or: [
+                        { $gt: ["$date", today] },
+                        {
+                          $and: [
+                            { $eq: ["$date", today] },
+                            { $gte: ["$time", currentTime] },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+            {
+              $sort: {
+                date: 1,
+                time: 1,
+              },
+            },
+            { $limit: 1 },
+            {
+              $project: {
+                _id: 0,
+                title: 1,
+                date: 1,
+                time: 1,
+              },
+            },
+          ],
+          as: "upcomingSessions",
+        },
+      },
+
+      // Latest completed session
+      {
+        $lookup: {
+          from: "sessions",
+          let: { batchObjectId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$batchId", "$$batchObjectId"] },
+                    { $eq: ["$status", "completed"] },
+                  ],
+                },
+              },
+            },
+            {
+              $sort: {
+                date: -1,
+                time: -1,
+                completedAt: -1,
+              },
+            },
+            { $limit: 1 },
+            {
+              $project: {
+                _id: 0,
+                title: 1,
+                date: 1,
+                time: 1,
+                completedAt: 1,
+              },
+            },
+          ],
+          as: "finishedSessions",
+        },
+      },
+
+      // Return both sessions
+      {
+        $addFields: {
+          latestUpcomingSession: {
+            $ifNull: [
+              { $arrayElemAt: ["$upcomingSessions", 0] },
+              null,
+            ],
           },
-          { status: 400 }
-        );
-      }
 
-      const batch = await collection.findOne({
-        _id: new ObjectId(id),
-      });
+          latestFinishedSession: {
+            $ifNull: [
+              { $arrayElemAt: ["$finishedSessions", 0] },
+              null,
+            ],
+          },
+        },
+      },
 
-      if (!batch) {
+      {
+        $project: {
+          upcomingSessions: 0,
+          finishedSessions: 0,
+        },
+      },
+
+      {
+        $sort: {
+          createdAt: -1,
+        },
+      },
+    ]).toArray();
+
+    if (id) {
+      if (!batches.length) {
         return NextResponse.json(
           {
             success: false,
@@ -279,45 +438,16 @@ export async function GET(request) {
 
       return NextResponse.json({
         success: true,
-        data: batch,
+        data: batches[0],
       });
     }
-
-    if (status && !VALID_STATUSES.includes(status)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid batch status",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (courseId && !ObjectId.isValid(courseId)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid course ID",
-        },
-        { status: 400 }
-      );
-    }
-
-    const filter = {};
-
-    if (status) filter.status = status;
-    if (courseId) filter.courseId = courseId;
-
-    const batches = await collection
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .toArray();
 
     return NextResponse.json({
       success: true,
       count: batches.length,
       data: batches,
     });
+
   } catch (error) {
     console.error("Get batches error:", error);
 
@@ -452,8 +582,7 @@ export async function PATCH(request) {
 
     const body = await request.json();
 
-    // Allow status-only updates without requiring older
-    // batches to already have tool-trainer assignments.
+    // Status-only updates
     const suppliedKeys = Object.keys(body);
     const statusOnly =
       suppliedKeys.length === 1 &&
@@ -491,14 +620,14 @@ export async function PATCH(request) {
       });
     }
 
-    // Full edits must include valid tool-trainer assignments.
+    // Merge existing data with incoming data
     const mergedBody = {
       ...existing,
       ...body,
       name: body.name ?? existing.name,
       courseId: body.courseId ?? existing.courseId,
-      startingDate:
-        body.startingDate ?? existing.startingDate,
+      startingDate: body.startingDate ?? existing.startingDate,
+      startingTime: body.startingTime ?? existing.startingTime,
       tools: body.tools ?? existing.tools,
       toolTrainerAssignments:
         body.toolTrainerAssignments ??
@@ -506,8 +635,6 @@ export async function PATCH(request) {
       status: body.status ?? existing.status,
     };
 
-    // Do not trust a client-supplied trainers array.
-    // Derive it from toolTrainerAssignments instead.
     const validation = validateBatch(mergedBody);
 
     if (validation.error) {

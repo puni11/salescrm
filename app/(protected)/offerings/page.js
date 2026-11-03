@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -19,9 +18,13 @@ import {
   ChevronLeft,
   ChevronRight,
   SlidersHorizontal,
+  GripVertical,
+  RotateCcw,
 } from "lucide-react";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
+const COLUMN_ORDER_KEY = "courses-column-order";
+const ROW_ORDER_KEY = "courses-row-order";
 
 const formatPrice = (price) =>
   new Intl.NumberFormat("en-IN", {
@@ -50,9 +53,6 @@ const tagColor = (key = "") => {
   return TAG_COLORS[hash % TAG_COLORS.length];
 };
 
-const GRID =
-  "grid grid-cols-[minmax(220px,1.7fr)_140px_100px_130px_minmax(150px,1.2fr)_minmax(150px,1.2fr)_minmax(170px,1.3fr)_minmax(180px,1.4fr)_minmax(160px,1.2fr)]";
-
 function Tagged({ className = "", children }) {
   return (
     <span
@@ -64,15 +64,185 @@ function Tagged({ className = "", children }) {
   );
 }
 
-function HeadCell({ icon: Icon, last, children }) {
+const Muted = ({ children }) => (
+  <span className="text-sm text-[#C7C6C3]">{children}</span>
+);
+
+// --- COLUMN DEFINITIONS (order here = default order) ---
+const COLUMNS = [
+  {
+    id: "name",
+    label: "Course name",
+    icon: Type,
+    width: "minmax(220px,1.7fr)",
+    render: (c) => (
+      <>
+        <FileText size={16} className="shrink-0 text-[#9B9A97]" />
+        <span className="truncate font-medium" title={c.name}>
+          {c.name}
+        </span>
+      </>
+    ),
+  },
+  {
+    id: "category",
+    label: "Category",
+    icon: Tag,
+    width: "140px",
+    render: (c) =>
+      c.category ? (
+        <Tagged className={tagColor(c.category)}>{c.category}</Tagged>
+      ) : (
+        <span className="text-[#C7C6C3]">—</span>
+      ),
+  },
+  {
+    id: "hours",
+    label: "Hours",
+    icon: Clock3,
+    width: "100px",
+    render: (c) => (
+      <span className="whitespace-nowrap text-sm tabular-nums">
+        {c.hours} hours
+      </span>
+    ),
+  },
+  {
+    id: "price",
+    label: "Price",
+    icon: IndianRupee,
+    width: "130px",
+    render: (c) => (
+      <div className="min-w-0">
+        <span className="whitespace-nowrap text-sm tabular-nums">
+          {formatPrice(c.price)}
+        </span>
+        {c.originalPrice > c.price && (
+          <span className="ml-1 whitespace-nowrap text-[12px] tabular-nums text-[#9B9A97] line-through">
+            {formatPrice(c.originalPrice)}
+          </span>
+        )}
+      </div>
+    ),
+  },
+  {
+    id: "tools",
+    label: "Tools",
+    icon: Wrench,
+    width: "minmax(150px,1.2fr)",
+    render: (c) =>
+      c.tools?.length ? (
+        <div className="flex min-w-0 flex-wrap gap-1">
+          {c.tools.map((tool) => (
+            <Tagged key={tool.id} className={tagColor(tool.name)}>
+              {tool.name}
+            </Tagged>
+          ))}
+        </div>
+      ) : (
+        <Muted>Not available</Muted>
+      ),
+  },
+  {
+    id: "trainers",
+    label: "Trainers",
+    icon: Users,
+    width: "minmax(150px,1.2fr)",
+    render: (c) =>
+      c.trainers?.length ? (
+        <div className="flex min-w-0 flex-wrap gap-1">
+          {c.trainers.map((trainer) => (
+            <div key={trainer.id} className="text-xs" >
+              {trainer.name},
+            </div>
+          ))}
+        </div>
+      ) : (
+        <Muted>Not available</Muted>
+      ),
+  },
+  {
+    id: "certification",
+    label: "Certification pitch",
+    icon: BadgeCheck,
+    width: "minmax(170px,1.3fr)",
+    render: (c) =>
+      c.certificationPitch ? (
+        <Tagged className={tagColor(c.certificationPitch)}>
+          {c.certificationPitch}
+        </Tagged>
+      ) : (
+        <Muted>Not available</Muted>
+      ),
+  },
+  {
+    id: "prerequisite",
+    label: "Prerequisite",
+    icon: FileText,
+    width: "minmax(180px,1.4fr)",
+    render: (c) =>
+      c.prerequisite ? (
+        <span className="line-clamp-2 text-sm" title={c.prerequisite}>
+          {c.prerequisite}
+        </span>
+      ) : (
+        <Muted>Not specified</Muted>
+      ),
+  },
+  {
+    id: "counsellor",
+    label: "Sales counsellor",
+    icon: UserRound,
+    width: "minmax(160px,1.2fr)",
+    render: (c) =>
+      c.salesCounsellor?.name ? (
+        <div className="min-w-0">
+          <span
+            className="block truncate text-sm"
+            title={c.salesCounsellor.name}
+          >
+            {c.salesCounsellor.name}
+          </span>
+        </div>
+      ) : (
+        <Muted>Not assigned</Muted>
+      ),
+  },
+];
+
+const COLUMN_MAP = Object.fromEntries(COLUMNS.map((col) => [col.id, col]));
+const DEFAULT_ORDER = COLUMNS.map((col) => col.id);
+
+function HeadCell({
+  icon: Icon,
+  last,
+  dragging,
+  indicator, // "left" | "right" | null
+  children,
+  ...rest
+}) {
   return (
     <div
-      className={`flex h-[38px] items-center gap-1.5 overflow-hidden px-2 text-sm text-[#787774] ${
+      {...rest}
+      draggable
+      tabIndex={0}
+      title="Drag to reorder (or Alt + ← / →)"
+      className={`group flex h-[38px] cursor-grab select-none items-center gap-1.5 overflow-hidden px-2 text-sm text-[#787774] outline-none transition-colors hover:bg-[rgba(55,53,47,0.04)] focus-visible:bg-[rgba(55,53,47,0.06)] active:cursor-grabbing ${
         last ? "" : "border-r border-[#E9E9E7]"
+      } ${dragging ? "opacity-40" : ""} ${
+        indicator === "left"
+          ? "shadow-[inset_2px_0_0_#2383E2]"
+          : indicator === "right"
+          ? "shadow-[inset_-2px_0_0_#2383E2]"
+          : ""
       }`}
     >
       <Icon size={15} className="shrink-0 text-[#9B9A97]" />
       <span className="truncate">{children}</span>
+      <GripVertical
+        size={14}
+        className="ml-auto shrink-0 text-[#C7C6C3] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+      />
     </div>
   );
 }
@@ -112,7 +282,98 @@ export default function CoursesPage() {
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
 
+  // --- Column order (drag & drop, saved in localStorage) ---
+  const [columnOrder, setColumnOrder] = useState(DEFAULT_ORDER);
+  const [orderRestored, setOrderRestored] = useState(false);
+  const [dragId, setDragId] = useState(null);
+  const [overId, setOverId] = useState(null);
+
+  // Course row order (persisted in localStorage)
+  const [rowOrder, setRowOrder] = useState([]);
+  const [rowOrderRestored, setRowOrderRestored] = useState(false);
+  const [dragRowId, setDragRowId] = useState(null);
+  const [overRowId, setOverRowId] = useState(null);
+
   const searchRef = useRef(null);
+
+  // Load saved order once (after mount, so server and client render match)
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLUMN_ORDER_KEY) || "null");
+      if (Array.isArray(saved)) {
+        const valid = [...new Set(saved.filter((id) => COLUMN_MAP[id]))];
+        const missing = DEFAULT_ORDER.filter((id) => !valid.includes(id));
+        setColumnOrder([...valid, ...missing]);
+      }
+    } catch {}
+    setOrderRestored(true);
+  }, []);
+
+  // Restore saved course row order once after mount.
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(ROW_ORDER_KEY) || "[]");
+      if (Array.isArray(saved)) setRowOrder(saved.map(String));
+    } catch {}
+    setRowOrderRestored(true);
+  }, []);
+
+  // Save course row order whenever it changes.
+  useEffect(() => {
+    if (!rowOrderRestored) return;
+    try {
+      localStorage.setItem(ROW_ORDER_KEY, JSON.stringify(rowOrder));
+    } catch {}
+  }, [rowOrder, rowOrderRestored]);
+
+  // Save whenever the order changes
+  useEffect(() => {
+    if (!orderRestored) return;
+    try {
+      localStorage.setItem(COLUMN_ORDER_KEY, JSON.stringify(columnOrder));
+    } catch {}
+  }, [columnOrder, orderRestored]);
+
+  const orderedColumns = useMemo(
+    () => columnOrder.map((id) => COLUMN_MAP[id]).filter(Boolean),
+    [columnOrder]
+  );
+
+  const gridStyle = useMemo(
+    () => ({
+      gridTemplateColumns: orderedColumns.map((col) => col.width).join(" "),
+    }),
+    [orderedColumns]
+  );
+
+  const isDefaultOrder = columnOrder.every((id, i) => id === DEFAULT_ORDER[i]);
+
+  const moveColumn = (fromId, toId) => {
+    if (!fromId || !toId || fromId === toId) return;
+    setColumnOrder((prev) => {
+      const from = prev.indexOf(fromId);
+      const to = prev.indexOf(toId);
+      if (from < 0 || to < 0) return prev;
+      const next = [...prev];
+      next.splice(from, 1);
+      next.splice(to, 0, fromId);
+      return next;
+    });
+  };
+
+  const moveColumnBy = (id, delta) => {
+    setColumnOrder((prev) => {
+      const from = prev.indexOf(id);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= prev.length) return prev;
+      const next = [...prev];
+      next.splice(from, 1);
+      next.splice(to, 0, id);
+      return next;
+    });
+  };
+
+  const resetColumns = () => setColumnOrder(DEFAULT_ORDER);
 
   const loadCourses = useCallback(async () => {
     try {
@@ -215,10 +476,49 @@ export default function CoursesPage() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [courses]);
 
+  const orderedCourses = useMemo(() => {
+    if (!rowOrder.length) return courses;
+    const byId = new Map(courses.map((course) => [String(course.id ?? course._id), course]));
+    const saved = rowOrder
+      .map((id) => byId.get(String(id)))
+      .filter(Boolean);
+    const savedIds = new Set(saved.map((course) => String(course.id ?? course._id)));
+    const newCourses = courses.filter(
+      (course) => !savedIds.has(String(course.id ?? course._id))
+    );
+    return [...saved, ...newCourses];
+  }, [courses, rowOrder]);
+
+  const moveRow = (fromId, toId) => {
+    if (!fromId || !toId || fromId === toId) return;
+    setRowOrder((previous) => {
+      const currentIds = orderedCourses.map((course) => String(course.id ?? course._id));
+      const baseIds = previous.length
+        ? [...previous.filter((id) => currentIds.includes(String(id))) , ...currentIds.filter((id) => !previous.includes(id))]
+        : currentIds;
+      const from = baseIds.indexOf(String(fromId));
+      const to = baseIds.indexOf(String(toId));
+      if (from < 0 || to < 0) return previous;
+      const next = [...baseIds];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+    setDragRowId(null);
+    setOverRowId(null);
+  };
+
+  const resetRowOrder = () => {
+    setRowOrder([]);
+    try {
+      localStorage.removeItem(ROW_ORDER_KEY);
+    } catch {}
+  };
+
   const filteredCourses = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return courses.filter((course) => {
+    return orderedCourses.filter((course) => {
       const searchValues = [
         course.name,
         course.category,
@@ -266,7 +566,7 @@ export default function CoursesPage() {
       );
     });
   }, [
-    courses,
+    orderedCourses,
     search,
     selectedCategory,
     selectedTrainer,
@@ -308,6 +608,8 @@ export default function CoursesPage() {
 
   const selectClass =
     "h-8 max-w-[190px] rounded-[5px] border border-[#E9E9E7] bg-white px-2 text-sm text-[#37352F] outline-none focus:border-[#B4B4B0]";
+
+  const dragFromIndex = dragId ? columnOrder.indexOf(dragId) : -1;
 
   return (
     <main className="min-h-screen bg-white px-4 py-6 text-[#37352F] sm:px-8 lg:px-[30px]">
@@ -458,23 +760,86 @@ export default function CoursesPage() {
             Clear filters
           </button>
         )}
+
+        {rowOrder.length > 0 && (
+          <button
+            type="button"
+            onClick={resetRowOrder}
+            className="inline-flex h-8 items-center gap-1.5 rounded-[5px] px-2 text-sm text-[#787774] transition-colors hover:bg-[#F1F1EF] hover:text-[#37352F]"
+          >
+            <RotateCcw size={13} />
+            Reset row order
+          </button>
+        )}
+
+        {!isDefaultOrder && (
+          <button
+            type="button"
+            onClick={resetColumns}
+            className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-[5px] px-2 text-sm text-[#787774] transition-colors hover:bg-[#F1F1EF] hover:text-[#37352F]"
+          >
+            <RotateCcw size={13} />
+            Reset column order
+          </button>
+        )}
       </div>
 
       {/* Table */}
       <div className="mt-3 overflow-x-auto">
         <div className="min-w-[1600px]">
-          <div className={`${GRID} border-y border-[#E9E9E7]`}>
-            <HeadCell icon={Type}>Course name</HeadCell>
-            <HeadCell icon={Tag}>Category</HeadCell>
-            <HeadCell icon={Clock3}>Hours</HeadCell>
-            <HeadCell icon={IndianRupee}>Price</HeadCell>
-            <HeadCell icon={Wrench}>Tools</HeadCell>
-            <HeadCell icon={Users}>Trainers</HeadCell>
-            <HeadCell icon={BadgeCheck}>Certification pitch</HeadCell>
-            <HeadCell icon={FileText}>Prerequisite</HeadCell>
-            <HeadCell icon={UserRound} last>
-              Sales counsellor
-            </HeadCell>
+          {/* Header: drag a column title onto another to move it */}
+          <div className="grid border-y border-[#E9E9E7]" style={gridStyle}>
+            {orderedColumns.map((col, index) => {
+              const isOver = overId === col.id && dragId && dragId !== col.id;
+              const indicator = isOver
+                ? dragFromIndex > index
+                  ? "left"
+                  : "right"
+                : null;
+
+              return (
+                <HeadCell
+                  key={col.id}
+                  icon={col.icon}
+                  last={index === orderedColumns.length - 1}
+                  dragging={dragId === col.id}
+                  indicator={indicator}
+                  onDragStart={(event) => {
+                    setDragId(col.id);
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", col.id);
+                  }}
+                  onDragOver={(event) => {
+                    if (!dragId) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    if (overId !== col.id) setOverId(col.id);
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    moveColumn(dragId, col.id);
+                    setDragId(null);
+                    setOverId(null);
+                  }}
+                  onDragEnd={() => {
+                    setDragId(null);
+                    setOverId(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (!event.altKey) return;
+                    if (event.key === "ArrowLeft") {
+                      event.preventDefault();
+                      moveColumnBy(col.id, -1);
+                    } else if (event.key === "ArrowRight") {
+                      event.preventDefault();
+                      moveColumnBy(col.id, 1);
+                    }
+                  }}
+                >
+                  {col.label}
+                </HeadCell>
+              );
+            })}
           </div>
 
           {loading ? (
@@ -503,120 +868,48 @@ export default function CoursesPage() {
           ) : (
             paginatedCourses.map((course) => (
               <div
-                key={course.id}
-                className={`${GRID} border-b border-[#E9E9E7] transition-colors hover:bg-[rgba(55,53,47,0.03)]`}
+                key={course.id ?? course._id}
+                draggable
+                onDragStart={(event) => {
+                  const id = String(course.id ?? course._id);
+                  setDragRowId(id);
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", id);
+                }}
+                onDragOver={(event) => {
+                  if (!dragRowId) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  const id = String(course.id ?? course._id);
+                  if (overRowId !== id) setOverRowId(id);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const targetId = String(course.id ?? course._id);
+                  const sourceId = dragRowId || event.dataTransfer.getData("text/plain");
+                  moveRow(sourceId, targetId);
+                }}
+                onDragEnd={() => {
+                  setDragRowId(null);
+                  setOverRowId(null);
+                }}
+                style={gridStyle}
+                className={`grid cursor-grab border-b border-[#E9E9E7] transition-colors hover:bg-[rgba(55,53,47,0.03)] active:cursor-grabbing ${
+                  dragRowId === String(course.id ?? course._id) ? "opacity-40" : ""
+                } ${
+                  overRowId === String(course.id ?? course._id) && dragRowId !== overRowId
+                    ? "border-t-2 border-t-[#2383E2]"
+                    : ""
+                }`}
               >
-                <Cell>
-                  <FileText
-                    size={16}
-                    className="shrink-0 text-[#9B9A97]"
-                  />
-                  <span className="truncate font-medium" title={course.name}>
-                    {course.name}
-                  </span>
-                </Cell>
-
-                <Cell>
-                  {course.category ? (
-                    <Tagged className={tagColor(course.category)}>
-                      {course.category}
-                    </Tagged>
-                  ) : (
-                    <span className="text-[#C7C6C3]">—</span>
-                  )}
-                </Cell>
-
-                <Cell>
-                  <span className="whitespace-nowrap text-sm tabular-nums">
-                    {course.hours} hours
-                  </span>
-                </Cell>
-
-                <Cell>
-                  <div className="min-w-0">
-                    <span className="whitespace-nowrap text-sm tabular-nums">
-                      {formatPrice(course.price)}
-                    </span>
-                    {course.originalPrice > course.price && (
-                      <span className="ml-1 whitespace-nowrap text-[12px] tabular-nums text-[#9B9A97] line-through">
-                        {formatPrice(course.originalPrice)}
-                      </span>
-                    )}
-                  </div>
-                </Cell>
-
-                <Cell>
-                  {course.tools?.length ? (
-                    <div className="flex min-w-0 flex-wrap gap-1">
-                      {course.tools.map((tool) => (
-                        <Tagged
-                          key={tool.id}
-                          className={tagColor(tool.name)}
-                        >
-                          {tool.name}
-                        </Tagged>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-sm text-[#C7C6C3]">Not available</span>
-                  )}
-                </Cell>
-
-                <Cell>
-                  {course.trainers?.length ? (
-                    <div className="flex min-w-0 flex-wrap gap-1">
-                      {course.trainers.map((trainer) => (
-                        <Tagged
-                          key={trainer.id}
-                          className={tagColor(trainer.name)}
-                        >
-                          {trainer.name}
-                        </Tagged>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-sm text-[#C7C6C3]">Not available</span>
-                  )}
-                </Cell>
-
-                <Cell>
-                  {course.certificationPitch ? (
-                    <Tagged className={tagColor(course.certificationPitch)}>
-                      {course.certificationPitch}
-                    </Tagged>
-                  ) : (
-                    <span className="text-sm text-[#C7C6C3]">Not available</span>
-                  )}
-                </Cell>
-
-                <Cell>
-                  {course.prerequisite ? (
-                    <span
-                      className="line-clamp-2 text-sm"
-                      title={course.prerequisite}
-                    >
-                      {course.prerequisite}
-                    </span>
-                  ) : (
-                    <span className="text-sm text-[#C7C6C3]">Not specified</span>
-                  )}
-                </Cell>
-
-                <Cell last>
-                  {course.salesCounsellor?.name ? (
-                    <div className="min-w-0">
-                      <span
-                        className="block truncate text-sm"
-                        title={course.salesCounsellor.name}
-                      >
-                        {course.salesCounsellor.name}
-                      </span>
-                    
-                    </div>
-                  ) : (
-                    <span className="text-sm text-[#C7C6C3]">Not assigned</span>
-                  )}
-                </Cell>
+                {orderedColumns.map((col, index) => (
+                  <Cell
+                    key={col.id}
+                    last={index === orderedColumns.length - 1}
+                  >
+                    {col.render(course)}
+                  </Cell>
+                ))}
               </div>
             ))
           )}

@@ -1,12 +1,16 @@
 "use client";
 
+import { useEffect } from "react";
 import {
   MessageCircle,
   X,
   FileText,
   Phone,
   Sparkles,
+  UserRound,
 } from "lucide-react";
+
+const hoverBg = "hover:bg-[rgba(55,53,47,0.06)]";
 
 export default function WhatsAppModel({
   selectedLead,
@@ -28,6 +32,14 @@ export default function WhatsAppModel({
 
   const program =
     course || "our program";
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") setIsWhatsAppModalOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setIsWhatsAppModalOpen]);
 
   // ==========================================
   // WHATSAPP MESSAGE TEMPLATES
@@ -272,327 +284,115 @@ Looking forward to connecting with you.`;
   // UI
   // ==========================================
 
+  const templates = [
+    ["followup", "Follow-up", FileText],
+    ["callback", "Callback", Phone],
+    ["interested", "Interested", MessageCircle],
+  ];
+
   return (
     <div
-      className="
-        fixed inset-0
-        bg-gray-900/50
-        backdrop-blur-sm
-        z-[90]
-        flex items-center justify-center
-        p-4
-      "
+      className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-[rgba(15,15,15,0.6)] p-4 sm:py-12"
+      
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) setIsWhatsAppModalOpen(false);
+      }}
     >
       <div
-        className="
-          bg-white
-          rounded-2xl
-          shadow-xl
-          w-full
-          max-w-2xl
-          max-h-[90vh]
-          overflow-y-auto
-          p-6
-        "
+        className="w-full max-w-[680px] overflow-hidden rounded-[6px] bg-white text-[#37352F]"
+        style={{
+          boxShadow:
+            "rgba(15,15,15,0.05) 0 0 0 1px, rgba(15,15,15,0.1) 0 5px 10px, rgba(15,15,15,0.2) 0 15px 40px",
+        }}
       >
-
-        {/* =====================================
-            HEADER
-        ====================================== */}
-
-        <div className="flex justify-between items-center mb-5">
-
-          <h2
-            className="
-              text-xl
-              font-bold
-              text-gray-900
-              flex
-              items-center
-              gap-2
-            "
-          >
-            <MessageCircle
-              className="text-green-500"
-              size={22}
-            />
-
-            Message{" "}
-            {selectedLead?.name || "Lead"}
-          </h2>
-
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 pt-3">
+          <span className="text-xs text-[#9B9A97]">WhatsApp message</span>
           <button
             type="button"
-            onClick={() =>
-              setIsWhatsAppModalOpen(false)
-            }
-            className="
-              text-gray-400
-              hover:text-gray-600
-              hover:bg-gray-100
-              rounded-full
-              p-1.5
-              transition-colors
-            "
+            onClick={() => setIsWhatsAppModalOpen(false)}
+            aria-label="Close"
+            className={`rounded-[4px] p-1.5 text-[#787774] ${hoverBg}`}
           >
-            <X size={22} />
+            <X size={16} />
           </button>
-
         </div>
-
-        {/* =====================================
-            QUICK TEMPLATES
-        ====================================== */}
-
-        <div className="mb-5">
-
-          <div className="flex items-center gap-2 mb-2">
-
-            <Sparkles
-              size={16}
-              className="text-gray-500"
-            />
-
-            <label
-              className="
-                text-sm
-                font-medium
-                text-gray-700
-              "
-            >
-              Quick Message Templates
-            </label>
-
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 mt-2">
-
-            {/* FOLLOW-UP */}
-
-            <button
-              type="button"
-              onClick={() =>
-                applyTemplate("followup")
-              }
-              className="
-                flex
-                items-center
-                justify-center
-                gap-1.5
-                px-2
-                py-0.5
-                cursor-pointer
-                border
-                border-gray-200
-                bg-gray-50
-                text-gray-700
-                font-medium
-                rounded-lg
-                hover:bg-gray-100
-                hover:border-gray-300
-                transition-all
-                text-xs
-              "
-            >
-              <FileText size={18} />
-
-              <span>
-                Follow-up
-              </span>
-            </button>
-
-            {/* CALLBACK */}
-
-            <button
-              type="button"
-              onClick={() =>
-                applyTemplate("callback")
-              }
-              className="
-                flex
-                items-center
-                justify-center
-                cursor-pointer
-                gap-1.5
-                px-2
-                py-0.5
-                border
-                border-gray-200
-                bg-gray-50
-                text-gray-700
-                font-medium
-                rounded-lg
-                hover:bg-gray-100
-                hover:border-gray-300
-                transition-all
-                text-xs
-              "
-            >
-              <Phone size={18} />
-
-              <span>
-                Callback
-              </span>
-            </button>
-
-            {/* INTERESTED */}
-
-            <button
-              type="button"
-              onClick={() =>
-                applyTemplate("interested")
-              }
-              className="
-                flex
-                items-center
-                justify-center
-                gap-1.5 
-                cursor-pointer
-                px-2
-                py-2
-                border
-                border-gray-200
-                bg-gray-50
-                text-gray-700
-                font-medium
-                rounded-lg
-                hover:bg-gray-100
-                hover:border-gray-300
-                transition-all
-                text-xs
-              "
-            >
-              <MessageCircle size={18} />
-
-              <span>
-                Interested
-              </span>
-            </button>
-
-          </div>
-        </div>
-
-        {/* =====================================
-            MESSAGE FORM
-        ====================================== */}
 
         <form onSubmit={handleSubmit}>
+          <div className="max-h-[72vh] overflow-y-auto px-6 pb-6 pt-2 sm:px-10">
+            <h2 className="flex items-center gap-2.5 text-[28px] font-bold leading-tight tracking-[-0.01em]">
+              <MessageCircle size={26} className="shrink-0 text-[#0F7B6C]" />
+              Message {selectedLead?.name || "Lead"}
+            </h2>
 
-          <div className="mb-4">
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-[#787774]">
+              <UserRound size={14} className="text-[#9B9A97]" />
+              From {counsellorName}
+            </p>
 
-            <div className="flex justify-between items-center mb-1">
+            {/* Quick templates */}
+            <div className="mt-5">
+              <div className="mb-2 flex items-center gap-1.5 text-sm text-[#787774]">
+                <Sparkles size={14} className="text-[#9B9A97]" />
+                Quick message templates
+              </div>
 
-              <label
-                className="
-                  block
-                  text-sm
-                  font-medium
-                  text-gray-700
-                "
-              >
-                Custom Message
-              </label>
-
-              {whatsappMessage && (
-                <span className="text-xs text-gray-400">
-                  {whatsappMessage.length} characters
-                </span>
-              )}
-
+              <div className="flex flex-wrap gap-1.5">
+                {templates.map(([type, label, Icon]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => applyTemplate(type)}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-[4px] border border-dashed border-[#D3D1CB] px-2.5 text-sm text-[#787774] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
+                  >
+                    <Icon size={14} />
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <textarea
-              required
-              value={whatsappMessage}
-              onChange={(e) =>
-                setWhatsappMessage(
-                  e.target.value
-                )
-              }
-              rows={10}
-              placeholder="Type your message here or select a template..."
-              className="
-                w-full
-                border
-                border-gray-300
-                rounded-lg
-                px-4
-                py-3
-                focus:ring-2
-                focus:ring-green-500
-                focus:border-green-500
-                outline-none
-                resize-none
-                text-sm
-                transition
-              "
-            />
+            {/* Message */}
+            <div className="mt-5">
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="text-sm text-[#787774]">Custom message</label>
 
+                {whatsappMessage && (
+                  <span className="text-xs text-[#9B9A97]">
+                    {whatsappMessage.length} characters
+                  </span>
+                )}
+              </div>
+
+              <textarea
+                required
+                value={whatsappMessage}
+                onChange={(e) => setWhatsappMessage(e.target.value)}
+                rows={10}
+                placeholder="Type your message here or select a template..."
+                className="w-full resize-none rounded-[4px] border border-[#E3E2E0] bg-white px-3 py-2.5 text-sm leading-6 outline-none transition-shadow placeholder:text-[#C7C6C3] focus:border-[#2383E2] focus:ring-2 focus:ring-[#2383E2]/30"
+              />
+            </div>
           </div>
 
-          {/* ===================================
-              BUTTONS
-          ==================================== */}
-
-          <div
-            className="
-              flex
-              justify-end
-              gap-3
-              border-t
-              border-gray-100
-              pt-4
-              mt-2
-            "
-          >
-
-            {/* CANCEL */}
-
+          {/* Buttons */}
+          <div className="flex justify-end gap-2 border-t border-[#E9E9E7] px-4 py-3">
             <button
               type="button"
-              onClick={() =>
-                setIsWhatsAppModalOpen(false)
-              }
-              className="
-                px-5
-                py-2.5
-                text-gray-700
-                font-medium
-                hover:bg-gray-100
-                rounded-lg
-                transition-colors
-              "
+              onClick={() => setIsWhatsAppModalOpen(false)}
+              className="h-8 rounded-[4px] border border-[#E3E2E0] bg-white px-3 text-sm transition-colors hover:bg-[rgba(55,53,47,0.06)]"
             >
               Cancel
             </button>
 
-            {/* SEND */}
-
             <button
               type="submit"
-              className="
-                px-5
-                py-2.5
-                bg-green-500
-                text-white
-                font-medium
-                rounded-lg
-                hover:bg-green-600
-                active:bg-green-700
-                transition-colors
-                shadow-sm
-                flex
-                items-center
-                gap-2
-              "
+              className="inline-flex h-8 items-center gap-2 rounded-[4px] bg-[#0F7B6C] px-3.5 text-sm font-medium text-white transition-colors hover:bg-[#0B6A5C]"
             >
-              <MessageCircle size={18} />
-
+              <MessageCircle size={15} />
               Send via WhatsApp
             </button>
-
           </div>
-
         </form>
       </div>
     </div>

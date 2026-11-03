@@ -5,6 +5,6 @@ import CallLogsPage from "@/app/(protected)/call-logs/CallLogs";
 export default async function Page() {
     const session  = await getServerSession(authOptions)
     return (
-        <CallLogsPage id={session.user.id} />
+        <CallLogsPage id={session.user.id} session={session} />
     )
 }

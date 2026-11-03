@@ -34,7 +34,7 @@ export function FacebookIcon() {
 
 /* ---------------------------------- NavItem --------------------------------- */
 const NavItem = ({ href, icon: Icon, label, collapsed, active = false }) => (
-  <Link
+  <a
     href={href}
     title={collapsed ? label : undefined}
     className={`
@@ -57,9 +57,25 @@ const NavItem = ({ href, icon: Icon, label, collapsed, active = false }) => (
     >
       {label}
     </span>
-  </Link>
+  </a>
 );
-
+const WhatsAppIcon = ({ size = 36, className = "" }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="white"
+    strokeWidth="1.7"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M20.5 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20l1.2-4.7A8.5 8.5 0 1 1 20.5 11.5Z" />
+    <path d="M8.5 8.5c.3-.6.6-.6.9-.6h.5c.2 0 .4.1.5.4l.8 1.8c.1.2.1.4-.1.6l-.6.7c-.2.2-.2.4 0 .7.5.8 1.2 1.5 2 2 .3.2.5.2.7 0l.7-.8c.2-.2.4-.2.6-.1l1.7.8c.3.1.4.3.4.5 0 .3-.1 1-.6 1.4-.5.5-1.2.7-2 .5-1-.2-2.3-.8-3.6-2.1-1.3-1.3-2-2.6-2.2-3.6-.2-.8 0-1.6.4-2.2Z" />
+  </svg>
+);
 /* ---------------------------------- NavGroup -------------------------------- */
 // A nav item that expands to show a submenu.
 // items = [{ href, label, active }]
@@ -273,6 +289,13 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             />
           )}
             {/* Leads, now with a submenu */}
+            <NavItem
+            href={'/whatsapp'}
+            icon={WhatsAppIcon}
+            label="Whatsapp"
+            collapsed={collapsed}
+            active={pathname.includes('whatsapp')}
+          />
          <NavItem
             href={'/offerings'}
             icon={Handshake}

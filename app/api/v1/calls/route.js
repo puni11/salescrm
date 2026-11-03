@@ -1,6 +1,15 @@
+
 import { NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import clientPromise from "@/lib/mongodb";
+
+const toPhone10 = (phone) => {
+  if (!phone) return "";
+
+  const digits = String(phone).replace(/\D/g, "");
+
+  return digits.length >= 10 ? digits.slice(-10) : "";
+};
 
 export async function POST(req) {
   try {
@@ -38,8 +47,9 @@ export async function POST(req) {
     const db = client.db("sales");
 
     const callLog = {
-      userId: decoded.id, // or decoded._id depending on your JWT
+      userId: decoded.id,
       phone,
+      phone10: toPhone10(phone), // Added normalized phone
       duration_seconds,
       call_time: new Date(call_time),
       call_type,
@@ -52,6 +62,7 @@ export async function POST(req) {
     return NextResponse.json({
       success: true,
       id: result.insertedId,
+      phone10: callLog.phone10,
     });
   } catch (error) {
     console.error(error);
