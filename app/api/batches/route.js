@@ -287,7 +287,7 @@ export async function GET(request) {
     }
 
     // =========================================
-    // BUILD BATCH FILTER
+    // BUILD FILTER
     // =========================================
 
     const filter = {};
@@ -297,50 +297,25 @@ export async function GET(request) {
     if (courseId) filter.courseId = courseId;
 
     // =========================================
-    // LOCAL DATE AND TIME
-    // =========================================
-
-    const now = new Date();
-
-    const today = [
-      now.getFullYear(),
-      String(now.getMonth() + 1).padStart(2, "0"),
-      String(now.getDate()).padStart(2, "0"),
-    ].join("-");
-
-    const currentTime = [
-      String(now.getHours()).padStart(2, "0"),
-      String(now.getMinutes()).padStart(2, "0"),
-    ].join(":");
-
-    // =========================================
-    // COMMON SESSION LOOKUP PIPELINE
+    // COMMON SESSION PIPELINE
     // =========================================
 
     const buildSessionPipeline = (sessionStatus, sortOrder) => [
-      // Match session by batch and exact status
       {
         $match: {
           $expr: {
             $and: [
-              {
-                $eq: ["$batchId", "$$batchObjectId"],
-              },
-              {
-                $eq: ["$status", sessionStatus],
-              },
+              { $eq: ["$batchId", "$$batchObjectId"] },
+              { $eq: ["$status", sessionStatus] },
             ],
           },
         },
       },
 
-      // Upcoming: earliest first
-      // Ongoing: latest first
       {
         $sort: sortOrder,
       },
 
-      // Get only one session
       {
         $limit: 1,
       },
@@ -368,7 +343,7 @@ export async function GET(request) {
             },
             {
               $project: {
-                _id: 0,
+                _id: 1,
                 name: 1,
               },
             },
@@ -386,31 +361,33 @@ export async function GET(request) {
           from: "trainers",
           let: {
             sessionToolId: "$toolId",
-            batchTrainerId: "$$batchTrainerId",
+            assignments: "$$batchAssignments",
           },
           pipeline: [
             {
               $match: {
                 $expr: {
-                  $and: [
+                  $in: [
+                    { $toString: "$_id" },
                     {
-                      $in: [
-                        "$$sessionToolId",
-                        { $ifNull: ["$tools", []] },
-                      ],
-                    },
-                    {
-                      $or: [
-                        {
-                          $eq: [
-                            { $toString: "$_id" },
-                            "$$batchTrainerId",
-                          ],
+                      $map: {
+                        input: {
+                          $filter: {
+                            input: {
+                              $ifNull: ["$$assignments", []],
+                            },
+                            as: "assignment",
+                            cond: {
+                              $eq: [
+                                "$$assignment.toolId",
+                                "$$sessionToolId",
+                              ],
+                            },
+                          },
                         },
-                        {
-                          $eq: ["$$batchTrainerId", ""],
-                        },
-                      ],
+                        as: "assignment",
+                        in: "$$assignment.trainerId",
+                      },
                     },
                   ],
                 },
@@ -421,7 +398,7 @@ export async function GET(request) {
             },
             {
               $project: {
-                _id: 0,
+                _id: 1,
                 name: 1,
               },
             },
@@ -431,7 +408,7 @@ export async function GET(request) {
       },
 
       // =========================================
-      // FORMAT SESSION RESPONSE
+      // FORMAT SESSION
       // =========================================
 
       {
@@ -439,28 +416,35 @@ export async function GET(request) {
           _id: 1,
           batchId: 1,
           date: 1,
+
           endDate: {
             $ifNull: ["$endDate", "$date"],
           },
+
           time: 1,
           toolId: 1,
           status: 1,
+          notes: 1,
+          completedAt: 1,
 
           toolName: {
             $ifNull: [
-              {
-                $arrayElemAt: ["$toolDetails.name", 0],
-              },
+              { $arrayElemAt: ["$toolDetails.name", 0] },
               "N/A",
             ],
           },
 
           trainerName: {
             $ifNull: [
-              {
-                $arrayElemAt: ["$trainerDetails.name", 0],
-              },
+              { $arrayElemAt: ["$trainerDetails.name", 0] },
               "N/A",
+            ],
+          },
+
+          trainerId: {
+            $ifNull: [
+              { $arrayElemAt: ["$trainerDetails._id", 0] },
+              null,
             ],
           },
         },
@@ -478,78 +462,91 @@ export async function GET(request) {
 
       // =========================================
       // UPCOMING SESSION
-      // Only status = upcoming
       // =========================================
 
       {
         $lookup: {
           from: "sessions",
-
           let: {
             batchObjectId: "$_id",
-            batchTrainerId: {
-              $toString: {
-                $ifNull: ["$trainerId", ""],
-              },
+            batchAssignments: {
+              $ifNull: ["$toolTrainerAssignments", []],
             },
           },
-
           pipeline: buildSessionPipeline("upcoming", {
             date: 1,
             time: 1,
           }),
-
           as: "upcomingSessions",
         },
       },
 
       // =========================================
       // ONGOING SESSION
-      // Only status = ongoing
       // =========================================
 
       {
         $lookup: {
           from: "sessions",
-
           let: {
             batchObjectId: "$_id",
-            batchTrainerId: {
-              $toString: {
-                $ifNull: ["$trainerId", ""],
-              },
+            batchAssignments: {
+              $ifNull: ["$toolTrainerAssignments", []],
             },
           },
-
           pipeline: buildSessionPipeline("ongoing", {
             date: -1,
             time: -1,
           }),
-
           as: "ongoingSessions",
         },
       },
 
       // =========================================
-      // ADD SESSION DATA TO BATCH
+      // COMPLETED SESSION
+      // =========================================
+
+      {
+        $lookup: {
+          from: "sessions",
+          let: {
+            batchObjectId: "$_id",
+            batchAssignments: {
+              $ifNull: ["$toolTrainerAssignments", []],
+            },
+          },
+          pipeline: buildSessionPipeline("completed", {
+            completedAt: -1,
+            date: -1,
+            time: -1,
+          }),
+          as: "completedSessions",
+        },
+      },
+
+      // =========================================
+      // ADD SESSION DATA
       // =========================================
 
       {
         $addFields: {
           latestUpcomingSession: {
             $ifNull: [
-              {
-                $arrayElemAt: ["$upcomingSessions", 0],
-              },
+              { $arrayElemAt: ["$upcomingSessions", 0] },
               null,
             ],
           },
 
           latestOngoingSession: {
             $ifNull: [
-              {
-                $arrayElemAt: ["$ongoingSessions", 0],
-              },
+              { $arrayElemAt: ["$ongoingSessions", 0] },
+              null,
+            ],
+          },
+
+          latestCompletedSession: {
+            $ifNull: [
+              { $arrayElemAt: ["$completedSessions", 0] },
               null,
             ],
           },
@@ -564,6 +561,7 @@ export async function GET(request) {
         $project: {
           upcomingSessions: 0,
           ongoingSessions: 0,
+          completedSessions: 0,
         },
       },
 

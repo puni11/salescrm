@@ -97,10 +97,10 @@ function Pill({ className = "", children }) {
 }
 
 /**
- * One "slot" of the row: Ongoing or Up next.
- * Same shape every time: label, topic, one line of meta.
+ * Session summary slot.
+ * Completed sessions are intentionally muted; active and upcoming stay prominent.
  */
-function SessionBlock({ label, dotClass, session, dateLabel, date }) {
+function SessionBlock({ label, dotClass, session, dateLabel, date, muted = false }) {
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-1.5 text-xs text-[#787774]">
@@ -110,15 +110,15 @@ function SessionBlock({ label, dotClass, session, dateLabel, date }) {
 
       {session ? (
         <>
-          <p className="mt-1 truncate text-sm font-medium text-[#37352F]">
+          <p className={`mt-1 truncate text-sm font-medium ${muted ? "text-[#A8A7A3]" : "text-[#37352F]"}`}>
             {session.toolName || "Untitled topic"}
           </p>
-          <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-[#787774]">
-            <User size={12} className="shrink-0 text-[#9B9A97]" />
+          <p className={`mt-0.5 flex items-center gap-1 truncate text-xs ${muted ? "text-[#B8B7B2]" : "text-[#787774]"}`}>
+            <User size={12} className="shrink-0 text-[#B8B7B2]" />
             {session.trainerName || "Trainer unavailable"}
           </p>
           {date && (
-            <p className="mt-0.5 text-xs text-[#9B9A97]">
+            <p className={`mt-0.5 text-xs ${muted ? "text-[#C2C1BC]" : "text-[#9B9A97]"}`}>
               {dateLabel} {formatDate(date)}
             </p>
           )}
@@ -133,19 +133,21 @@ function SessionBlock({ label, dotClass, session, dateLabel, date }) {
 function ToolChip({ name, state }) {
   const styles = {
     ongoing: "bg-[#DBEDDB] text-[#1C3829]",
-    upcoming: "bg-[rgba(55,53,47,0.06)] text-[#37352F]",
-    completed: "text-[#9B9A97]",
+    upcoming: "bg-[#37352F] text-white",
+    notScheduled: "bg-[#37352F] text-white",
+    completed: "bg-transparent text-[#B8B7B2] opacity-60",
   };
   const titles = {
     ongoing: "Ongoing",
-    upcoming: "Up next",
-    completed: "Completed or not yet scheduled",
+    upcoming: "Upcoming",
+    completed: "Completed",
+    notScheduled: "Not scheduled",
   };
 
   return (
     <span
       title={titles[state]}
-      className={`inline-flex items-center gap-1 rounded-[3px] px-1.5 py-0.5 text-[12px] leading-5 ${styles[state]}`}
+      className={`inline-flex items-center gap-1 rounded-[3px] px-1.5 py-0.5 text-[12px] leading-5 transition-opacity ${styles[state]}`}
     >
       {state === "ongoing" && (
         <span className="h-1.5 w-1.5 rounded-full bg-[#2F9E5B]" />
@@ -620,7 +622,7 @@ export default function BatchManager() {
                 key={batch._id}
                 className="group border-b border-[#E9E9E7] px-2 py-4 transition-colors hover:bg-[rgba(55,53,47,0.025)]"
               >
-                <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))_auto]">
                   {/* Identity */}
                   <div className="min-w-0 sm:col-span-2 lg:col-span-1">
                     <div className="flex items-center gap-2">
@@ -656,6 +658,8 @@ export default function BatchManager() {
                     </div>
                   </div>
 
+               
+
                   {/* Ongoing */}
                   <SessionBlock
                     label="Ongoing"
@@ -665,15 +669,15 @@ export default function BatchManager() {
                     date={batch.latestOngoingSession?.endDate}
                   />
 
-                  {/* Up next */}
+                  {/* Upcoming */}
                   <SessionBlock
-                    label="Up next"
-                    dotClass="bg-[#2383E2]"
+                    label="Upcoming"
+                    dotClass="bg-[#37352F]"
                     session={batch.latestUpcomingSession}
                     dateLabel="Starts"
-                    /* If your API returns a startDate for upcoming sessions it is used; otherwise falls back to endDate as before. */
                     date={
                       batch.latestUpcomingSession?.startDate ||
+                      batch.latestUpcomingSession?.date ||
                       batch.latestUpcomingSession?.endDate
                     }
                   />
@@ -719,26 +723,55 @@ export default function BatchManager() {
                   </div>
                 </div>
 
-                {/* Tools */}
-                <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
-                  <Wrench size={12} className="mr-0.5 text-[#9B9A97]" />
-                  {batchTools.length ? (
-                    batchTools.map((tool) => {
-                      const state =
-                        batch.latestOngoingSession?.toolName === tool.name
-                          ? "ongoing"
-                          : batch.latestUpcomingSession?.toolName === tool.name
-                          ? "upcoming"
-                          : "completed";
+                {/* Tools: completed, ongoing, upcoming, not scheduled */}
+                <div className="mt-3.5 border-t border-[#F0F0EE] pt-2.5">
+                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-[#9B9A97]">
+                    <Wrench size={12} />
+                    Tools
+                  </div>
 
-                      return (
-                        <ToolChip
-                          key={tool._id}
-                          name={getToolDisplayName(tool)}
-                          state={state}
-                        />
-                      );
-                    })
+                  {batchTools.length ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {batchTools
+                        .map((tool) => {
+                          const toolId = String(tool._id);
+                          const sessionToolId = (session) =>
+                            session?.toolId ? String(session.toolId) : null;
+
+                          let state = "notScheduled";
+
+                          // A tool currently running or planned takes precedence
+                          // over its previous completed session.
+                          if (sessionToolId(batch.latestOngoingSession) === toolId) {
+                            state = "ongoing";
+                          } else if (sessionToolId(batch.latestUpcomingSession) === toolId) {
+                            state = "upcoming";
+                          } else if (sessionToolId(batch.latestCompletedSession) === toolId) {
+                            state = "completed";
+                          }
+
+                          const order = {
+                            completed: 0,
+                            ongoing: 1,
+                            upcoming: 2,
+                            notScheduled: 3,
+                          };
+
+                          return {
+                            tool,
+                            state,
+                            order: order[state],
+                          };
+                        })
+                        .sort((a, b) => a.order - b.order)
+                        .map(({ tool, state }) => (
+                          <ToolChip
+                            key={tool._id}
+                            name={getToolDisplayName(tool)}
+                            state={state}
+                          />
+                        ))}
+                    </div>
                   ) : (
                     <span className="text-xs text-[#C7C6C3]">No tools</span>
                   )}
