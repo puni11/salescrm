@@ -303,7 +303,7 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             collapsed={collapsed}
             active={pathname.includes('offerings')}
           />
-          {isAdmin && (
+      
              <NavGroup
             icon={Monitor}
             label="Learning"
@@ -320,7 +320,6 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
               { href: "/tools", label: "Tools", active: pathname === "/tools" },
             ]}
           />
-          )}
         
           {isAdmin && (
             <NavItem
