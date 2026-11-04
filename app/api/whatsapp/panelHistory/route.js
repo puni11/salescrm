@@ -1,9 +1,9 @@
-
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { ObjectId } from "mongodb";
 
 import { authOptions } from "@/lib/authOptions";
+import { getUserFromToken } from "@/lib/getUserFromToken";
 import clientPromise from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
@@ -112,18 +112,33 @@ const formatUser = (item) => {
 
 export async function GET(request) {
   try {
-    // 1. Authenticate
+    // 1. Authenticate: web session (cookie) or mobile app Bearer token
+    let userId;
+    let role;
+
     const session = await getServerSession(authOptions);
 
-    if (!session?.user?.id) {
+    if (session?.user?.id) {
+      userId = String(session.user.id);
+      role = String(session.user.role || "").toLowerCase();
+    } else if (request.headers.get("authorization")) {
+      const auth = await getUserFromToken(request);
+
+      if (!auth.success) {
+        return NextResponse.json(
+          { success: false, message: auth.message },
+          { status: auth.status }
+        );
+      }
+
+      userId = String(auth.user._id);
+      role = String(auth.user.role || "").toLowerCase();
+    } else {
       return NextResponse.json(
         { success: false, message: "Unauthorized" },
         { status: 401 }
       );
     }
-
-    const userId = String(session.user.id);
-    const role = String(session.user.role || "").toLowerCase();
 
     const isAdmin = role === "admin";
     const isCounsellor = role === "counsellor";
