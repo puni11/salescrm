@@ -140,7 +140,7 @@ const result = await leadsCollection.updateOne(
   },
   {
     $set: {
-      status: "Cold",
+      status: "Warm",
       updatedAt: new Date(),
     },
     $addToSet: {
