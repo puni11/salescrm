@@ -4,20 +4,26 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
+
 RUN npm ci
 
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Public environment variables required during build
+# Build-time environment variables
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY
+ARG VAPID_PRIVATE_KEY
+ARG VAPID_EMAIL
 
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
+ENV VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY
+ENV VAPID_EMAIL=$VAPID_EMAIL
 
 RUN npm run build
+
 
 FROM node:22-alpine AS runner
 

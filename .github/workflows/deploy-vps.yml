@@ -30,9 +30,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push
+      - name: Build and Push Docker Image
+        env:
+          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
+          NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${{ vars.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
+
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_EMAIL: ${{ secrets.VAPID_EMAIL }}
+
         run: |
+          set -eu
+
           docker build \
+            --build-arg NEXT_PUBLIC_APP_URL="$NEXT_PUBLIC_APP_URL" \
+            --build-arg NEXT_PUBLIC_VAPID_PUBLIC_KEY="$NEXT_PUBLIC_VAPID_PUBLIC_KEY" \
+            --build-arg VAPID_PRIVATE_KEY="$VAPID_PRIVATE_KEY" \
+            --build-arg VAPID_EMAIL="$VAPID_EMAIL" \
             -t "${IMAGE_NAME}:${GITHUB_SHA}" \
             -t "${IMAGE_NAME}:latest" .
 
@@ -77,7 +90,8 @@ jobs:
           set -eu
 
           echo "$GHCR_TOKEN" | docker login ghcr.io \
-            -u "$GHCR_USER" --password-stdin
+            -u "$GHCR_USER" \
+            --password-stdin
 
           echo "Pulling SalesCRM image..."
           docker pull "$IMAGE"
@@ -89,8 +103,21 @@ jobs:
 
           chmod 600 /opt/salescrm/.env
 
-          echo "Replacing SalesCRM container..."
+          echo "Checking Docker network..."
+          docker network inspect app-network >/dev/null
 
+          echo "Connecting MongoDB..."
+          docker network connect app-network mongodb 2>/dev/null || true
+
+          OLD_IMAGE=""
+          OLD_EXISTS=false
+
+          if docker inspect salescrm-web >/dev/null 2>&1; then
+            OLD_IMAGE=$(docker inspect salescrm-web --format '{{.Config.Image}}')
+            OLD_EXISTS=true
+          fi
+
+          echo "Replacing SalesCRM container..."
           docker rm -f salescrm-web 2>/dev/null || true
 
           docker run -d \
@@ -101,12 +128,46 @@ jobs:
             --env-file /opt/salescrm/.env \
             "$IMAGE"
 
+          echo "Waiting for application startup..."
+
+          HEALTHY=false
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/ >/dev/null; then
+              HEALTHY=true
+              break
+            fi
+
+            sleep 5
+          done
+
+          if [ "$HEALTHY" != "true" ]; then
+            echo "Health check failed."
+
+            docker logs --tail 100 salescrm-web || true
+
+            docker rm -f salescrm-web 2>/dev/null || true
+
+            if [ "$OLD_EXISTS" = "true" ]; then
+              echo "Restoring previous image..."
+
+              docker run -d \
+                --name salescrm-web \
+                --restart unless-stopped \
+                --network app-network \
+                -p 3000:3000 \
+                --env-file /opt/salescrm/.env \
+                "$OLD_IMAGE"
+            fi
+
+            exit 1
+          fi
+
           docker logout ghcr.io
 
-          echo "Deployment completed."
+          echo "Deployment completed successfully."
 
           docker ps --filter name=salescrm-web
-
           docker logs --tail 30 salescrm-web
 
           REMOTE_SCRIPT
