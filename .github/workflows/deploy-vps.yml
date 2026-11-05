@@ -15,6 +15,10 @@ env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/salescrm
 
 jobs:
+
+  # ==========================================
+  # BUILD AND PUSH
+  # ==========================================
   build-and-push:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
@@ -41,17 +45,34 @@ jobs:
         run: |
           set -eu
 
-          docker build \
+          echo "Checking build configuration..."
+
+          test -n "$NEXT_PUBLIC_APP_URL"
+          test -n "$NEXT_PUBLIC_VAPID_PUBLIC_KEY"
+          test -n "$VAPID_PRIVATE_KEY"
+          test -n "$VAPID_EMAIL"
+
+          echo "Building SalesCRM Docker image..."
+
+          DOCKER_BUILDKIT=1 docker build \
+            --secret id=vapid_private_key,env=VAPID_PRIVATE_KEY \
             --build-arg NEXT_PUBLIC_APP_URL="$NEXT_PUBLIC_APP_URL" \
             --build-arg NEXT_PUBLIC_VAPID_PUBLIC_KEY="$NEXT_PUBLIC_VAPID_PUBLIC_KEY" \
-            --build-arg VAPID_PRIVATE_KEY="$VAPID_PRIVATE_KEY" \
             --build-arg VAPID_EMAIL="$VAPID_EMAIL" \
             -t "${IMAGE_NAME}:${GITHUB_SHA}" \
             -t "${IMAGE_NAME}:latest" .
 
+          echo "Pushing commit image..."
           docker push "${IMAGE_NAME}:${GITHUB_SHA}"
+
+          echo "Pushing latest image..."
           docker push "${IMAGE_NAME}:latest"
 
+          echo "Docker image successfully pushed."
+
+  # ==========================================
+  # DEPLOY TO VPS
+  # ==========================================
   deploy:
     name: Deploy to Ubuntu VPS
     needs: build-and-push
@@ -75,10 +96,14 @@ jobs:
         run: |
           set -eu
 
+          echo "Installing SSH dependencies..."
+
           sudo apt-get update
           sudo apt-get install -y sshpass
 
           export SSHPASS="$VPS_PASS"
+
+          echo "Connecting to VPS..."
 
           sshpass -e ssh \
             -p "$VPS_PORT" \
@@ -89,36 +114,91 @@ jobs:
 
           set -eu
 
-          echo "$GHCR_TOKEN" | docker login ghcr.io \
-            -u "$GHCR_USER" \
+          # ------------------------------------
+          # Remote environment
+          # ------------------------------------
+
+          GHCR_USER="${GHCR_USER}"
+          GHCR_TOKEN="${GHCR_TOKEN}"
+          IMAGE="${IMAGE}"
+          SALESCRM_ENV_B64="${SALESCRM_ENV_B64}"
+
+          echo "Connected to VPS."
+
+          # ------------------------------------
+          # GHCR LOGIN
+          # ------------------------------------
+
+          echo "Logging in to GHCR..."
+
+          echo "\$GHCR_TOKEN" | docker login ghcr.io \
+            -u "\$GHCR_USER" \
             --password-stdin
 
+          # ------------------------------------
+          # PULL IMAGE
+          # ------------------------------------
+
           echo "Pulling SalesCRM image..."
-          docker pull "$IMAGE"
+
+          docker pull "\$IMAGE"
+
+          # ------------------------------------
+          # ENVIRONMENT
+          # ------------------------------------
+
+          echo "Preparing environment..."
 
           mkdir -p /opt/salescrm
 
-          echo "$SALESCRM_ENV_B64" | base64 -d \
+          echo "\$SALESCRM_ENV_B64" | base64 -d \
             > /opt/salescrm/.env
 
           chmod 600 /opt/salescrm/.env
 
+          # ------------------------------------
+          # DOCKER NETWORK
+          # ------------------------------------
+
           echo "Checking Docker network..."
+
           docker network inspect app-network >/dev/null
 
-          echo "Connecting MongoDB..."
+          echo "Connecting MongoDB to app-network..."
+
           docker network connect app-network mongodb 2>/dev/null || true
+
+          docker inspect mongodb >/dev/null
+
+          # ------------------------------------
+          # SAVE OLD IMAGE FOR ROLLBACK
+          # ------------------------------------
 
           OLD_IMAGE=""
           OLD_EXISTS=false
 
           if docker inspect salescrm-web >/dev/null 2>&1; then
-            OLD_IMAGE=$(docker inspect salescrm-web --format '{{.Config.Image}}')
+
+            OLD_IMAGE=$(docker inspect salescrm-web \
+              --format '{{.Config.Image}}')
+
             OLD_EXISTS=true
+
           fi
 
-          echo "Replacing SalesCRM container..."
+          # ------------------------------------
+          # STOP OLD CONTAINER
+          # ------------------------------------
+
+          echo "Removing previous SalesCRM container..."
+
           docker rm -f salescrm-web 2>/dev/null || true
+
+          # ------------------------------------
+          # START NEW CONTAINER
+          # ------------------------------------
+
+          echo "Starting new SalesCRM container..."
 
           docker run -d \
             --name salescrm-web \
@@ -126,30 +206,46 @@ jobs:
             --network app-network \
             -p 3000:3000 \
             --env-file /opt/salescrm/.env \
-            "$IMAGE"
+            "\$IMAGE"
 
-          echo "Waiting for application startup..."
+          # ------------------------------------
+          # HEALTH CHECK
+          # ------------------------------------
+
+          echo "Checking application health..."
 
           HEALTHY=false
 
-          for i in $(seq 1 30); do
+          for i in \$(seq 1 30); do
+
             if curl -fsS http://127.0.0.1:3000/ >/dev/null; then
+
               HEALTHY=true
               break
+
             fi
 
+            echo "Waiting for SalesCRM... attempt \$i/30"
+
             sleep 5
+
           done
 
-          if [ "$HEALTHY" != "true" ]; then
-            echo "Health check failed."
+          # ------------------------------------
+          # ROLLBACK
+          # ------------------------------------
+
+          if [ "\$HEALTHY" != "true" ]; then
+
+            echo "SalesCRM health check failed."
 
             docker logs --tail 100 salescrm-web || true
 
             docker rm -f salescrm-web 2>/dev/null || true
 
-            if [ "$OLD_EXISTS" = "true" ]; then
-              echo "Restoring previous image..."
+            if [ "\$OLD_EXISTS" = "true" ]; then
+
+              echo "Rolling back previous image..."
 
               docker run -d \
                 --name salescrm-web \
@@ -157,19 +253,34 @@ jobs:
                 --network app-network \
                 -p 3000:3000 \
                 --env-file /opt/salescrm/.env \
-                "$OLD_IMAGE"
+                "\$OLD_IMAGE"
+
+              echo "Rollback container started."
+
             fi
 
             exit 1
+
           fi
+
+          # ------------------------------------
+          # SUCCESS
+          # ------------------------------------
 
           docker logout ghcr.io
 
-          echo "Deployment completed successfully."
+          echo "SalesCRM deployed successfully!"
+
+          echo "Container status:"
 
           docker ps --filter name=salescrm-web
+
+          echo "Latest application logs:"
+
           docker logs --tail 30 salescrm-web
 
           REMOTE_SCRIPT
 
           unset SSHPASS
+
+          echo "VPS deployment completed."
