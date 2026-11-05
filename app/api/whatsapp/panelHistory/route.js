@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { ObjectId } from "mongodb";
@@ -14,13 +15,17 @@ const INBOX_FAST_ENDPOINT = "inbox-fast";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-const isValidDate = (value) =>
-  DATE_RE.test(value) &&
-  !Number.isNaN(new Date(`${value}T00:00:00Z`).getTime());
+const COUNSELLOR_BATCH_SIZE = 20;
+const MAX_FETCH_PAGES = 10;
+const UPSTREAM_PER_PAGE = 100;
 
 // ----------------------------------
 // Helpers
 // ----------------------------------
+
+const isValidDate = (value) =>
+  DATE_RE.test(value) &&
+  !Number.isNaN(new Date(`${value}T00:00:00Z`).getTime());
 
 const normalizePhone = (value = "") =>
   String(value).replace(/\D/g, "").slice(-10);
@@ -112,7 +117,7 @@ const formatUser = (item) => {
 
 export async function GET(request) {
   try {
-    // 1. Authenticate: web session (cookie) or mobile app Bearer token
+    // 1. Authentication
     let userId;
     let role;
 
@@ -126,7 +131,10 @@ export async function GET(request) {
 
       if (!auth.success) {
         return NextResponse.json(
-          { success: false, message: auth.message },
+          {
+            success: false,
+            message: auth.message,
+          },
           { status: auth.status }
         );
       }
@@ -135,7 +143,10 @@ export async function GET(request) {
       role = String(auth.user.role || "").toLowerCase();
     } else {
       return NextResponse.json(
-        { success: false, message: "Unauthorized" },
+        {
+          success: false,
+          message: "Unauthorized",
+        },
         { status: 401 }
       );
     }
@@ -145,7 +156,10 @@ export async function GET(request) {
 
     if (!isAdmin && !isCounsellor) {
       return NextResponse.json(
-        { success: false, message: "Access denied" },
+        {
+          success: false,
+          message: "Access denied",
+        },
         { status: 403 }
       );
     }
@@ -153,22 +167,34 @@ export async function GET(request) {
     // 2. Validate counsellor ID
     if (isCounsellor && !ObjectId.isValid(userId)) {
       return NextResponse.json(
-        { success: false, message: "Invalid counsellor ID" },
+        {
+          success: false,
+          message: "Invalid counsellor ID",
+        },
         { status: 400 }
       );
     }
 
+    // 3. Query parameters
     const { searchParams } = new URL(request.url);
 
     const page = Number(searchParams.get("page") || 1);
-    const perPage = Number(searchParams.get("per_page") || 50);
+
+    const requestedPerPage = Number(
+      searchParams.get("per_page") || 50
+    );
 
     const search = (searchParams.get("search") || "")
       .trim()
       .slice(0, 100);
 
-    let fromDate = (searchParams.get("from_date") || "").trim();
-    let toDate = (searchParams.get("to_date") || "").trim();
+    let fromDate = (
+      searchParams.get("from_date") || ""
+    ).trim();
+
+    let toDate = (
+      searchParams.get("to_date") || ""
+    ).trim();
 
     const useFastInbox = Boolean(
       search || fromDate || toDate
@@ -179,9 +205,9 @@ export async function GET(request) {
     if (
       !Number.isInteger(page) ||
       page < 1 ||
-      !Number.isInteger(perPage) ||
-      perPage < 1 ||
-      perPage > maxPerPage
+      !Number.isInteger(requestedPerPage) ||
+      requestedPerPage < 1 ||
+      requestedPerPage > maxPerPage
     ) {
       return NextResponse.json(
         {
@@ -209,11 +235,11 @@ export async function GET(request) {
       [fromDate, toDate] = [toDate, fromDate];
     }
 
-    // 3. Get CRM database
+    // 4. Database
     const client = await clientPromise;
     const db = client.db("sales");
 
-    // 4. Get assigned leads for counsellor
+    // 5. Get assigned lead phone numbers
     let assignedPhoneNumbers = null;
 
     if (isCounsellor) {
@@ -246,7 +272,6 @@ export async function GET(request) {
         }
       }
 
-      // No assigned leads
       if (assignedPhoneNumbers.size === 0) {
         return NextResponse.json({
           success: true,
@@ -255,15 +280,17 @@ export async function GET(request) {
           pagination: {
             currentPage: page,
             lastPage: 1,
-            perPage,
+            perPage: COUNSELLOR_BATCH_SIZE,
             total: 0,
             nextPage: null,
+            nextFetchPage: null,
+            hasMore: false,
           },
         });
       }
     }
 
-    // 5. Green Tick API token
+    // 6. Green Tick API token
     const token = process.env.GREEN_TICK_API_TOKEN;
 
     if (!token) {
@@ -276,76 +303,140 @@ export async function GET(request) {
       );
     }
 
-    // 6. Fetch upstream conversations
+    // 7. Fetch conversations with auto-pagination
     const endpoint = useFastInbox
       ? INBOX_FAST_ENDPOINT
       : HISTORY_ENDPOINT;
 
-    const url = new URL(`${BASE_URL}/${endpoint}`);
+    const targetCount = isCounsellor
+      ? COUNSELLOR_BATCH_SIZE
+      : requestedPerPage;
 
-    url.searchParams.set("page", String(page));
-    url.searchParams.set("per_page", String(perPage));
+    const upstreamPerPage = isCounsellor
+      ? UPSTREAM_PER_PAGE
+      : requestedPerPage;
 
-    if (useFastInbox) {
-      if (search) url.searchParams.set("search", search);
-      if (fromDate) url.searchParams.set("from_date", fromDate);
-      if (toDate) url.searchParams.set("to_date", toDate);
-    }
+    const maxFetchPages = isCounsellor
+      ? MAX_FETCH_PAGES
+      : 1;
 
-    const response = await fetch(url.toString(), {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-      cache: "no-store",
-      signal: AbortSignal.timeout(15000),
-    });
+    let users = [];
+    let currentFetchPage = page;
+    let lastPage = 1;
+    let meta = {};
+    let fetchedPages = 0;
 
-    const result = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      console.error(
-        `Green Tick API failed (${endpoint}):`,
-        response.status
+    while (
+      users.length < targetCount &&
+      fetchedPages < maxFetchPages
+    ) {
+      const url = new URL(
+        `${BASE_URL}/${endpoint}`
       );
 
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            result?.message ||
-            "Unable to fetch WhatsApp contacts",
+      url.searchParams.set(
+        "page",
+        String(currentFetchPage)
+      );
+
+      url.searchParams.set(
+        "per_page",
+        String(upstreamPerPage)
+      );
+
+      if (useFastInbox) {
+        if (search) {
+          url.searchParams.set("search", search);
+        }
+
+        if (fromDate) {
+          url.searchParams.set("from_date", fromDate);
+        }
+
+        if (toDate) {
+          url.searchParams.set("to_date", toDate);
+        }
+      }
+
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
         },
-        { status: response.status }
-      );
-    }
-
-    // 7. Extract and format conversations
-    const { list, meta } = extractList(result);
-
-    let users = list.map(formatUser);
-
-    // 8. Filter conversations for counsellor
-    if (isCounsellor) {
-      users = users.filter((contact) => {
-        const phone = normalizePhone(contact.mobile);
-
-        return (
-          phone &&
-          assignedPhoneNumbers.has(phone)
-        );
+        cache: "no-store",
+        signal: AbortSignal.timeout(15000),
       });
+
+      const result = await response
+        .json()
+        .catch(() => ({}));
+
+      if (!response.ok) {
+        console.error(
+          `Green Tick API failed (${endpoint}):`,
+          response.status
+        );
+
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              result?.message ||
+              "Unable to fetch WhatsApp contacts",
+          },
+          { status: response.status }
+        );
+      }
+
+      const extracted = extractList(result);
+
+      meta = extracted.meta;
+
+      const formatted = extracted.list.map(formatUser);
+
+      // Filter counsellor conversations
+      if (isCounsellor) {
+        const filtered = formatted.filter((contact) => {
+          const phone = normalizePhone(contact.mobile);
+
+          return (
+            phone &&
+            assignedPhoneNumbers.has(phone)
+          );
+        });
+
+        users.push(...filtered);
+      } else {
+        users.push(...formatted);
+      }
+
+      lastPage = Number(
+        meta.last_page ??
+        meta.lastPage ??
+        1
+      );
+
+      fetchedPages++;
+
+      // No more upstream pages
+      if (currentFetchPage >= lastPage) {
+        break;
+      }
+
+      // Admin only fetches one page
+      if (!isCounsellor) {
+        break;
+      }
+
+      currentFetchPage++;
     }
+
+    // 8. Limit returned conversations
+    users = users.slice(0, targetCount);
 
     // 9. Pagination metadata
-    const currentPage = Number(
-      meta.current_page ?? meta.currentPage ?? page
-    );
-
-    const lastPage = Number(
-      meta.last_page ?? meta.lastPage ?? 1
-    );
+    const hasMore = currentFetchPage < lastPage;
 
     return NextResponse.json({
       success: true,
@@ -357,22 +448,33 @@ export async function GET(request) {
       users,
 
       pagination: {
-        currentPage,
+        currentPage: page,
         lastPage,
-        perPage: Number(
-          meta.per_page ?? meta.perPage ?? perPage
-        ),
+
+        perPage: users.length,
+
         total: isCounsellor
-          ? users.length
+          ? null
           : Number(meta.total ?? users.length),
-        nextPage:
-          currentPage < lastPage
-            ? currentPage + 1
-            : null,
+
+        nextPage: hasMore
+          ? currentFetchPage + 1
+          : null,
+
+        nextFetchPage: hasMore
+          ? currentFetchPage + 1
+          : null,
+
+        hasMore,
+
+        fetchedPages,
       },
     });
   } catch (error) {
-    console.error("Green Tick Messages Error:", error);
+    console.error(
+      "Green Tick Messages Error:",
+      error
+    );
 
     return NextResponse.json(
       {

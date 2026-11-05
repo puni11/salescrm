@@ -1,8 +1,12 @@
-// next.config.js
+
+/** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: "standalone",
+
   allowedDevOrigins: [
-    "22f5-2405-201-5c05-9072-8cac-17ee-5b54-5fc6.ngrok-free.app", // Removed "https://"
+    "22f5-2405-201-5c05-9072-8cac-17ee-5b54-5fc6.ngrok-free.app",
   ],
+
   images: {
     remotePatterns: [
       {

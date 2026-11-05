@@ -1,0 +1,114 @@
+
+name: Build, Push & Deploy SalesCRM VPS
+
+on:
+  push:
+    branches:
+      - vps-deploy
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/salescrm
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push
+        run: |
+          docker build \
+            -t "${IMAGE_NAME}:${GITHUB_SHA}" \
+            -t "${IMAGE_NAME}:latest" .
+
+          docker push "${IMAGE_NAME}:${GITHUB_SHA}"
+          docker push "${IMAGE_NAME}:latest"
+
+  deploy:
+    name: Deploy to Ubuntu VPS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy SalesCRM
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_PASS: ${{ secrets.VPS_PASS }}
+
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          IMAGE: ghcr.io/${{ github.repository_owner }}/salescrm:${{ github.sha }}
+
+          SALESCRM_ENV_B64: ${{ secrets.SALESCRM_ENV_B64 }}
+
+        run: |
+          set -eu
+
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+
+          export SSHPASS="$VPS_PASS"
+
+          sshpass -e ssh \
+            -p "$VPS_PORT" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            "$VPS_USER@$VPS_HOST" \
+            "bash -s" <<REMOTE_SCRIPT
+
+          set -eu
+
+          echo "$GHCR_TOKEN" | docker login ghcr.io \
+            -u "$GHCR_USER" --password-stdin
+
+          echo "Pulling SalesCRM image..."
+          docker pull "$IMAGE"
+
+          mkdir -p /opt/salescrm
+
+          echo "$SALESCRM_ENV_B64" | base64 -d \
+            > /opt/salescrm/.env
+
+          chmod 600 /opt/salescrm/.env
+
+          echo "Replacing SalesCRM container..."
+
+          docker rm -f salescrm-web 2>/dev/null || true
+
+          docker run -d \
+            --name salescrm-web \
+            --restart unless-stopped \
+            --network app-network \
+            -p 3000:3000 \
+            --env-file /opt/salescrm/.env \
+            "$IMAGE"
+
+          docker logout ghcr.io
+
+          echo "Deployment completed."
+
+          docker ps --filter name=salescrm-web
+
+          docker logs --tail 30 salescrm-web
+
+          REMOTE_SCRIPT
+
+          unset SSHPASS
