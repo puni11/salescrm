@@ -23,6 +23,7 @@ import {
   MessageSquare,
   Tag,
   X,
+  Loader2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import DashboardStats from "@/component/DashboardStats";
@@ -91,7 +92,6 @@ const SOURCE_TYPES = [
   "GS1",
 ];
 
-// Defaults (a param equal to its default is left out of the URL)
 const DEFAULT_LIMIT = 10;
 const DEFAULT_SORT = "newest";
 
@@ -129,8 +129,7 @@ const getStatusStyle = (status) =>
   STATUS_STYLES[status] || ["bg-[#E3E2E0] text-[#32302C]", "bg-[#9B9A97]"];
 
 const GRID =
-  "grid grid-cols-[minmax(140px,0.7fr)_minmax(110px,0.5fr)_140px_minmax(120px,0.7fr)_120px_190px_minmax(110px,1.0fr)_180px_minmax(280px,1.7fr)]";
-
+  "grid grid-cols-[42px_minmax(140px,0.7fr)_minmax(110px,0.5fr)_140px_minmax(120px,0.7fr)_120px_190px_minmax(80px,0.6fr)_180px_150px_minmax(280px,1.0fr)]";
 const hoverBg = "hover:bg-[rgba(55,53,47,0.06)]";
 
 const menuShadow =
@@ -198,6 +197,11 @@ export default function App({ session }) {
   const [counsellors, setCounsellors] = useState([]);
   const [selectedCounsellor, setSelectedCounsellor] = useState(() => fromUrl("counsellorId", ""));
   const [stats, setStats] = useState(null);
+  const [selectedLeadIds, setSelectedLeadIds] = useState([]);
+const [bulkAction, setBulkAction] = useState("");
+const [bulkLoading, setBulkLoading] = useState(false);
+const [bulkCounsellor, setBulkCounsellor] = useState("");
+const [bulkCourse, setBulkCourse] = useState("");
   const [fromFilter, setFromFilter] = useState(() => fromUrl("from", "All"));
   const [searchOpen, setSearchOpen] = useState(false);
   const searchRef = useRef(null);
@@ -216,6 +220,7 @@ export default function App({ session }) {
   const [search, setSearch] = useState(() => fromUrl("search", ""));
   const [followUpOpen, setFollowUpOpen] = useState(false);
   const [otherCourse, setOtherCourse] = useState(false);
+  const [bulkError, setBulkError] = useState("");
   const [changeCounsellorModal, setChangeCounsellorModal] = useState(false);
   const debouncedSearch = useDebounce(search, 500);
   const [deleteModal, setDeleteModal] = useState({
@@ -442,9 +447,149 @@ export default function App({ session }) {
     // ISO date or timestamp
     return new Date(value).toLocaleDateString("en-IN");
   };
+const toggleLeadSelection = (id) => {
+  setSelectedLeadIds((prev) =>
+    prev.includes(id)
+      ? prev.filter((item) => item !== id)
+      : [...prev, id]
+  );
+};
 
+const toggleSelectAll = () => {
+  const currentIds = leads.map(getLeadId);
+
+  const allSelected = currentIds.every((id) =>
+    selectedLeadIds.includes(id)
+  );
+
+  if (allSelected) {
+    setSelectedLeadIds((prev) =>
+      prev.filter((id) => !currentIds.includes(id))
+    );
+  } else {
+    setSelectedLeadIds((prev) =>
+      [...new Set([...prev, ...currentIds])]
+    );
+  }
+};
+
+const clearSelection = () => {
+  setSelectedLeadIds([]);
+  setBulkAction("");
+  setBulkError("");
+  setBulkCounsellor("");
+  setBulkCourse("");
+};
+const handleBulkAction = async () => {
+  if (!selectedLeadIds.length) return;
+
+  const selectedCounsellorData = counsellors.find(
+    (item) => item.id === bulkCounsellor
+  );
+
+  if (bulkAction === "counsellor" && !selectedCounsellorData) {
+    setBulkError("Please select a valid counsellor.");
+    return;
+  }
+
+  if (bulkAction === "course" && !bulkCourse) {
+    setBulkError("Please select a course.");
+    return;
+  }
+
+  setBulkLoading(true);
+  setBulkError("");
+
+  try {
+    const results = await Promise.allSettled(
+      selectedLeadIds.map(async (id) => {
+        let url = `/api/contact/${id}`;
+        let method = "DELETE";
+        let body;
+
+        if (bulkAction === "counsellor") {
+          url += "/change-counsellor";
+          method = "POST";
+
+          body = {
+            counsellorId: selectedCounsellorData.id,
+            counsellorName: selectedCounsellorData.name,
+          };
+        }
+
+        if (bulkAction === "course") {
+          url += "/otherCourse";
+          method = "POST";
+
+          body = {
+            otherCourse: bulkCourse,
+          };
+        }
+
+        const response = await fetch(url, {
+          method,
+          ...(body && {
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+          }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.message || `Failed to update lead ${id}`);
+        }
+
+        return id;
+      })
+    );
+
+    const failedIds = results
+      .map((result, index) =>
+        result.status === "rejected"
+          ? selectedLeadIds[index]
+          : null
+      )
+      .filter(Boolean);
+
+    const successCount = results.length - failedIds.length;
+
+    if (failedIds.length > 0) {
+      setSelectedLeadIds(failedIds);
+
+      setBulkError(
+        `${successCount} leads updated successfully. ${failedIds.length} failed. You can retry the failed leads.`
+      );
+
+      return;
+    }
+
+    toast.success(
+      `${successCount} leads ${
+        bulkAction === "delete"
+          ? "deleted"
+          : "updated"
+      } successfully`
+    );
+
+    setBulkAction("");
+    setSelectedLeadIds([]);
+
+    setBulkCounsellor("");
+    setBulkCourse("");
+
+    fetchLeads();
+  } catch (error) {
+    setBulkError(error.message || "Bulk action failed.");
+  } finally {
+    setBulkLoading(false);
+  }
+};
   // Reusable Filter Render Logic (used in both desktop bar and mobile bottom sheet)
   const renderFilters = (isMobile = false) => {
+    console.log(session.user.role)
     const controlClasses = isMobile
       ? "h-9 w-full rounded-[4px] border border-[#E3E2E0] bg-white px-2.5 text-sm text-[#37352F] outline-none focus:border-[#2383E2] focus:ring-2 focus:ring-[#2383E2]/30 disabled:bg-[rgba(55,53,47,0.04)] disabled:text-[#9B9A97]"
       : "h-7 rounded-[4px] border border-[#E3E2E0] bg-white px-2 text-sm text-[#37352F] outline-none transition-colors hover:bg-[rgba(55,53,47,0.04)] focus:ring-2 focus:ring-[#2383E2]/40 disabled:bg-[rgba(55,53,47,0.04)] disabled:text-[#9B9A97]";
@@ -622,24 +767,27 @@ export default function App({ session }) {
         </div>
 
         {/* Counsellor */}
-        <div className={wrapperClasses}>
-          <MobileLabel text="Counsellor" />
-          <select
-            value={selectedCounsellor}
-            onChange={(e) => setSelectedCounsellor(e.target.value)}
-            disabled={loading}
-            className={controlClasses}
-          >
-            <option value="">
-              {loading ? "Loading..." : "Select counsellor"}
-            </option>
-            {counsellors.map((counsellor) => (
-              <option key={counsellor.id} value={counsellor.id}>
-                {counsellor.name}
-              </option>
-            ))}
-          </select>
-        </div>
+     {session?.user?.role !== "counsellor" && (
+  <div className={wrapperClasses}>
+    <MobileLabel text="Counsellor" />
+    <select
+      value={selectedCounsellor}
+      onChange={(e) => setSelectedCounsellor(e.target.value)}
+      disabled={loading}
+      className={controlClasses}
+    >
+      <option value="">
+        {loading ? "Loading..." : "Select counsellor"}
+      </option>
+
+      {counsellors.map((counsellor) => (
+        <option key={counsellor.id} value={counsellor.id}>
+          {counsellor.name}
+        </option>
+      ))}
+    </select>
+  </div>
+)}
 
         {/* Profile */}
         <div className={wrapperClasses}>
@@ -779,7 +927,7 @@ export default function App({ session }) {
                   size={14}
                   className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[#9B9A97]"
                 />
-                <input 
+                <input
                   ref={searchRef}
                   type="text"
                   value={search}
@@ -856,12 +1004,79 @@ export default function App({ session }) {
             Filters
           </span>
           {renderFilters(false)}
+        
         </div>
+{selectedLeadIds.length > 0 && (
+  <div className="sticky top-2 z-30 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#E3E2E0] bg-white p-3 shadow-sm">
 
+    <div className="flex items-center gap-2">
+      <span className="flex h-7 min-w-7 items-center justify-center rounded-md bg-[#E3EFFF] px-2 text-sm font-semibold text-[#2383E2]">
+        {selectedLeadIds.length}
+      </span>
+
+      <span className="text-sm font-medium text-[#37352F]">
+        Leads selected
+      </span>
+
+      <button
+        type="button"
+        onClick={clearSelection}
+        className="ml-1 text-xs text-[#787774] hover:text-red-500"
+      >
+        Clear selection
+      </button>
+    </div>
+
+    <div className="flex flex-wrap items-center gap-2">
+
+      <button
+        type="button"
+        onClick={() => setBulkAction("delete")}
+        className="flex h-8 items-center gap-1.5 rounded-md border border-red-200 px-3 text-sm font-medium text-red-600 hover:bg-red-50"
+      >
+        <X size={14} />
+        Delete
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setBulkAction("counsellor")}
+        className="flex h-8 items-center gap-1.5 rounded-md border border-[#E3E2E0] px-3 text-sm hover:bg-[#F7F7F5]"
+      >
+        <Users size={14} />
+        Change Counsellor
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setBulkAction("course")}
+        className="flex h-8 items-center gap-1.5 rounded-md border border-[#E3E2E0] px-3 text-sm hover:bg-[#F7F7F5]"
+      >
+        <BookOpen size={14} />
+        Change Course
+      </button>
+
+    </div>
+  </div>
+)}
         {/* Table */}
         <div className="mt-3 overflow-x-auto">
           <div className="min-w-[1820px]">
             <div className={`${GRID} border-y border-[#E9E9E7]`}>
+              <div className="flex h-[34px] items-center justify-center border-r border-[#E9E9E7]">
+  <input
+    type="checkbox"
+    checked={
+      leads.length > 0 &&
+      leads.every((lead) =>
+        selectedLeadIds.includes(getLeadId(lead))
+      )
+    }
+    onChange={toggleSelectAll}
+    className="h-4 w-4 cursor-pointer accent-[#2383E2]"
+    aria-label="Select all leads"
+  />
+</div>
               <HeadCell icon={Type}>Name</HeadCell>
               
               <HeadCell icon={Phone}>Phone</HeadCell>
@@ -871,6 +1086,7 @@ export default function App({ session }) {
               <HeadCell icon={Tag}>Tag</HeadCell>
               <HeadCell icon={UserRound}>Assigned to</HeadCell>
               <HeadCell icon={CalendarDays}>Created</HeadCell>
+              <HeadCell icon={CalendarDays}>Last Worked</HeadCell>
               <HeadCell icon={MessageSquare} last>Last comment</HeadCell>
             </div>
 
@@ -880,7 +1096,7 @@ export default function App({ session }) {
                   key={i}
                   className={`${GRID} animate-pulse border-b border-[#E9E9E7]`}
                 >
-                  {Array.from({ length: 9 }).map((__, j) => (
+                  {Array.from({ length: 10 }).map((__, j) => (
                     <div
                       key={j}
                       className={`flex h-[37px] items-center px-2 ${
@@ -922,6 +1138,16 @@ export default function App({ session }) {
                       session?.user?.role !== 'manager' ? "cursor-pointer" : ""
                     }`}
                   >
+                    <Cell>
+  <input
+    type="checkbox"
+    checked={selectedLeadIds.includes(leadId)}
+    onChange={() => toggleLeadSelection(leadId)}
+    onClick={(e) => e.stopPropagation()}
+    className="h-4 w-4 cursor-pointer accent-[#2383E2]"
+    aria-label={`Select ${lead.name}`}
+  />
+</Cell>
                     <Cell>
                       <span className="truncate font-medium">{lead.name}</span>
                       {lead.from && (
@@ -1008,7 +1234,21 @@ export default function App({ session }) {
                         <Empty />
                       )}
                     </Cell>
-
+<Cell>
+  {lead.updatedAt ? (
+    <span className="truncate text-[#787774]">
+      {new Date(lead.updatedAt).toLocaleDateString("en-IN")}
+      <span className="ml-1 text-[#9B9A97]">
+        {new Date(lead.updatedAt).toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}
+      </span>
+    </span>
+  ) : (
+    <Empty />
+  )}
+</Cell>
                     <Cell last>
                       {lastComment ? (
                         <span
@@ -1131,6 +1371,131 @@ export default function App({ session }) {
       {followUpOpen && <FolloUpModal selectedLead={selectedLeadId} setFollowUpOpen={setFollowUpOpen} fetchLeads={fetchLeads} />}
       {otherCourse && <OtherCourseModal selectedLead={selectedLeadId} setOtherCourse={setOtherCourse} course={course} />}
       {changeCounsellorModal && <ChangeCounsellor selectedLead={selectedLeadId} counsellor={counsellors} setChangeCounsellorModal={setChangeCounsellorModal} />}
+      
+      {bulkAction && (
+  <div
+    className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4"
+    onMouseDown={(e) => {
+      if (e.target === e.currentTarget && !bulkLoading) {
+        setBulkAction("");
+        setBulkError("");
+      }
+    }}
+  >
+    <div className="w-full max-w-[440px] rounded-lg bg-white p-6 shadow-xl">
+
+      <div className="mb-5 flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-[#37352F]">
+          {bulkAction === "delete"
+            ? "Delete selected leads"
+            : bulkAction === "counsellor"
+            ? "Change counsellor"
+            : "Change course"}
+        </h2>
+
+        <button
+          type="button"
+          disabled={bulkLoading}
+          onClick={() => {
+            setBulkAction("");
+            setBulkError("");
+          }}
+          className="rounded p-1 hover:bg-gray-100 disabled:opacity-50"
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      <p className="mb-4 text-sm text-[#787774]">
+        This action will apply to {selectedLeadIds.length} selected leads.
+      </p>
+
+      {bulkAction === "delete" && (
+        <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+          Are you sure you want to permanently delete these leads?
+          This action cannot be undone.
+        </div>
+      )}
+
+      {bulkAction === "counsellor" && (
+        <select
+          value={bulkCounsellor}
+          onChange={(e) => setBulkCounsellor(e.target.value)}
+          className="w-full rounded-md border border-[#E3E2E0] bg-white px-3 py-2 text-sm outline-none focus:border-[#2383E2]"
+        >
+          <option value="">Select counsellor</option>
+
+          {counsellors.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {bulkAction === "course" && (
+        <select
+          value={bulkCourse}
+          onChange={(e) => setBulkCourse(e.target.value)}
+          className="w-full rounded-md border border-[#E3E2E0] bg-white px-3 py-2 text-sm outline-none focus:border-[#2383E2]"
+        >
+          <option value="">Select course</option>
+
+          {course.map((item) => (
+            <option key={item._id} value={item.name}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {bulkError && (
+        <div className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          {bulkError}
+        </div>
+      )}
+
+      <div className="mt-6 flex justify-end gap-2">
+        <button
+          type="button"
+          disabled={bulkLoading}
+          onClick={() => {
+            setBulkAction("");
+            setBulkError("");
+          }}
+          className="rounded-md border border-[#E3E2E0] px-4 py-2 text-sm hover:bg-gray-50"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          disabled={
+            bulkLoading ||
+            (bulkAction === "counsellor" && !bulkCounsellor) ||
+            (bulkAction === "course" && !bulkCourse)
+          }
+          onClick={handleBulkAction}
+          className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
+            bulkAction === "delete"
+              ? "bg-red-600 hover:bg-red-700"
+              : "bg-[#2383E2] hover:bg-[#0077D4]"
+          }`}
+        >
+          {bulkLoading && (
+            <Loader2 size={15} className="animate-spin" />
+          )}
+
+          {bulkLoading
+            ? "Processing..."
+            : bulkAction === "delete"
+            ? "Delete Leads"
+            : "Apply Changes"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
       <MobileFilter
         isMobileFiltersOpen={isMobileFiltersOpen}
         setIsMobileFiltersOpen={setIsMobileFiltersOpen}

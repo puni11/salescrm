@@ -66,7 +66,15 @@ const formatDuration = (seconds) => {
   if (!seconds && seconds !== 0) return "N/A";
   return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
 };
+const formatTime2 = (seconds = 0) => {
+  const totalSeconds = Math.floor(Number(seconds) || 0);
 
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+};
 const formatTime = (totalSeconds) => {
   if (!totalSeconds) return "0m 0s";
   return `${Math.floor(totalSeconds / 60)}m ${Math.round(totalSeconds % 60)}s`;
@@ -129,6 +137,12 @@ const STAT_CARDS = [
   { key: "outgoingCalls", label: "Outgoing", icon: PhoneOutgoing },
   { key: "missedCalls", label: "Missed", icon: PhoneMissed },
   { key: "unregisteredCalls", label: "Unregistered", icon: UserMinus },
+  {
+  key: "totalCallTime",
+  label: "Total Call Timing",
+  icon: Activity,
+  format: formatTime2,
+}
 ];
 
 const Th = ({ icon: Icon, children }) => (
@@ -142,6 +156,7 @@ const Th = ({ icon: Icon, children }) => (
 
 /* ---------- Page ---------- */
 export default function CallLogsPage({ id, session }) {
+  const today = new Date().toLocaleDateString("en-CA");
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true); // logs request only
   const [error, setError] = useState(false);
@@ -158,8 +173,8 @@ export default function CallLogsPage({ id, session }) {
   const [courseFilter, setCourseFilter] = useState("");
   const [callTypeFilter, setCallTypeFilter] = useState("");
   const [selectedCounsellor, setSelectedCounsellor] = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [fromDate, setFromDate] = useState(today);
+  const [toDate, setToDate] = useState(today);
 
   const pageSize = 20;
 
@@ -248,8 +263,8 @@ export default function CallLogsPage({ id, session }) {
     setCourseFilter("");
     setCallTypeFilter("");
     setSelectedCounsellor("");
-    setFromDate("");
-    setToDate("");
+    setFromDate(today);
+    setToDate(today);
     setPage(1);
   };
 
@@ -353,18 +368,18 @@ export default function CallLogsPage({ id, session }) {
         <p className={`mt-1 text-[15px] ${MUTED}`}>View and monitor all calling activity.</p>
 
         {/* Stats strip */}
-        <div className={`mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-md border ${BORDER} bg-[rgba(55,53,47,0.09)] md:grid-cols-3 xl:grid-cols-6`}>
+        <div className={`mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-md border ${BORDER} bg-[rgba(55,53,47,0.09)] md:grid-cols-3 xl:grid-cols-7`}>
           {STAT_CARDS.map(({ key, label, icon: Icon, format }) => {
             const s = stats?.[key];
             return (
               <div key={key} className="bg-white px-4 py-3.5">
-                <div className={`flex items-center gap-1.5 text-[13px] ${MUTED}`}>
+                <div className={`flex items-center gap-1.5 text-[12px] ${MUTED}`}>
                   <Icon size={14} />
                   {label}
                 </div>
                 {stats ? (
                   <>
-                    <div className="mt-1.5 text-[28px] font-semibold leading-8 tracking-tight">
+                    <div className="mt-1.5 text-[24px] font-semibold leading-8 tracking-tight">
                       {format ? format(s?.count || 0) : s?.count || 0}
                     </div>
                     <TrendLine trend={s?.trend} label={windowLabel} />

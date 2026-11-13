@@ -4,12 +4,14 @@ import BackButton from "@/lib/BackButton";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 /* ------------------------------------------------------------------ */
-/*  Facebook Ads dashboard — redesigned                                */
-/*  1. Hero: the 5 numbers that decide the next action                */
-/*  2. Priorities: per-ad numbers first, all-ads totals as context    */
-/*  3. Stacked funnel + status mix + campaign area chart + scatter    */
-/*  4. Insights + ad health                                           */
-/*  5. Leaderboard, trends, full table, lead details                  */
+/*  Facebook Ads dashboard                                             */
+/*  Same layout as before, plus:                                       */
+/*   • Active / Inactive status on every ad, campaign and budget       */
+/*   • Active / Inactive filter in the header (filters everything)     */
+/*   • Budget panel: where the daily budget goes and what it returns   */
+/*   • Running vs stopped comparison (with budget)                     */
+/*   • Budget columns in the All ads table                             */
+/*   • "Budget check" insight card                                     */
 /* ------------------------------------------------------------------ */
 
 const COLORS = {
@@ -41,6 +43,7 @@ const fmtDate = (v) => {
 };
 const txt = (v, fallback = "—") =>
   v == null || v === "" ? fallback : typeof v === "object" ? v.name || v.$oid || fallback : String(v);
+const humanize = (s) => (s ? String(s).toLowerCase().replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase()) : null);
 
 function adMetrics(ad) {
   const s = ad.statuses || {};
@@ -56,6 +59,88 @@ function adMetrics(ad) {
     wonRate: pct(won, total),
     invalidRate: pct(s.Invalid || 0, total),
   };
+}
+
+/* ------------------------------ Active / Inactive ------------------------------ */
+
+// "active" | "inactive" | "unknown". Meta's effective_status already accounts for paused parents
+// (e.g. CAMPAIGN_PAUSED), so an ad inside a paused campaign shows as inactive.
+const stateOf = (v) => (v === true ? "active" : v === false ? "inactive" : "unknown");
+const runState = (ad) => stateOf(ad?.adIsActive);
+
+const RUN_STYLE = {
+  active: { cls: "bg-emerald-50 text-emerald-700 ring-emerald-200", dot: "bg-emerald-500", label: "Active" },
+  inactive: { cls: "bg-slate-100 text-slate-600 ring-slate-200", dot: "bg-slate-400", label: "Inactive" },
+  unknown: { cls: "bg-amber-50 text-amber-700 ring-amber-200", dot: "bg-amber-400", label: "Unknown" },
+};
+const STATE_DOT = { active: "#10b981", inactive: "#94a3b8", unknown: "#f59e0b" };
+
+function RunBadge({ ad, state, showReason = false, small = false }) {
+  const st = state || runState(ad);
+  const s = RUN_STYLE[st];
+  const reason = ad && st === "inactive" ? humanize(ad.adStatus) : null;
+  return (
+    <span className="inline-flex flex-col items-start gap-0.5">
+      <span
+        title={ad?.statusError || humanize(ad?.adStatus) || ""}
+        className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full font-semibold ring-1 ring-inset ${s.cls} ${small ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-xs"}`}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
+        {s.label}
+      </span>
+      {showReason && reason && <span className="pl-1 text-[11px] text-slate-400">{reason}</span>}
+    </span>
+  );
+}
+
+/* ------------------------------ Budget helpers ------------------------------ */
+
+// Meta returns budgets in the smallest currency unit (paise for INR) → divide by 100.
+// Change "₹" if your ad account uses another currency.
+const money = (v) => `₹${Math.round(Number(v) / 100).toLocaleString("en-IN")}`;
+
+// Daily budget of one ad: the ad set's budget, or the campaign's when the campaign controls it.
+function dailyBudget(a) {
+  const s = Number(a.adSetDailyBudget) || 0;
+  if (s > 0) return { value: s, source: "Ad set" };
+  const c = Number(a.campaignDailyBudget) || 0;
+  if (c > 0) return { value: c, source: "Campaign" };
+  return { value: 0, source: null };
+}
+function lifetimeBudget(a) {
+  const s = Number(a.adSetLifetimeBudget) || 0;
+  if (s > 0) return { value: s, left: Number(a.adSetBudgetRemaining) || 0 };
+  const c = Number(a.campaignLifetimeBudget) || 0;
+  if (c > 0) return { value: c, left: Number(a.campaignBudgetRemaining) || 0 };
+  return { value: 0, left: 0 };
+}
+const budgetText = (a) => {
+  const d = dailyBudget(a);
+  if (d.value > 0) return `${money(d.value)}/day`;
+  const l = lifetimeBudget(a);
+  return l.value > 0 ? `${money(l.value)} total` : "—";
+};
+
+// Several ads share one budget (their ad set or campaign). Group them so each budget is counted ONCE.
+function buildBudgetUnits(ads) {
+  const map = new Map();
+  for (const a of ads) {
+    const m = adMetrics(a);
+    const setBudget = Number(a.adSetDailyBudget) || 0;
+    const campBudget = Number(a.campaignDailyBudget) || 0;
+    let key = null, name = "", kind = "", daily = 0, state = "unknown";
+    if (setBudget > 0 && a.adSetId) {
+      key = `s:${a.adSetId}`; name = a.adSetName || `Ad set ${a.adSetId}`; kind = "Ad set"; daily = setBudget; state = stateOf(a.adSetIsActive);
+    } else if (campBudget > 0 && a.campaignId) {
+      key = `c:${a.campaignId}`; name = a.campaignName || `Campaign ${a.campaignId}`; kind = "Campaign"; daily = campBudget; state = stateOf(a.campaignIsActive);
+    }
+    if (!key) continue;
+    const u = map.get(key) || { key, name, kind, daily, state, leads: 0, won: 0, invalid: 0, ads: 0, best: a, bestLeads: -1 };
+    u.leads += m.total; u.won += m.won; u.invalid += m.invalid; u.ads += 1;
+    if (m.total > u.bestLeads) { u.best = a; u.bestLeads = m.total; }
+    map.set(key, u);
+  }
+  return [...map.values()].map((u) => ({ ...u, wonRate: pct(u.won, u.leads), invalidRate: pct(u.invalid, u.leads) }));
 }
 
 /* ------------------------------ Primitives ------------------------------ */
@@ -265,7 +350,7 @@ function CampaignAreaChart({ ads }) {
     const map = {};
     for (const a of ads) {
       const name = a.campaignName || "Unknown campaign";
-      const g = (map[name] ||= { name, won: 0, warm: 0, pending: 0, lost: 0, invalid: 0, total: 0 });
+      const g = (map[name] ||= { name, won: 0, warm: 0, pending: 0, lost: 0, invalid: 0, total: 0, state: stateOf(a.campaignIsActive) });
       const m = adMetrics(a);
       g.won += m.won;
       g.warm += Math.max(0, m.warm - m.won);
@@ -358,7 +443,7 @@ function CampaignAreaChart({ ads }) {
               {view.map((g, i) => (
                 <text key={g.name} x={X(i)} y={H - B + 18} transform={`rotate(-28 ${X(i)} ${H - B + 18})`} textAnchor="end" fill="#94a3b8" fontSize="10.5">
                   {g.name.length > 18 ? `${g.name.slice(0, 17)}…` : g.name}
-                  <title>{g.name}</title>
+                  <title>{`${g.name} · ${RUN_STYLE[g.state].label}`}</title>
                 </text>
               ))}
 
@@ -379,7 +464,7 @@ function CampaignAreaChart({ ads }) {
 
               {hv != null && (() => {
                 const g = view[hv];
-                const cx = X(hv), w = 200, h = 46 + active.length * 17;
+                const cx = X(hv), w = 200, h = 62 + active.length * 17;
                 const tx = cx + 14 + w > W - 4 ? cx - 14 - w : cx + 14;
                 const ty = T + 4;
                 return (
@@ -387,12 +472,14 @@ function CampaignAreaChart({ ads }) {
                     <line x1={cx} x2={cx} y1={T} y2={H - B} stroke="rgba(255,255,255,0.28)" strokeDasharray="3 3" />
                     <rect x={tx} y={ty} width={w} height={h} rx="8" fill="#1c1b22" stroke="rgba(255,255,255,0.14)" />
                     <text x={tx + 12} y={ty + 19} fill="#fff" fontSize="12" fontWeight="600">{g.name.length > 26 ? `${g.name.slice(0, 25)}…` : g.name}</text>
-                    <text x={tx + 12} y={ty + 34} fill="#94a3b8" fontSize="10.5">{num(g.total)} leads · {pctText(g.won, g.total, 1)} won</text>
+                    <circle cx={tx + 16} cy={ty + 31} r="3.5" fill={STATE_DOT[g.state]} />
+                    <text x={tx + 26} y={ty + 35} fill="#cbd5e1" fontSize="10.5">Campaign {RUN_STYLE[g.state].label.toLowerCase()}</text>
+                    <text x={tx + 12} y={ty + 50} fill="#94a3b8" fontSize="10.5">{num(g.total)} leads · {pctText(g.won, g.total, 1)} won</text>
                     {active.map((s, k) => (
                       <g key={s.key}>
-                        <circle cx={tx + 16} cy={ty + 50 + k * 17} r="3.5" fill={s.color} />
-                        <text x={tx + 26} y={ty + 54 + k * 17} fill="#cbd5e1" fontSize="11">{s.label}</text>
-                        <text x={tx + w - 12} y={ty + 54 + k * 17} fill="#fff" fontSize="11" fontWeight="600" textAnchor="end">{num(g[s.key])}</text>
+                        <circle cx={tx + 16} cy={ty + 66 + k * 17} r="3.5" fill={s.color} />
+                        <text x={tx + 26} y={ty + 70 + k * 17} fill="#cbd5e1" fontSize="11">{s.label}</text>
+                        <text x={tx + w - 12} y={ty + 70 + k * 17} fill="#fff" fontSize="11" fontWeight="600" textAnchor="end">{num(g[s.key])}</text>
                       </g>
                     ))}
                   </g>
@@ -419,7 +506,7 @@ function CampaignAreaChart({ ads }) {
 }
 
 function Scatter({ ads, onPick }) {
-  const pts = ads.filter((a) => Number(a.totalLeads) >= 5).map((a) => ({ a, m: adMetrics(a) }));
+  const pts = ads.filter((a) => Number(a.totalLeads) >= 5).map((a) => ({ a, m: adMetrics(a), s: runState(a) }));
   const maxX = Math.max(10, ...pts.map((p) => p.m.total));
   const avgWarm = pts.length ? pts.reduce((t, p) => t + p.m.warmRate, 0) / pts.length : 50;
   const W = 520, H = 300, P = 40;
@@ -440,14 +527,19 @@ function Scatter({ ads, onPick }) {
           <text x={W / 2} y={H - 4} textAnchor="middle" className="fill-slate-500 text-[10px]">Total leads →</text>
           <text x={x(maxX * 0.78)} y={22} textAnchor="middle" className="fill-emerald-600 text-[9px] font-medium">SCALE ↑</text>
           <text x={x(maxX * 0.22)} y={22} textAnchor="middle" className="fill-violet-600 text-[9px] font-medium">SMALL BUT STRONG ↑</text>
-          {pts.map(({ a, m }) => (
-            <circle key={a.adId} cx={x(m.total)} cy={y(m.warmRate)} r={5 + Math.min(6, Math.sqrt(m.won) * 2)} fill={m.won > 0 ? "#6366f1" : "#cbd5e1"} fillOpacity=".55" stroke={m.won > 0 ? "#4f46e5" : "#94a3b8"} strokeWidth="1.2" className="cursor-pointer hover:fill-opacity-95" onClick={() => onPick(String(a.adId))}>
-              <title>{`${a.adName}\n${num(m.total)} leads · ${m.warmRate.toFixed(1)}% warm · ${num(m.won)} won`}</title>
+          {pts.map(({ a, m, s }) => (
+            <circle key={a.adId} cx={x(m.total)} cy={y(m.warmRate)} r={5 + Math.min(6, Math.sqrt(m.won) * 2)} fill={STATE_DOT[s]} fillOpacity={m.won > 0 ? 0.7 : 0.3} stroke={STATE_DOT[s]} strokeWidth="1.5" className="cursor-pointer" onClick={() => onPick(String(a.adId))}>
+              <title>{`${a.adName}\n${RUN_STYLE[s].label} · ${num(m.total)} leads · ${m.warmRate.toFixed(1)}% warm · ${num(m.won)} won`}</title>
             </circle>
           ))}
         </svg>
       </div>
-      <p className="mt-1 text-xs leading-5 text-slate-500">Bigger dots = more wins. Top-right is where to put more budget. Top-left is worth testing at higher volume. Ads under 5 leads are excluded.</p>
+      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+        {Object.entries(RUN_STYLE).map(([k, v]) => (
+          <span key={k} className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: STATE_DOT[k] }} />{v.label}</span>
+        ))}
+      </div>
+      <p className="mt-1.5 text-xs leading-5 text-slate-500">Bigger, darker dots = more wins. Top-right is where to put more budget. Top-left is worth testing at higher volume. Ads under 5 leads are excluded.</p>
     </div>
   );
 }
@@ -527,7 +619,7 @@ function CampaignQuality({ ads, onPick }) {
     const map = {};
     for (const a of ads) {
       const name = a.campaignName || "Unknown campaign";
-      const g = (map[name] ||= { total: 0, won: 0, ad: a });
+      const g = (map[name] ||= { total: 0, won: 0, ad: a, state: stateOf(a.campaignIsActive) });
       const m = adMetrics(a);
       g.total += m.total; g.won += m.won;
       if (m.won >= adMetrics(g.ad).won) g.ad = a;
@@ -540,11 +632,175 @@ function CampaignQuality({ ads, onPick }) {
     <div className="space-y-3.5">
       {rows.map((r) => (
         <button key={r.name} onClick={() => onPick(String(r.ad.adId))} className="block w-full rounded-xl p-2 text-left transition hover:bg-slate-50">
-          <div className="mb-1.5 flex justify-between gap-2 text-xs"><span className="min-w-0 truncate font-medium text-slate-700" title={r.name}>{r.name}</span><span className="shrink-0 font-semibold tabular-nums text-slate-900">{r.rate.toFixed(1)}% won · {num(r.won)} / {num(r.total)}</span></div>
+          <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
+            <span className="flex min-w-0 items-center gap-2">
+              <RunBadge state={r.state} small />
+              <span className="min-w-0 truncate font-medium text-slate-700" title={r.name}>{r.name}</span>
+            </span>
+            <span className="shrink-0 font-semibold tabular-nums text-slate-900">{r.rate.toFixed(1)}% won · {num(r.won)} / {num(r.total)}</span>
+          </div>
           <Bar value={r.rate} max={Math.max(10, ...rows.map((x) => x.rate))} color="#10b981" />
         </button>
       ))}
     </div>
+  );
+}
+
+/* ------------------------------ Budget + Running vs stopped ------------------------------ */
+
+function BudgetPanel({ units, onPick }) {
+  const sumD = (list) => list.reduce((t, u) => t + u.daily, 0);
+  const active = units.filter((u) => u.state === "active");
+  const activeTotal = sumD(active);
+  const pausedTotal = sumD(units.filter((u) => u.state === "inactive"));
+  const unknownTotal = sumD(units.filter((u) => u.state === "unknown"));
+
+  const parts = [
+    { label: "Winning", hint: "10+ leads and at least one win", value: sumD(active.filter((u) => u.leads >= 10 && u.won > 0)), color: "#10b981" },
+    { label: "No wins yet", hint: "10+ leads, zero wins", value: sumD(active.filter((u) => u.leads >= 10 && u.won === 0)), color: "#ef4444" },
+    { label: "Too early", hint: "Fewer than 10 leads", value: sumD(active.filter((u) => u.leads < 10)), color: "#94a3b8" },
+  ];
+  const rows = [...units].sort((a, b) => b.daily - a.daily).slice(0, 8);
+
+  return (
+    <Panel title="Budget" subtitle="Daily budget per ad set (or campaign when the campaign controls it) · each budget is counted once">
+      {units.length === 0 ? (
+        <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No daily budget data yet. Budgets come from Meta — press Refresh to load them.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-xl bg-emerald-50 p-3">
+              <p className="text-[11px] font-medium text-emerald-700">Running now</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{money(activeTotal)}<span className="text-xs font-normal text-slate-500">/day</span></p>
+              <p className="text-[11px] text-slate-500">{active.length} budgets</p>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-3">
+              <p className="text-[11px] font-medium text-slate-600">Paused</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{money(pausedTotal)}<span className="text-xs font-normal text-slate-500">/day</span></p>
+              <p className="text-[11px] text-slate-500">{units.filter((u) => u.state === "inactive").length} budgets</p>
+            </div>
+            <div className="rounded-xl bg-amber-50 p-3">
+              <p className="text-[11px] font-medium text-amber-700">Unknown</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{money(unknownTotal)}<span className="text-xs font-normal text-slate-500">/day</span></p>
+              <p className="text-[11px] text-slate-500">{units.filter((u) => u.state === "unknown").length} budgets</p>
+            </div>
+          </div>
+
+          <div className="mt-5">
+            <p className="mb-2 text-xs font-medium text-slate-700">Where the running budget goes</p>
+            {activeTotal > 0 ? (
+              <>
+                <div className="flex h-3 overflow-hidden rounded-full bg-slate-100">
+                  {parts.map((p) => p.value > 0 && <div key={p.label} title={`${p.label}: ${money(p.value)}/day`} style={{ width: `${(p.value / activeTotal) * 100}%`, background: p.color }} />)}
+                </div>
+                <div className="mt-2 grid gap-1.5 sm:grid-cols-3">
+                  {parts.map((p) => (
+                    <div key={p.label} className="text-xs" title={p.hint}>
+                      <span className="flex items-center gap-1.5 text-slate-600"><span className="h-2 w-2 rounded-full" style={{ background: p.color }} />{p.label}</span>
+                      <span className="font-semibold tabular-nums text-slate-900">{money(p.value)}/day</span>
+                      <span className="ml-1 text-slate-400">{pctText(p.value, activeTotal, 0)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-slate-500">No running budget found.</p>
+            )}
+          </div>
+
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[520px] text-left text-sm">
+              <thead className="text-xs text-slate-500">
+                <tr>
+                  <th className="pb-2 font-medium">Biggest budgets</th>
+                  <th className="pb-2 font-medium">Status</th>
+                  <th className="pb-2 text-right font-medium">Daily</th>
+                  <th className="pb-2 text-right font-medium">Leads</th>
+                  <th className="pb-2 text-right font-medium">Won</th>
+                  <th className="pb-2 text-right font-medium">Invalid</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((u) => {
+                  const flag = u.state === "active" && u.leads >= 10 && u.won === 0;
+                  return (
+                    <tr key={u.key} onClick={() => onPick(String(u.best.adId))} className="cursor-pointer border-t border-slate-100 transition hover:bg-slate-50">
+                      <td className="max-w-[220px] py-2.5 pr-2">
+                        <div className="truncate font-medium text-slate-800" title={u.name}>{u.name}</div>
+                        <div className="text-[11px] text-slate-400">{u.kind} · {u.ads} {u.ads === 1 ? "ad" : "ads"}</div>
+                      </td>
+                      <td className="py-2.5"><RunBadge state={u.state} small /></td>
+                      <td className="py-2.5 text-right font-semibold tabular-nums">{money(u.daily)}</td>
+                      <td className="py-2.5 text-right tabular-nums">{num(u.leads)}</td>
+                      <td className="py-2.5 text-right tabular-nums">
+                        <span className={flag ? "font-semibold text-rose-600" : u.won ? "font-semibold text-emerald-600" : "text-slate-400"}>{num(u.won)}</span>
+                        <span className="ml-1 text-[11px] text-slate-400">{u.wonRate.toFixed(0)}%</span>
+                      </td>
+                      <td className="py-2.5 text-right tabular-nums"><span className={u.invalidRate >= 25 ? "font-semibold text-rose-600" : "text-slate-700"}>{u.invalidRate.toFixed(0)}%</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">This page has no ad-spend data, so “wins per budget” compares budget set with leads and wins received — not actual cost per lead. Lifetime budgets are shown in the All ads table.</p>
+        </>
+      )}
+    </Panel>
+  );
+}
+
+function RunningVsStopped({ allAds, units }) {
+  const g = useMemo(() => {
+    const base = () => ({ ads: 0, leads: 0, won: 0, invalid: 0, budget: 0 });
+    const out = { active: base(), inactive: base(), unknown: base() };
+    for (const a of allAds) {
+      const m = adMetrics(a);
+      const x = out[runState(a)];
+      x.ads += 1; x.leads += m.total; x.won += m.won; x.invalid += m.invalid;
+    }
+    for (const u of units) out[u.state].budget += u.daily;
+    return out;
+  }, [allAds, units]);
+  const better = g.active.leads > 0 && g.inactive.leads > 0
+    ? pct(g.active.won, g.active.leads) >= pct(g.inactive.won, g.inactive.leads)
+    : null;
+  return (
+    <Panel title="Running vs stopped" subtitle="Are active ads doing better than inactive ones?">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[420px] text-left text-sm">
+          <thead className="text-xs text-slate-500">
+            <tr>
+              <th className="pb-2 font-medium">Status</th>
+              <th className="pb-2 text-right font-medium">Ads</th>
+              <th className="pb-2 text-right font-medium">Leads</th>
+              <th className="pb-2 text-right font-medium">Won</th>
+              <th className="pb-2 text-right font-medium">Invalid</th>
+              <th className="pb-2 text-right font-medium">Daily budget</th>
+            </tr>
+          </thead>
+          <tbody>
+            {["active", "inactive", "unknown"].map((k) => (
+              <tr key={k} className="border-t border-slate-100">
+                <td className="py-2.5"><RunBadge state={k} /></td>
+                <td className="py-2.5 text-right tabular-nums">{g[k].ads}</td>
+                <td className="py-2.5 text-right tabular-nums">{num(g[k].leads)}</td>
+                <td className="py-2.5 text-right tabular-nums"><span className="font-semibold">{pctText(g[k].won, g[k].leads, 1)}</span> <span className="text-xs text-slate-400">({num(g[k].won)})</span></td>
+                <td className="py-2.5 text-right tabular-nums"><span className="font-semibold">{pctText(g[k].invalid, g[k].leads, 1)}</span> <span className="text-xs text-slate-400">({num(g[k].invalid)})</span></td>
+                <td className="py-2.5 text-right tabular-nums">{g[k].budget ? money(g[k].budget) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+        {better === null
+          ? "Load Active/Inactive status to compare running and stopped ads."
+          : better
+            ? "Your running ads win at an equal or higher rate than stopped ads."
+            : "Your stopped ads won at a higher rate than your running ads — check whether a good ad was switched off."}
+      </p>
+    </Panel>
   );
 }
 
@@ -583,10 +839,13 @@ function Leaderboard({ ads, onPick, selected }) {
                 <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-semibold ${i === 0 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>{String(i + 1).padStart(2, "0")}</span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{a.adName || "Unnamed ad"}</span>
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <RunBadge ad={a} small />
+                      <span className="min-w-0 truncate text-sm font-medium text-slate-800">{a.adName || "Unnamed ad"}</span>
+                    </span>
                     <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">{show(m)}</span>
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-slate-500">{a.campaignName || "Campaign not available"} · {num(m.total)} leads · {m.wonRate.toFixed(1)}% won</p>
+                  <p className="mt-0.5 truncate text-xs text-slate-500">{a.campaignName || "Campaign not available"} · {num(m.total)} leads · {m.wonRate.toFixed(1)}% won · {budgetText(a)}</p>
                 </div>
               </div>
               <div className="ml-10"><Bar value={score(m)} max={max} color={colors[Math.min(i, colors.length - 1)]} /></div>
@@ -622,9 +881,15 @@ function AdHealth({ ads, onPick }) {
       <div className="space-y-3">
         {rows.map(({ a, m }) => (
           <button key={a.adId} onClick={() => onPick(String(a.adId))} className="block w-full rounded-lg p-2 text-left transition hover:bg-slate-50">
-            <div className="mb-1.5 flex items-center justify-between gap-2"><span className="min-w-0 truncate text-xs font-medium text-slate-700" title={a.adName}>{a.adName || "Unnamed ad"}</span><span className="shrink-0 text-xs font-semibold tabular-nums" style={{ color }}>{mode === "quality" ? `${value(m).toFixed(1)}%` : num(value(m))}</span></div>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <span className="flex min-w-0 items-center gap-2">
+                <RunBadge ad={a} small />
+                <span className="min-w-0 truncate text-xs font-medium text-slate-700" title={a.adName}>{a.adName || "Unnamed ad"}</span>
+              </span>
+              <span className="shrink-0 text-xs font-semibold tabular-nums" style={{ color }}>{mode === "quality" ? `${value(m).toFixed(1)}%` : num(value(m))}</span>
+            </div>
             <Bar value={value(m)} max={max} color={color} />
-            <div className="mt-1 text-[10px] text-slate-400">{num(m.total)} leads · {m.wonRate.toFixed(1)}% won · {m.invalidRate.toFixed(1)}% invalid</div>
+            <div className="mt-1 text-[10px] text-slate-400">{num(m.total)} leads · {m.wonRate.toFixed(1)}% won · {m.invalidRate.toFixed(1)}% invalid · {budgetText(a)}</div>
           </button>
         ))}
         {!rows.length && <p className="rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-500">At least 10 leads per ad are needed for a meaningful comparison.</p>}
@@ -635,7 +900,7 @@ function AdHealth({ ads, onPick }) {
 
 /* ------------------------------ Insights ------------------------------ */
 
-function InsightCard({ tone, kicker, title, metric, detail, actionLabel, onAction }) {
+function InsightCard({ tone, kicker, ad, title, metric, detail, actionLabel, onAction }) {
   const tones = {
     red: { ring: "border-rose-200", badge: "bg-rose-100 text-rose-700", btn: "bg-rose-600 hover:bg-rose-700" },
     green: { ring: "border-emerald-200", badge: "bg-emerald-100 text-emerald-700", btn: "bg-emerald-600 hover:bg-emerald-700" },
@@ -643,19 +908,20 @@ function InsightCard({ tone, kicker, title, metric, detail, actionLabel, onActio
     amber: { ring: "border-amber-200", badge: "bg-amber-100 text-amber-800", btn: "bg-amber-600 hover:bg-amber-700" },
   }[tone] || {};
   return (
-    <div className={`rounded-2xl border bg-white p-4 ${tones.ring}`}>
+    <div className={`flex flex-col rounded-2xl border bg-white p-4 ${tones.ring}`}>
       <div className="flex items-center justify-between gap-2">
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide ${tones.badge}`}>{kicker}</span>
         {metric && <span className="text-sm font-bold tabular-nums text-slate-900">{metric}</span>}
       </div>
       <h3 className="mt-2.5 text-sm font-semibold leading-snug text-slate-900">{title}</h3>
-      <p className="mt-1 text-xs leading-5 text-slate-500">{detail}</p>
-      {actionLabel && onAction && <button onClick={onAction} className={`mt-3 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition ${tones.btn}`}>{actionLabel}</button>}
+      {ad && <div className="mt-2"><RunBadge ad={ad} small showReason /></div>}
+      <p className="mt-1.5 text-xs leading-5 text-slate-500">{detail}</p>
+      {actionLabel && onAction && <button onClick={onAction} className={`mt-3 self-start rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition ${tones.btn}`}>{actionLabel}</button>}
     </div>
   );
 }
 
-function InsightsPanel({ total, invalid, topWins, topQuality, topPending, mostInvalid, onPick }) {
+function InsightsPanel({ total, invalid, topWins, topQuality, topPending, mostInvalid, budgetWaste, onPick }) {
   const allInvalidRate = pct(invalid, total);
   const pick = (ad) => ad && onPick(String(ad.adId));
   const worst = mostInvalid && adMetrics(mostInvalid).invalid > 0 ? mostInvalid : null;
@@ -667,46 +933,87 @@ function InsightsPanel({ total, invalid, topWins, topQuality, topPending, mostIn
   const qm = topQuality ? adMetrics(topQuality) : null;
 
   return (
-    <div className="grid grid-cols-4 gap-3 space-y-3">
-      <InsightCard
-        tone={!wm ? "green" : wm.invalidRate > 12 ? "red" : wm.invalidRate > 6 ? "amber" : "green"}
-        kicker={wm && wm.invalidRate > 12 ? "FIX FIRST" : "LEAD QUALITY"}
-        title={worst ? `${worst.adName} has the most invalid leads` : "No ad has enough leads to flag yet"}
-        metric={wm ? `${num(wm.invalid)} invalid` : undefined}
-        detail={worst
-          ? `${wm.invalidRate.toFixed(1)}% of this ad’s ${num(worst.totalLeads)} leads. Across all ads, ${num(invalid)} leads (${allInvalidRate.toFixed(1)}%) are invalid. Check targeting, form fields and audience overlap before spending more here.`
-          : "Once an ad passes 20 leads, its invalid rate becomes a reliable signal."}
-        actionLabel={worst ? "Inspect this ad →" : undefined}
-        onAction={worst ? () => pick(worst) : undefined}
-      />
-      <InsightCard
-        tone="amber"
-        kicker="FOLLOW UP NOW"
-        title={hasPending ? `${num(pm.pending)} leads in ${topPending.adName} are waiting for contact` : "Nothing waiting"}
-        metric={hasPending ? `${num(pm.pending)} pending` : undefined}
-        detail={hasPending ? "This is the biggest single queue. New Lead + Call Back leads go cold fastest — work this list before launching anything new." : "No pending leads in the current results."}
-        actionLabel={hasPending ? "Open pending ad →" : undefined}
-        onAction={hasPending ? () => pick(topPending) : undefined}
-      />
-      <InsightCard
-        tone="green"
-        kicker="SCALE THIS"
-        title={hasWin ? `${topWins.adName} is winning most` : "No wins yet"}
-        metric={hasWin ? `${num(winM.won)} won` : undefined}
-        detail={hasWin ? `${winM.wonRate.toFixed(1)}% of its ${num(topWins.totalLeads)} leads registered or converted. This is the creative and audience to put more budget behind.` : "No registered or converted leads are recorded yet. Review follow-up speed and qualification before judging creative."}
-        actionLabel={hasWin ? "See its leads →" : undefined}
-        onAction={hasWin ? () => pick(topWins) : undefined}
-      />
-      <InsightCard
-        tone="indigo"
-        kicker="QUALITY SIGNAL"
-        title={topQuality ? `${topQuality.adName} has the warmest audience` : "Need more data"}
-        metric={qm ? `${qm.warmRate.toFixed(1)}% warm` : undefined}
-        detail={topQuality ? `Warm rate across ${num(topQuality.totalLeads)} leads. Warmth alone isn’t a win — compare it with wins before scaling.` : "Need an ad with 10+ leads to compare warm-lead quality fairly."}
-        actionLabel={topQuality ? "Compare this ad →" : undefined}
-        onAction={topQuality ? () => pick(topQuality) : undefined}
-      />
-      <p className="px-1 text-[11px] leading-4 text-slate-400">Suggested order of action: waste first, then waiting leads, then what to scale. Every number on a card belongs to the ad named on it.</p>
+    <div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <InsightCard
+          tone={!wm ? "green" : wm.invalidRate > 12 ? "red" : wm.invalidRate > 6 ? "amber" : "green"}
+          kicker={wm && wm.invalidRate > 12 ? "FIX FIRST" : "LEAD QUALITY"}
+          ad={worst}
+          title={worst ? `${worst.adName} has the most invalid leads` : "No ad has enough leads to flag yet"}
+          metric={wm ? `${num(wm.invalid)} invalid` : undefined}
+          detail={worst
+            ? `${wm.invalidRate.toFixed(1)}% of this ad’s ${num(worst.totalLeads)} leads. Across all ads, ${num(invalid)} leads (${allInvalidRate.toFixed(1)}%) are invalid. Check targeting, form fields and audience overlap before spending more here.`
+            : "Once an ad passes 20 leads, its invalid rate becomes a reliable signal."}
+          actionLabel={worst ? "Inspect this ad →" : undefined}
+          onAction={worst ? () => pick(worst) : undefined}
+        />
+        <InsightCard
+          tone="amber"
+          kicker="FOLLOW UP NOW"
+          ad={hasPending ? topPending : null}
+          title={hasPending ? `${num(pm.pending)} leads in ${topPending.adName} are waiting for contact` : "Nothing waiting"}
+          metric={hasPending ? `${num(pm.pending)} pending` : undefined}
+          detail={hasPending ? "This is the biggest single queue. New Lead + Call Back leads go cold fastest — work this list before launching anything new." : "No pending leads in the current results."}
+          actionLabel={hasPending ? "Open pending ad →" : undefined}
+          onAction={hasPending ? () => pick(topPending) : undefined}
+        />
+        <InsightCard
+          tone="green"
+          kicker="SCALE THIS"
+          ad={hasWin ? topWins : null}
+          title={hasWin ? `${topWins.adName} is winning most` : "No wins yet"}
+          metric={hasWin ? `${num(winM.won)} won` : undefined}
+          detail={hasWin ? `${winM.wonRate.toFixed(1)}% of its ${num(topWins.totalLeads)} leads registered or converted.${runState(topWins) === "active" ? " It is running now — a good place for more budget." : " It is not running now — check why it was paused before restarting."}` : "No registered or converted leads are recorded yet. Review follow-up speed and qualification before judging creative."}
+          actionLabel={hasWin ? "See its leads →" : undefined}
+          onAction={hasWin ? () => pick(topWins) : undefined}
+        />
+        <InsightCard
+          tone="indigo"
+          kicker="QUALITY SIGNAL"
+          ad={topQuality || null}
+          title={topQuality ? `${topQuality.adName} has the warmest audience` : "Need more data"}
+          metric={qm ? `${qm.warmRate.toFixed(1)}% warm` : undefined}
+          detail={topQuality ? `Warm rate across ${num(topQuality.totalLeads)} leads. Warmth alone isn’t a win — compare it with wins before scaling.` : "Need an ad with 10+ leads to compare warm-lead quality fairly."}
+          actionLabel={topQuality ? "Compare this ad →" : undefined}
+          onAction={topQuality ? () => pick(topQuality) : undefined}
+        />
+        <InsightCard
+          tone={budgetWaste ? "red" : "green"}
+          kicker="BUDGET CHECK"
+          ad={budgetWaste ? budgetWaste.best : null}
+          title={budgetWaste ? `${budgetWaste.name} gets ${money(budgetWaste.daily)}/day with no wins` : "No running budget is going to zero-win ads"}
+          metric={budgetWaste ? `${money(budgetWaste.daily)}/day` : undefined}
+          detail={budgetWaste
+            ? `${num(budgetWaste.leads)} leads so far and none registered or converted (${budgetWaste.invalidRate.toFixed(0)}% invalid). Review the ads and audience here, or move this budget to an ad that wins.`
+            : "Running budgets with 10+ leads each have at least one win, or no budget data is loaded yet."}
+          actionLabel={budgetWaste ? "Inspect this ad →" : undefined}
+          onAction={budgetWaste ? () => pick(budgetWaste.best) : undefined}
+        />
+      </div>
+      <p className="mt-3 px-1 text-[11px] leading-4 text-slate-400">Suggested order of action: waste first, then waiting leads, then what to scale. Every number on a card belongs to the ad named on it.</p>
+    </div>
+  );
+}
+
+/* ------------------------------ Table budget cells ------------------------------ */
+
+function DailyBudgetCell({ a }) {
+  const d = dailyBudget(a);
+  if (!d.value) return <span className="text-slate-300">—</span>;
+  return (
+    <div>
+      <div className="font-semibold tabular-nums text-slate-800">{money(d.value)}<span className="text-[11px] font-normal text-slate-400">/day</span></div>
+      <div className="text-[10px] text-slate-400">{d.source} budget</div>
+    </div>
+  );
+}
+function LifetimeBudgetCell({ a }) {
+  const l = lifetimeBudget(a);
+  if (!l.value) return <span className="text-slate-300">—</span>;
+  return (
+    <div>
+      <div className="font-semibold tabular-nums text-slate-800">{money(l.value)}</div>
+      <div className="text-[10px] text-slate-400">{money(l.left)} left</div>
     </div>
   );
 }
@@ -716,6 +1023,7 @@ function InsightsPanel({ total, invalid, topWins, topQuality, topPending, mostIn
 export default function FacebookAdsPage() {
   const [data, setData] = useState(null);
   const [search, setSearch] = useState("");
+  const [stateFilter, setStateFilter] = useState("all");
   const [selectedAdId, setSelectedAdId] = useState("");
   const [leadStatus, setLeadStatus] = useState("All");
   const [loading, setLoading] = useState(true);
@@ -730,7 +1038,7 @@ export default function FacebookAdsPage() {
       const res = await fetch(`/api/facebook-ads?${params}`, { cache: "no-store" });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || "Unable to load ad statistics.");
-      setData(json);
+      setData((prev) => ({ ...json, leads: prev?.leads || [] }));
     } catch (e) { setError(e.message || "Something went wrong."); }
     finally { setLoading(false); }
   }, []);
@@ -762,16 +1070,39 @@ export default function FacebookAdsPage() {
     return () => clearTimeout(timer);
   }, [search, loadStats]);
 
-  const ads = data?.ads || [];
-  const summary = data?.summary || { totalLeads: 0, totalAds: 0, statusCounts: {} };
-  const sc = summary.statusCounts || {};
-  const total = Number(summary.totalLeads) || 0;
+  /* ---- Data. `allAds` = everything the API returned; `ads` = after the Active/Inactive filter ---- */
+
+  const allAds = data?.ads || [];
+
+  const counts = useMemo(() => {
+    const c = { all: allAds.length, active: 0, inactive: 0, unknown: 0 };
+    for (const a of allAds) c[runState(a)] += 1;
+    return c;
+  }, [allAds]);
+
+  const ads = useMemo(() => (stateFilter === "all" ? allAds : allAds.filter((a) => runState(a) === stateFilter)), [allAds, stateFilter]);
+
+  // Status totals are recomputed from the visible ads so every number follows the filter.
+  const sc = useMemo(() => {
+    const s = {};
+    for (const a of ads) for (const [k, v] of Object.entries(a.statuses || {})) s[k] = (s[k] || 0) + v;
+    return s;
+  }, [ads]);
+  const total = useMemo(() => ads.reduce((t, a) => t + (Number(a.totalLeads) || 0), 0), [ads]);
   const won = sum(sc, WON);
   const warm = sum(sc, WARM);
   const pending = sum(sc, PENDING);
   const invalid = Number(sc.Invalid) || 0;
   const valid = Math.max(0, total - invalid);
   const contacted = Math.max(0, valid - pending);
+
+  // Budget panels look at ALL ads (they show every status themselves)
+  const budgetUnits = useMemo(() => buildBudgetUnits(allAds), [allAds]);
+  const activeDaily = budgetUnits.filter((u) => u.state === "active").reduce((t, u) => t + u.daily, 0);
+  const budgetWaste = useMemo(
+    () => budgetUnits.filter((u) => u.state === "active" && u.leads >= 10 && u.won === 0).sort((a, b) => b.daily - a.daily)[0] || null,
+    [budgetUnits]
+  );
 
   const stages = useMemo(() => [
     { short: "All leads", label: "All leads received", value: total },
@@ -787,7 +1118,7 @@ export default function FacebookAdsPage() {
     .sort((a, b) => b.lost - a.lost)[0], [stages]);
 
   const statusCols = Object.keys(COLORS);
-  const selectedAd = ads.find((a) => String(a.adId) === selectedAdId);
+  const selectedAd = allAds.find((a) => String(a.adId) === selectedAdId);
   const recent = useMemo(() => ads.filter((a) => a.latestLead?.createdAt)
     .sort((a, b) => new Date(b.latestLead.createdAt) - new Date(a.latestLead.createdAt)).slice(0, 5), [ads]);
   const cleanest = useMemo(() => [...ads].filter((a) => a.totalLeads >= 20).sort((a, b) => adMetrics(a).invalidRate - adMetrics(b).invalidRate).slice(0, 4), [ads]);
@@ -801,74 +1132,68 @@ export default function FacebookAdsPage() {
   const filteredLeads = leadStatus === "All" ? allLeads : allLeads.filter((l) => txt(l.status, "Unassigned") === leadStatus);
 
   const heroKpis = [
-    { label: "Total leads", value: num(total), sub: `${num(summary.totalAds)} ads in results`, rate: null, color: "#818cf8" },
+    { label: "Total leads", value: num(total), sub: `${num(ads.length)} ads in view`, rate: null, color: "#818cf8" },
     { label: "Registered / converted", value: num(won), sub: `${pctText(won, total, 1)} win rate`, rate: pct(won, total), color: "#34d399" },
     { label: "Warm leads", value: num(warm), sub: `${pctText(warm, total, 1)} of all leads`, rate: pct(warm, total), color: "#c084fc" },
     { label: "Awaiting contact", value: num(pending), sub: "New lead + call back — act first", rate: pct(pending, total), color: "#fbbf24" },
     { label: "Invalid leads", value: num(invalid), sub: `${pctText(invalid, total, 1)} of all leads`, rate: pct(invalid, total), color: "#f87171" },
+    { label: "Active ads", value: num(counts.active), sub: `${num(counts.inactive)} inactive · ${num(counts.unknown)} unknown`, rate: pct(counts.active, counts.all), color: "#22c55e" },
+    { label: "Running daily budget", value: money(activeDaily), sub: `${budgetUnits.filter((u) => u.state === "active").length} active budgets · all ads`, rate: null, color: "#0ea5e9" },
   ];
 
-  // Each priority leads with the named ad's own numbers; all-ads totals are context only.
-  const pm = topPending ? adMetrics(topPending) : null;
-  const im = mostInvalid ? adMetrics(mostInvalid) : null;
-  const wm = topWins ? adMetrics(topWins) : null;
-  const priorities = [
-    {
-      tone: "amber", title: "Follow up", target: pm?.pending > 0 ? topPending : null,
-      big: pm?.pending > 0 ? `${num(pm.pending)} waiting` : "Nothing waiting",
-      scope: pm && `${pctText(pm.pending, pm.total, 0)} of this ad’s ${num(pm.total)} leads`,
-      overall: `All ads: ${num(pending)} awaiting contact (${pctText(pending, total, 0)})`,
-      btn: "Open queue", empty: "No pending leads.",
-    },
-    {
-      tone: "rose", title: "Fix targeting", target: im?.invalid > 0 ? mostInvalid : null,
-      big: im?.invalid > 0 ? `${im.invalidRate.toFixed(0)}% invalid` : "No ad flagged",
-      scope: im && `${num(im.invalid)} of ${num(im.total)} leads in this ad`,
-      overall: `All ads: ${num(invalid)} invalid (${pctText(invalid, total, 1)})`,
-      btn: "Inspect this ad", empty: "Needs an ad with 20+ leads.",
-    },
-    {
-      tone: "emerald", title: "Scale what works", target: wm?.won > 0 ? topWins : null,
-      big: wm?.won > 0 ? `${num(wm.won)} won` : "No wins yet",
-      scope: wm && `${wm.wonRate.toFixed(1)}% of this ad’s ${num(wm.total)} leads`,
-      overall: `All ads: ${num(won)} won (${pctText(won, total, 1)})`,
-      btn: "See winning ad", empty: "No registered or converted leads.",
-    },
+  const stateTabs = [
+    ["all", "All", counts.all],
+    ["active", "Active", counts.active],
+    ["inactive", "Inactive", counts.inactive],
+    ["unknown", "Unknown", counts.unknown],
   ];
-  const priorityStyles = {
-    amber: "border-amber-200 bg-amber-50/60",
-    rose: "border-rose-200 bg-rose-50/60",
-    emerald: "border-emerald-200 bg-emerald-50/60",
-  };
 
   return (
     <main className="min-h-screen text-slate-900 font-sans">
       <div className="mx-auto max-w-[1600px] space-y-5">
 
         {/* HERO */}
-        <header className="relative overflow-hidden p-5 text-black  ">
-          
-            <BackButton/>
-          <div className="relative mt-2  flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+        <header className="relative overflow-hidden p-5 text-black">
+
+          <BackButton />
+          <div className="relative mt-2 flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
-              <h1 className="text-xl mt-2  font-semibold tracking-tight sm:text-[32px] sm:leading-9">Facebook Ads analytics</h1>
+              <h1 className="mt-2 text-xl font-semibold tracking-tight sm:text-[32px] sm:leading-9">Facebook Ads analytics</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-800">Lead quality first, volume second. The funnel shows where leads drop off — the cards above it tell you what to do about it.</p>
             </div>
             <div className="flex w-full flex-col gap-2 sm:flex-row xl:w-auto">
               <div className="relative min-w-0 flex-1 xl:w-72">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-800">⌕</span>
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search ad, campaign or ID" className="w-full rounded-xl border border-black/15 bg-white/10 py-2.5 pl-9 pr-3 text-sm text-white outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white/15 focus:ring-4 focus:ring-indigo-500/20" />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search ad, campaign or ID" className="w-full rounded-xl border border-black/15 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/20" />
               </div>
               <button onClick={() => loadStats(search)} disabled={loading} className="rounded-xl bg-black px-4 py-2.5 text-sm font-semibold text-slate-50 transition hover:bg-gray-900 disabled:cursor-wait disabled:opacity-60">{loading ? "Refreshing…" : "↻ Refresh"}</button>
             </div>
           </div>
 
-          <div className="relative mt-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
+          {/* ACTIVE / INACTIVE FILTER */}
+          <div className="relative mt-5 flex flex-wrap items-center gap-3">
+            <div className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
+              {stateTabs.map(([key, label, n]) => (
+                <button
+                  key={key}
+                  onClick={() => setStateFilter(key)}
+                  className={`flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition ${stateFilter === key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}
+                >
+                  {key !== "all" && <span className={`h-2 w-2 rounded-full ${RUN_STYLE[key].dot}`} />}
+                  {label}
+                  <span className="rounded-full bg-slate-200/70 px-1.5 text-xs tabular-nums text-slate-600">{n}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-600">Filters the numbers, charts and tables below. Budget panels always show every status.</p>
+          </div>
+
+          <div className="relative mt-5 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
             {heroKpis.map((k) => (
               <div key={k.label} className="rounded-2xl border border-white/10 bg-white/[0.07] p-4">
                 <div className="text-xs font-medium text-slate-700">{k.label}</div>
                 <div className="mt-2 text-2xl font-semibold tracking-tight tabular-nums sm:text-[28px]">{k.value}</div>
-                <div className="mt-1 truncate text-xs text-slate-600">{k.sub}</div>
+                <div className="mt-1 truncate text-xs text-slate-600" title={k.sub}>{k.sub}</div>
                 {k.rate != null && <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/15"><div className="h-full rounded-full" style={{ width: `${clamp(k.rate, 2, 100)}%`, background: k.color }} /></div>}
               </div>
             ))}
@@ -877,14 +1202,31 @@ export default function FacebookAdsPage() {
 
         {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700"><span>{error}</span><button onClick={() => loadStats(search)} className="font-semibold underline">Try again</button></div>}
 
+        {!loading && counts.unknown > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            Active/Inactive status and budget are not loaded for {counts.unknown} of {counts.all} ads yet. Meta is checked in batches of {data?.metaLookupsLimit || 50} — press Refresh to load more.
+          </div>
+        )}
+
         {loading && !data ? (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-32 animate-pulse rounded-2xl bg-white ring-1 ring-slate-200" />)}</div>
         ) : (
           <>
- <Panel title="Insights" subtitle="Each card is about the ad it names">
-                  <InsightsPanel total={total} invalid={invalid} topWins={topWins} topQuality={topQuality} topPending={topPending} mostInvalid={mostInvalid} onPick={openAd} />
-                </Panel>
-            {/* PIPELINE + INSIGHTS */}
+            <Panel title="Insights" subtitle="Each card is about the ad it names">
+              <InsightsPanel total={total} invalid={invalid} topWins={topWins} topQuality={topQuality} topPending={topPending} mostInvalid={mostInvalid} budgetWaste={budgetWaste} onPick={openAd} />
+            </Panel>
+
+            {/* BUDGET + RUNNING VS STOPPED */}
+            <div className="grid min-w-0 grid-cols-1 items-start gap-4 xl:grid-cols-12">
+              <div className="min-w-0 xl:col-span-7">
+                <BudgetPanel units={budgetUnits} onPick={openAd} />
+              </div>
+              <div className="min-w-0 xl:col-span-5">
+                <RunningVsStopped allAds={allAds} units={budgetUnits} />
+              </div>
+            </div>
+
+            {/* PIPELINE */}
             <div className="grid min-w-0 grid-cols-1 items-start gap-4 xl:grid-cols-12">
               <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:col-span-8">
                 <Panel title="Lead funnel" subtitle="Layer shape is illustrative · numbers are real">
@@ -895,15 +1237,21 @@ export default function FacebookAdsPage() {
                     </div>
                   )}
                 </Panel>
-                  <Panel title="Cleanest ads" subtitle="Lowest invalid-lead rate, minimum 20 leads" className="mt-0">
+                <Panel title="Cleanest ads" subtitle="Lowest invalid-lead rate, minimum 20 leads" className="mt-0">
                   <div className="space-y-3">
                     {cleanest.map((a) => {
                       const m = adMetrics(a);
                       return (
                         <button key={a.adId} onClick={() => openAd(String(a.adId))} className="block w-full rounded-lg p-2 text-left transition hover:bg-slate-50">
-                          <div className="mb-1.5 flex justify-between gap-2"><span className="min-w-0 truncate text-xs font-medium text-slate-700" title={a.adName}>{a.adName || "Unnamed ad"}</span><span className="shrink-0 text-xs font-semibold tabular-nums text-emerald-600">{m.invalidRate.toFixed(1)}% invalid</span></div>
+                          <div className="mb-1.5 flex items-center justify-between gap-2">
+                            <span className="flex min-w-0 items-center gap-2">
+                              <RunBadge ad={a} small />
+                              <span className="min-w-0 truncate text-xs font-medium text-slate-700" title={a.adName}>{a.adName || "Unnamed ad"}</span>
+                            </span>
+                            <span className="shrink-0 text-xs font-semibold tabular-nums text-emerald-600">{m.invalidRate.toFixed(1)}% invalid</span>
+                          </div>
                           <Bar value={m.invalidRate} max={Math.max(10, ...cleanest.map((x) => adMetrics(x).invalidRate))} color="#10b981" />
-                          <div className="mt-1 text-[10px] text-slate-400">{num(m.total)} leads · {m.wonRate.toFixed(1)}% won</div>
+                          <div className="mt-1 text-[10px] text-slate-400">{num(m.total)} leads · {m.wonRate.toFixed(1)}% won · {budgetText(a)}</div>
                         </button>
                       );
                     })}
@@ -913,75 +1261,89 @@ export default function FacebookAdsPage() {
                 <div className="min-w-0 sm:col-span-2">
                   <CampaignAreaChart ads={ads} />
                 </div>
-                
+
                 <div className="min-w-0 sm:col-span-1">
                   <Panel title="Lead volume vs. quality" subtitle="Each dot is an ad · higher means a stronger warm-lead rate · bigger means more wins">
                     <Scatter ads={ads} onPick={openAd} />
                   </Panel>
                 </div>
                 <Panel title="Win-rate distribution" subtitle="How many ads actually convert?">
-                <WinRateDistribution ads={ads} />
-              </Panel>
-              <Panel title="Campaign win rate" subtitle="Which campaigns turn leads into wins?">
-                <CampaignQuality ads={ads} onPick={openAd} />
-              </Panel>
-             <Panel title="Latest activity" subtitle="Most recent lead timestamp available for each ad">
+                  <WinRateDistribution ads={ads} />
+                </Panel>
+                <Panel title="Campaign win rate" subtitle="Which campaigns turn leads into wins?">
+                  <CampaignQuality ads={ads} onPick={openAd} />
+                </Panel>
+                <Panel title="Latest activity" subtitle="Most recent lead timestamp available for each ad">
                   <div className="space-y-1">
                     {recent.map((a) => (
                       <button key={a.adId} onClick={() => openAd(String(a.adId))} className="flex w-full min-w-0 items-center justify-between gap-3 rounded-xl p-2 text-left transition hover:bg-slate-50">
-                        <div className="min-w-0"><p className="truncate text-sm font-medium text-slate-800">{txt(a.latestLead?.name, a.adName || "Unnamed lead")}</p><p className="mt-0.5 text-xs text-slate-500">{fmtDate(a.latestLead?.createdAt)} · {a.adName || "Unnamed ad"}</p></div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-slate-800">{txt(a.latestLead?.name, a.adName || "Unnamed lead")}</p>
+                          <p className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
+                            <RunBadge ad={a} small />
+                            <span className="truncate">{fmtDate(a.latestLead?.createdAt)} · {a.adName || "Unnamed ad"}</span>
+                          </p>
+                        </div>
                         <Pill status={txt(a.latestLead?.status, "Unassigned")} />
                       </button>
                     ))}
                     {!recent.length && <p className="py-4 text-sm text-slate-500">No recent lead timestamps are available.</p>}
                   </div>
                 </Panel>
+                <div className="min-w-0 sm:col-span-2">
+                  <Panel title="Lead activity" subtitle="Ads by the day of their most recent lead · last 14 days">
+                    <TrendChart ads={ads} />
+                  </Panel>
+                </div>
               </div>
 
               <div className="min-w-0 space-y-4 xl:col-span-4">
                 <Panel title="Ad health" subtitle="Top 5 ads · 10+ leads only · click to inspect">
                   <AdHealth ads={ads} onPick={openAd} />
                 </Panel>
-                 <Panel title="Lead status mix" subtitle="Share of leads by their current status">
+                <Panel title="Lead status mix" subtitle="Share of leads by their current status">
                   <Donut counts={sc} total={total} />
                   <p className="mt-3 text-center text-xs text-slate-500">Largest status: <span className="font-semibold text-slate-900">{largestStatus?.[0] || "—"}</span> ({largestStatus ? pctText(largestStatus[1], total, 0) : "—"})</p>
                   <StatusBars counts={sc} total={total} />
                 </Panel>
-               <div className="sm:col-span-3"><Leaderboard ads={ads} onPick={openAd} selected={selectedAdId} /></div>
-                
+                <Leaderboard ads={ads} onPick={openAd} selected={selectedAdId} />
               </div>
             </div>
 
-            {/* MORE CHARTS */}
-            <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
-              
-              
-            </div>
-
-         
-
             {/* TABLE */}
-            <Panel title="All ads" subtitle="Select any ad row to inspect its individual leads. Scroll horizontally for all status columns." right={<span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{num(ads.length)} ads</span>}>
+            <Panel title="All ads" subtitle="Select any ad row to inspect its individual leads. Scroll horizontally for budgets and all status columns." right={<span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{num(ads.length)} ads</span>}>
               <div className="max-h-[65vh] overflow-auto rounded-xl border border-slate-200">
-                <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
+                <table className="w-full min-w-[1500px] border-collapse text-left text-sm">
                   <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-slate-600"><tr>
-                    <th className="sticky left-0 z-20 min-w-[240px] bg-slate-50 px-4 py-3 font-semibold">Ad</th><th className="min-w-[190px] px-4 py-3 font-semibold">Campaign</th><th className="px-4 py-3 text-right font-semibold">Leads</th>
+                    <th className="sticky left-0 z-20 min-w-[240px] bg-slate-50 px-4 py-3 font-semibold">Ad</th>
+                    <th className="px-3 py-3 font-semibold">Running?</th>
+                    <th className="min-w-[190px] px-4 py-3 font-semibold">Campaign / ad set</th>
+                    <th className="px-3 py-3 font-semibold">Daily budget</th>
+                    <th className="px-3 py-3 font-semibold">Lifetime budget</th>
+                    <th className="px-4 py-3 text-right font-semibold">Leads</th>
                     {statusCols.map((s) => <th key={s} className="whitespace-nowrap px-3 py-3 text-right font-semibold" style={{ color: COLORS[s] }}>{s}</th>)}
                     <th className="whitespace-nowrap px-4 py-3 font-semibold">Latest lead</th>
                   </tr></thead>
                   <tbody>{ads.map((a) => {
                     const id = String(a.adId);
+                    const bg = selectedAdId === id ? "bg-indigo-50" : "bg-white";
                     return (
-                      <tr key={id} onClick={() => openAd(id)} className={`cursor-pointer border-t border-slate-100 transition hover:bg-indigo-50/60 ${selectedAdId === id ? "bg-indigo-50" : "bg-white"}`}>
-                        <td className={`sticky left-0 px-4 py-3 ${selectedAdId === id ? "bg-indigo-50" : "bg-white"}`}><div className="max-w-[220px] truncate font-medium text-slate-900">{a.adName || "Unnamed ad"}</div><div className="mt-1 font-mono text-[10px] text-slate-400">{id}</div></td>
-                        <td className="px-4 py-3"><div className="max-w-[220px] truncate text-slate-600" title={a.campaignName}>{a.campaignName || "—"}</div></td>
+                      <tr key={id} onClick={() => openAd(id)} className={`cursor-pointer border-t border-slate-100 transition hover:bg-indigo-50/60 ${bg}`}>
+                        <td className={`sticky left-0 px-4 py-3 ${bg}`}><div className="max-w-[220px] truncate font-medium text-slate-900">{a.adName || "Unnamed ad"}</div><div className="mt-1 font-mono text-[10px] text-slate-400">{id}</div></td>
+                        <td className="px-3 py-3"><RunBadge ad={a} showReason /></td>
+                        <td className="px-4 py-3">
+                          <div className="max-w-[220px] truncate text-slate-600" title={a.campaignName}>{a.campaignName || "—"}</div>
+                          <div className="max-w-[220px] truncate text-[11px] text-slate-400" title={a.adSetName}>{a.adSetName || ""}</div>
+                        </td>
+                        <td className="px-3 py-3"><DailyBudgetCell a={a} /></td>
+                        <td className="px-3 py-3"><LifetimeBudgetCell a={a} /></td>
                         <td className="px-4 py-3 text-right font-semibold tabular-nums">{num(a.totalLeads)}</td>
                         {statusCols.map((s) => { const v = Number(a.statuses?.[s]) || 0; const share = pct(v, a.totalLeads); return <td key={s} className="px-3 py-3 text-right tabular-nums" style={{ background: v ? `${COLORS[s]}${Math.round(Math.min(share * 1.3 + 8, 48)).toString(16).padStart(2, "0")}` : undefined, color: v ? "#334155" : "#cbd5e1" }}>{v || "–"}</td>; })}
                         <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">{fmtDate(a.latestLead?.createdAt)}</td>
                       </tr>
                     );
                   })}
-                  {!ads.length && <tr><td colSpan={statusCols.length + 4} className="p-10 text-center text-slate-500">No ads match this search.</td></tr>}</tbody>
+                  {!ads.length && <tr><td colSpan={statusCols.length + 7} className="p-10 text-center text-slate-500">No ads match this filter or search.</td></tr>}</tbody>
                 </table>
               </div>
             </Panel>
@@ -989,7 +1351,16 @@ export default function FacebookAdsPage() {
             {/* LEAD DETAILS */}
             {selectedAdId && (
               <div id="lead-details">
-                <Panel title={`Leads from ${selectedAd?.adName || "selected ad"}`} subtitle={`${selectedAd?.campaignName || ""} · ID ${selectedAdId}`} right={<button onClick={() => loadAdLeads("")} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">Close details ×</button>}>
+                <Panel
+                  title={`Leads from ${selectedAd?.adName || "selected ad"}`}
+                  subtitle={`${selectedAd?.campaignName || ""} · ID ${selectedAdId}${selectedAd ? ` · ${budgetText(selectedAd)}` : ""}`}
+                  right={
+                    <div className="flex items-center gap-2">
+                      {selectedAd && <RunBadge ad={selectedAd} showReason />}
+                      <button onClick={() => loadAdLeads("")} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">Close details ×</button>
+                    </div>
+                  }
+                >
                   <div className="mb-3 flex flex-wrap gap-1.5">
                     {leadStatuses.map((s) => (
                       <button key={s} onClick={() => setLeadStatus(s)} className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${leadStatus === s ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{s}</button>
@@ -1008,7 +1379,7 @@ export default function FacebookAdsPage() {
             )}
           </>
         )}
-        <footer className="pb-2 text-center text-[11px] text-slate-400">Facebook Ads analytics · Metrics reflect the data returned by your current API.</footer>
+        <footer className="pb-2 text-center text-[11px] text-slate-400">Facebook Ads analytics · Active/Inactive status and budgets come from Meta and are cached once a day · metrics reflect the data returned by your current API.</footer>
       </div>
     </main>
   );

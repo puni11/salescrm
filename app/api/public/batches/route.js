@@ -11,6 +11,11 @@ const VALID_STATUSES = [
   "upcoming",
   "completed",
 ];
+
+/* =========================================================
+   DATABASE
+========================================================= */
+
 async function getCollection() {
   const client = await clientPromise;
   const db = client.db("sales");
@@ -20,6 +25,194 @@ async function getCollection() {
     collection: db.collection(COLLECTION),
   };
 }
+
+/* =========================================================
+   SESSION PIPELINE
+========================================================= */
+
+const buildSessionPipeline = (sessionStatus, sortOrder) => [
+  {
+    $match: {
+      $expr: {
+        $and: [
+          // Supports batchId stored as ObjectId or string.
+          {
+            $eq: [
+              { $toString: "$batchId" },
+              { $toString: "$$batchObjectId" },
+            ],
+          },
+          {
+            $eq: ["$status", sessionStatus],
+          },
+        ],
+      },
+    },
+  },
+
+  // Get the latest matching session.
+  {
+    $sort: sortOrder,
+  },
+
+  {
+    $limit: 1,
+  },
+
+  /* =========================================
+     TOOL LOOKUP
+  ========================================= */
+
+  {
+    $lookup: {
+      from: "tools",
+      let: {
+        sessionToolId: "$toolId",
+      },
+      pipeline: [
+        {
+          $match: {
+            $expr: {
+              $eq: [
+                { $toString: "$_id" },
+                { $toString: "$$sessionToolId" },
+              ],
+            },
+          },
+        },
+        {
+          $project: {
+            _id: 1,
+            name: 1,
+            shortName: 1,
+          },
+        },
+      ],
+      as: "toolDetails",
+    },
+  },
+
+  /* =========================================
+     TRAINER LOOKUP
+  ========================================= */
+
+  {
+    $lookup: {
+      from: "trainers",
+      let: {
+        sessionToolId: "$toolId",
+        assignments: "$$batchAssignments",
+      },
+      pipeline: [
+        {
+          $match: {
+            $expr: {
+              $in: [
+                { $toString: "$_id" },
+                {
+                  $map: {
+                    input: {
+                      $filter: {
+                        input: {
+                          $ifNull: [
+                            "$$assignments",
+                            [],
+                          ],
+                        },
+                        as: "assignment",
+                        cond: {
+                          $eq: [
+                            { $toString: "$$assignment.toolId" },
+                            { $toString: "$$sessionToolId" },
+                          ],
+                        },
+                      },
+                    },
+                    as: "assignment",
+                    in: {
+                      $toString: "$$assignment.trainerId",
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+
+        {
+          $limit: 1,
+        },
+
+        {
+          $project: {
+            _id: 1,
+            name: 1,
+          },
+        },
+      ],
+      as: "trainerDetails",
+    },
+  },
+
+  /* =========================================
+     FORMAT SESSION
+  ========================================= */
+
+  {
+    $project: {
+      _id: 1,
+      date: 1,
+
+      endDate: {
+        $ifNull: ["$endDate", "$date"],
+      },
+
+      time: 1,
+      status: 1,
+
+      toolName: {
+        $ifNull: [
+          {
+            $arrayElemAt: [
+              "$toolDetails.name",
+              0,
+            ],
+          },
+          "N/A",
+        ],
+      },
+
+      toolShortName: {
+        $ifNull: [
+          {
+            $arrayElemAt: [
+              "$toolDetails.shortName",
+              0,
+            ],
+          },
+          "",
+        ],
+      },
+
+      trainerName: {
+        $ifNull: [
+          {
+            $arrayElemAt: [
+              "$trainerDetails.name",
+              0,
+            ],
+          },
+          "N/A",
+        ],
+      },
+    },
+  },
+];
+
+/* =========================================================
+   GET API
+========================================================= */
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -29,308 +222,209 @@ export async function GET(request) {
     const courseId = searchParams.get("courseId");
 
     const { collection } = await getCollection();
- 
-    // =========================================
-    // VALIDATION
-    // =========================================
+
+    /* =========================================
+       VALIDATION
+    ========================================= */
 
     if (id && !ObjectId.isValid(id)) {
       return NextResponse.json(
-        { success: false, message: "Invalid batch ID" },
+        {
+          success: false,
+          message: "Invalid batch ID",
+        },
         { status: 400 }
       );
     }
 
-    if (status && !VALID_STATUSES.includes(status)) {
+    if (
+      status &&
+      !VALID_STATUSES.includes(status)
+    ) {
       return NextResponse.json(
-        { success: false, message: "Invalid batch status" },
+        {
+          success: false,
+          message: "Invalid batch status",
+        },
         { status: 400 }
       );
     }
 
-    if (courseId && !ObjectId.isValid(courseId)) {
+    if (
+      courseId &&
+      !ObjectId.isValid(courseId)
+    ) {
       return NextResponse.json(
-        { success: false, message: "Invalid course ID" },
+        {
+          success: false,
+          message: "Invalid course ID",
+        },
         { status: 400 }
       );
     }
 
-    // =========================================
-    // BUILD FILTER
-    // =========================================
+    /* =========================================
+       BUILD FILTER
+    ========================================= */
 
     const filter = {};
 
-    if (id) filter._id = new ObjectId(id);
-    if (status) filter.status = status;
-    if (courseId) filter.courseId = courseId;
+    if (id) {
+      filter._id = new ObjectId(id);
+    }
 
-    // =========================================
-    // SESSION PIPELINE
-    // =========================================
+    if (status) {
+      filter.status = status;
+    }
 
-    const buildSessionPipeline = (sessionStatus, sortOrder) => [
-      {
-        $match: {
-          $expr: {
-            $and: [
-              { $eq: ["$batchId", "$$batchObjectId"] },
-              { $eq: ["$status", sessionStatus] },
-            ],
+    if (courseId) {
+      filter.courseId = courseId;
+    }
+
+    /* =========================================
+       FETCH ALL MATCHING BATCHES
+    ========================================= */
+
+    const batches = await collection
+      .aggregate([
+        {
+          $match: filter,
+        },
+
+        /* =====================================
+           UPCOMING SESSION
+        ===================================== */
+
+        {
+          $lookup: {
+            from: "sessions",
+            let: {
+              batchObjectId: "$_id",
+              batchAssignments: {
+                $ifNull: [
+                  "$toolTrainerAssignments",
+                  [],
+                ],
+              },
+            },
+            pipeline: buildSessionPipeline(
+              "upcoming",
+              {
+                date: 1,
+                time: 1,
+              }
+            ),
+            as: "upcomingSessions",
           },
         },
-      },
 
-      { $sort: sortOrder },
-      { $limit: 1 },
+        /* =====================================
+           ONGOING SESSION
+        ===================================== */
 
-      // =========================================
-      // TOOL LOOKUP
-      // =========================================
-
-      {
-        $lookup: {
-          from: "tools",
-          let: {
-            sessionToolId: "$toolId",
+        {
+          $lookup: {
+            from: "sessions",
+            let: {
+              batchObjectId: "$_id",
+              batchAssignments: {
+                $ifNull: [
+                  "$toolTrainerAssignments",
+                  [],
+                ],
+              },
+            },
+            pipeline: buildSessionPipeline(
+              "ongoing",
+              {
+                date: -1,
+                time: -1,
+              }
+            ),
+            as: "ongoingSessions",
           },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $eq: [
-                    { $toString: "$_id" },
-                    "$$sessionToolId",
+        },
+
+        /* =====================================
+           ADD SESSION DATA
+        ===================================== */
+
+        {
+          $addFields: {
+            latestUpcomingSession: {
+              $ifNull: [
+                {
+                  $arrayElemAt: [
+                    "$upcomingSessions",
+                    0,
                   ],
                 },
-              },
+                null,
+              ],
             },
-            {
-              $project: {
-                _id: 1,
-                name: 1,
-                shortName: 1,
-              },
-            },
-          ],
-          as: "toolDetails",
-        },
-      },
 
-      // =========================================
-      // TRAINER LOOKUP
-      // =========================================
-
-      {
-        $lookup: {
-          from: "trainers",
-          let: {
-            sessionToolId: "$toolId",
-            assignments: "$$batchAssignments",
-          },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $in: [
-                    { $toString: "$_id" },
-                    {
-                      $map: {
-                        input: {
-                          $filter: {
-                            input: {
-                              $ifNull: ["$$assignments", []],
-                            },
-                            as: "assignment",
-                            cond: {
-                              $eq: [
-                                "$$assignment.toolId",
-                                "$$sessionToolId",
-                              ],
-                            },
-                          },
-                        },
-                        as: "assignment",
-                        in: "$$assignment.trainerId",
-                      },
-                    },
+            latestOngoingSession: {
+              $ifNull: [
+                {
+                  $arrayElemAt: [
+                    "$ongoingSessions",
+                    0,
                   ],
                 },
-              },
-            },
-            { $limit: 1 },
-            {
-              $project: {
-                _id: 1,
-                name: 1,
-              },
-            },
-          ],
-          as: "trainerDetails",
-        },
-      },
-
-      // =========================================
-      // FORMAT PUBLIC SESSION
-      // =========================================
-
-      {
-        $project: {
-          _id: 1,
-          date: 1,
-
-          endDate: {
-            $ifNull: ["$endDate", "$date"],
-          },
-
-          time: 1,
-          status: 1,
-
-          toolName: {
-            $ifNull: [
-              { $arrayElemAt: ["$toolDetails.name", 0] },
-              "N/A",
-            ],
-          },
-
-          toolShortName: {
-            $ifNull: [
-              { $arrayElemAt: ["$toolDetails.shortName", 0] },
-              "",
-            ],
-          },
-
-          trainerName: {
-            $ifNull: [
-              { $arrayElemAt: ["$trainerDetails.name", 0] },
-              "N/A",
-            ],
-          },
-        },
-      },
-    ];
-
-    // =========================================
-    // FETCH BATCHES
-    // =========================================
-
-    const batches = await collection.aggregate([
-      {
-        $match: filter,
-      },
-
-      // =========================================
-      // UPCOMING SESSION
-      // =========================================
-
-      {
-        $lookup: {
-          from: "sessions",
-          let: {
-            batchObjectId: "$_id",
-            batchAssignments: {
-              $ifNull: ["$toolTrainerAssignments", []],
+                null,
+              ],
             },
           },
-          pipeline: buildSessionPipeline("upcoming", {
-            date: 1,
-            time: 1,
-          }),
-          as: "upcomingSessions",
         },
-      },
 
-      // =========================================
-      // ONGOING SESSION
-      // =========================================
+        /* =====================================
+           PUBLIC BATCH FIELDS
+           
+           IMPORTANT:
+           No session-based $match here.
+           Every batch matching the filters
+           will be returned.
+        ===================================== */
 
-      {
-        $lookup: {
-          from: "sessions",
-          let: {
-            batchObjectId: "$_id",
-            batchAssignments: {
-              $ifNull: ["$toolTrainerAssignments", []],
-            },
-          },
-          pipeline: buildSessionPipeline("ongoing", {
-            date: -1,
-            time: -1,
-          }),
-          as: "ongoingSessions",
-        },
-      },
+        {
+          $project: {
+            _id: 1,
+            name: 1,
+            batchName: 1,
+            courseId: 1,
+            status: 1,
 
-      // =========================================
-      // ADD SESSION DATA
-      // =========================================
+            startingDate: 1,
+            endingDate: 1,
+            startingTime: 1,
+            endingTime: 1,
 
-      {
-        $addFields: {
-          latestUpcomingSession: {
-            $ifNull: [
-              { $arrayElemAt: ["$upcomingSessions", 0] },
-              null,
-            ],
-          },
+            latestUpcomingSession: 1,
+            latestOngoingSession: 1,
 
-          latestOngoingSession: {
-            $ifNull: [
-              { $arrayElemAt: ["$ongoingSessions", 0] },
-              null,
-            ],
+            createdAt: 1,
           },
         },
-      },
 
-      // =========================================
-      // ONLY UPCOMING / ONGOING BATCHES
-      // =========================================
-
-      {
-        $match: {
-          $or: [
-            { latestUpcomingSession: { $ne: null } },
-            { latestOngoingSession: { $ne: null } },
-          ],
+        {
+          $sort: {
+            createdAt: -1,
+          },
         },
-      },
+      ])
+      .toArray();
 
-      // =========================================
-      // PUBLIC BATCH FIELDS
-      // =========================================
-
-      {
-        $project: {
-          _id: 1,
-          name: 1,
-          batchName: 1,
-          courseId: 1,
-          status: 1,
-
-          startingDate: 1,
-          endingDate: 1,
-          startingTime: 1,
-          endingTime: 1,
-
-          latestUpcomingSession: 1,
-          latestOngoingSession: 1,
-
-          createdAt: 1,
-        },
-      },
-
-      { $sort: { createdAt: -1 } },
-    ]).toArray();
-
-    // =========================================
-    // FORMAT PUBLIC RESPONSE
-    // =========================================
+    /* =========================================
+       FORMAT PUBLIC RESPONSE
+    ========================================= */
 
     const publicBatches = batches.map((batch) => ({
       _id: batch._id,
 
-      name: batch.name || batch.batchName || "Untitled Batch",
+      name:
+        batch.name ||
+        batch.batchName ||
+        "Untitled Batch",
 
       courseId: batch.courseId || null,
 
@@ -342,34 +436,46 @@ export async function GET(request) {
       startingTime: batch.startingTime || null,
       endingTime: batch.endingTime || null,
 
-      latestUpcomingSession: batch.latestUpcomingSession
-        ? {
-            date: batch.latestUpcomingSession.date,
-            endDate: batch.latestUpcomingSession.endDate,
-            time: batch.latestUpcomingSession.time,
-            status: batch.latestUpcomingSession.status,
-            toolName: batch.latestUpcomingSession.toolName,
-            toolShortName: batch.latestUpcomingSession.toolShortName,
-            trainerName: batch.latestUpcomingSession.trainerName,
-          }
-        : null,
+      latestUpcomingSession:
+        batch.latestUpcomingSession
+          ? {
+              _id: batch.latestUpcomingSession._id,
+              date: batch.latestUpcomingSession.date,
+              endDate:
+                batch.latestUpcomingSession.endDate,
+              time: batch.latestUpcomingSession.time,
+              status: batch.latestUpcomingSession.status,
+              toolName:
+                batch.latestUpcomingSession.toolName,
+              toolShortName:
+                batch.latestUpcomingSession.toolShortName,
+              trainerName:
+                batch.latestUpcomingSession.trainerName,
+            }
+          : null,
 
-      latestOngoingSession: batch.latestOngoingSession
-        ? {
-            date: batch.latestOngoingSession.date,
-            endDate: batch.latestOngoingSession.endDate,
-            time: batch.latestOngoingSession.time,
-            status: batch.latestOngoingSession.status,
-            toolName: batch.latestOngoingSession.toolName,
-            toolShortName: batch.latestOngoingSession.toolShortName,
-            trainerName: batch.latestOngoingSession.trainerName,
-          }
-        : null,
+      latestOngoingSession:
+        batch.latestOngoingSession
+          ? {
+              _id: batch.latestOngoingSession._id,
+              date: batch.latestOngoingSession.date,
+              endDate:
+                batch.latestOngoingSession.endDate,
+              time: batch.latestOngoingSession.time,
+              status: batch.latestOngoingSession.status,
+              toolName:
+                batch.latestOngoingSession.toolName,
+              toolShortName:
+                batch.latestOngoingSession.toolShortName,
+              trainerName:
+                batch.latestOngoingSession.trainerName,
+            }
+          : null,
     }));
 
-    // =========================================
-    // SINGLE BATCH RESPONSE
-    // =========================================
+    /* =========================================
+       SINGLE BATCH RESPONSE
+    ========================================= */
 
     if (id) {
       if (!publicBatches.length) {
@@ -388,9 +494,9 @@ export async function GET(request) {
       });
     }
 
-    // =========================================
-    // ALL PUBLIC BATCHES
-    // =========================================
+    /* =========================================
+       ALL BATCHES RESPONSE
+    ========================================= */
 
     return NextResponse.json(
       {
@@ -405,9 +511,11 @@ export async function GET(request) {
         },
       }
     );
-
   } catch (error) {
-    console.error("Public batches API error:", error);
+    console.error(
+      "Public batches API error:",
+      error
+    );
 
     return NextResponse.json(
       {

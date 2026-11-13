@@ -328,6 +328,15 @@ export async function GET(req) {
         count: Number((rawStats.averageCallTime || 0).toFixed(2)),
         trend: calcTrend(rawStats.c4_avgTime, rawStats.p4_avgTime),
       },
+      totalCallTime: {
+  count: Number(
+    ((rawStats.totalCalls || 0) * (rawStats.averageCallTime || 0)).toFixed(2)
+  ),
+  trend: calcTrend(
+    rawStats.c4_totalCallTime,
+    rawStats.p4_totalCallTime
+  ),
+},
     };
  
     // --------------------------------------------------
