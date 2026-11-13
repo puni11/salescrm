@@ -329,7 +329,7 @@ export async function GET(req) {
         trend: calcTrend(rawStats.c4_avgTime, rawStats.p4_avgTime),
       },
     };
-
+ 
     // --------------------------------------------------
     // 4. Counsellor names for the page's rows
     // --------------------------------------------------

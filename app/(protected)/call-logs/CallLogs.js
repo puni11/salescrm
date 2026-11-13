@@ -151,7 +151,7 @@ export default function CallLogsPage({ id, session }) {
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
 
   const [page, setPage] = useState(1);
-  const [pages, setPages] = useState(0);
+  const [pages, setPages] = useState(0); 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 500);
 

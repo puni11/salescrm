@@ -779,7 +779,7 @@ export default function App({ session }) {
                   size={14}
                   className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[#9B9A97]"
                 />
-                <input
+                <input 
                   ref={searchRef}
                   type="text"
                   value={search}
