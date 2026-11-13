@@ -84,6 +84,64 @@ const tagColor = (key = "") => {
 
 const hoverBg = "hover:bg-[rgba(55,53,47,0.06)]";
 
+// Sort order for tool chips: completed first, then ongoing, upcoming, not scheduled.
+const TOOL_STATE_ORDER = {
+  completed: 0,
+  ongoing: 1,
+  upcoming: 2,
+  notScheduled: 3,
+};
+
+const toIdString = (value) => (value ? String(value) : null);
+
+/**
+ * Work out the state of every tool in a batch.
+ * `toolCompletions` is the source of truth for completed tools; the session
+ * fields are used for ongoing / upcoming, and as a fallback for completed.
+ */
+function getToolStates(batch, batchTools) {
+  const completedAtByTool = new Map(
+    (batch.toolCompletions || []).map((c) => [
+      String(c.toolId),
+      c.completedAt ? new Date(c.completedAt).getTime() : 0,
+    ])
+  );
+
+  const ongoingId = toIdString(batch.latestOngoingSession?.toolId);
+  const upcomingId = toIdString(batch.latestUpcomingSession?.toolId);
+  const completedSessionId = toIdString(batch.latestCompletedSession?.toolId);
+
+  return batchTools
+    .map((tool) => {
+      const toolId = String(tool._id);
+      let state = "notScheduled";
+
+      if (completedAtByTool.has(toolId)) {
+        state = "completed";
+      } else if (ongoingId === toolId) {
+        state = "ongoing";
+      } else if (upcomingId === toolId) {
+        state = "upcoming";
+      } else if (completedSessionId === toolId) {
+        // Fallback: completed session without a toolCompletions entry
+        state = "completed";
+      }
+
+      return {
+        tool,
+        state,
+        order: TOOL_STATE_ORDER[state],
+        completedAt: completedAtByTool.get(toolId) || 0,
+      };
+    })
+    .sort((a, b) => {
+      if (a.order !== b.order) return a.order - b.order;
+      // Completed tools: oldest completion first
+      if (a.state === "completed") return a.completedAt - b.completedAt;
+      return 0;
+    });
+}
+
 /* ---------- small building blocks ---------- */
 
 function Pill({ className = "", children }) {
@@ -135,7 +193,8 @@ function ToolChip({ name, state }) {
     ongoing: "bg-[#DBEDDB] text-[#1C3829]",
     upcoming: "bg-[#37352F] text-white",
     notScheduled: "bg-[#37352F] text-white",
-    completed: "bg-transparent text-[#B8B7B2] opacity-60",
+    completed:
+      "bg-[rgba(55,53,47,0.05)] text-[#9B9A97] line-through decoration-[#C7C6C3] opacity-70",
   };
   const titles = {
     ongoing: "Ongoing",
@@ -152,7 +211,7 @@ function ToolChip({ name, state }) {
       {state === "ongoing" && (
         <span className="h-1.5 w-1.5 rounded-full bg-[#2F9E5B]" />
       )}
-      {state === "completed" && <Check size={11} />}
+      {state === "completed" && <Check size={11} className="no-underline" />}
       {name}
     </span>
   );
@@ -610,6 +669,7 @@ export default function BatchManager() {
             const batchTools = (batch.tools || [])
               .map((id) => getTool(id))
               .filter(Boolean);
+            const toolStates = getToolStates(batch, batchTools);
 
             const statusKey = batch.status || "inactive";
             const timing =
@@ -626,25 +686,24 @@ export default function BatchManager() {
                   {/* Identity */}
                   <div className="min-w-0 sm:col-span-2 lg:col-span-1">
                     <div className="flex items-center gap-2">
-                    <Link
-                      href={`/batches/${batch._id}`}
-                      className="block truncate text-[15px] font-semibold text-[#37352F] hover:underline hover:decoration-[#9B9A97] hover:underline-offset-[3px]"
-                    >
-                      {batch.name}
-                    </Link>
-                     <div className="">
-                      {course ? (
-                        <Pill className={tagColor(course._id)}>
-                          Course - {course.name}
-                        </Pill>
-                      ) : (
-                        <span className="text-xs text-[#C7C6C3]">
-                          Course unavailable
-                        </span>
-                      )}
+                      <Link
+                        href={`/batches/${batch._id}`}
+                        className="block truncate text-[15px] font-semibold text-[#37352F] hover:underline hover:decoration-[#9B9A97] hover:underline-offset-[3px]"
+                      >
+                        {batch.name}
+                      </Link>
+                      <div>
+                        {course ? (
+                          <Pill className={tagColor(course._id)}>
+                            Course - {course.name}
+                          </Pill>
+                        ) : (
+                          <span className="text-xs text-[#C7C6C3]">
+                            Course unavailable
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    </div>
-                   
 
                     <div className="mt-2.5 space-y-1 text-xs text-[#787774]">
                       <p className="flex items-center gap-1.5">
@@ -657,8 +716,6 @@ export default function BatchManager() {
                       </p>
                     </div>
                   </div>
-
-               
 
                   {/* Ongoing */}
                   <SessionBlock
@@ -730,47 +787,15 @@ export default function BatchManager() {
                     Tools
                   </div>
 
-                  {batchTools.length ? (
+                  {toolStates.length ? (
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {batchTools
-                        .map((tool) => {
-                          const toolId = String(tool._id);
-                          const sessionToolId = (session) =>
-                            session?.toolId ? String(session.toolId) : null;
-
-                          let state = "notScheduled";
-
-                          // A tool currently running or planned takes precedence
-                          // over its previous completed session.
-                          if (sessionToolId(batch.latestOngoingSession) === toolId) {
-                            state = "ongoing";
-                          } else if (sessionToolId(batch.latestUpcomingSession) === toolId) {
-                            state = "upcoming";
-                          } else if (sessionToolId(batch.latestCompletedSession) === toolId) {
-                            state = "completed";
-                          }
-
-                          const order = {
-                            completed: 0,
-                            ongoing: 1,
-                            upcoming: 2,
-                            notScheduled: 3,
-                          };
-
-                          return {
-                            tool,
-                            state,
-                            order: order[state],
-                          };
-                        })
-                        .sort((a, b) => a.order - b.order)
-                        .map(({ tool, state }) => (
-                          <ToolChip
-                            key={tool._id}
-                            name={getToolDisplayName(tool)}
-                            state={state}
-                          />
-                        ))}
+                      {toolStates.map(({ tool, state }) => (
+                        <ToolChip
+                          key={tool._id}
+                          name={getToolDisplayName(tool)}
+                          state={state}
+                        />
+                      ))}
                     </div>
                   ) : (
                     <span className="text-xs text-[#C7C6C3]">No tools</span>
