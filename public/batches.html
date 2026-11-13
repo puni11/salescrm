@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Explore upcoming and ongoing training batches." />
+  <title>Batches</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --page: #f5f6f8;
+      --panel: #ffffff;
+      --ink: #121826;
+      --body: #344054;
+      --muted: #667085;
+      --faint: #a4abb8;
+      --border: #e7e9ee;
+      --hover: #fafbfc;
+      --slate: #1b2333;
+      --green: #1f9d57;
+      --green-bg: #e8f6ee;
+      --green-ink: #167244;
+      --amber-bg: #fff4d6;
+      --amber-ink: #8a5a00;
+      --rose-bg: #ffe8e6;
+      --rose-ink: #b42318;
+      --indigo: #4457d8;
+      --indigo-bg: #eceefd;
+    }
+
+    html { -webkit-font-smoothing: antialiased; }
+
+    body {
+      font-family: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--page);
+      color: var(--ink);
+      min-height: 100vh;
+      font-feature-settings: "tnum" 1;
+    }
+
+    .page { max-width: 1240px; margin: 0 auto; padding: 48px 24px 72px; }
+
+    .head h1 { font-size: 34px; font-weight: 800; letter-spacing: -1.1px; line-height: 1.1; }
+    .sub { color: var(--muted); font-size: 15px; margin-top: 10px; line-height: 1.6; max-width: 560px; }
+
+    .panel {
+      margin-top: 30px; background: var(--panel);
+      border: 1px solid var(--border); border-radius: 16px;
+      box-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .04);
+      overflow: hidden;
+    }
+
+    /* Tabs + search */
+    .bar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 14px; flex-wrap: wrap; padding: 0 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tabs { display: flex; gap: 22px; overflow-x: auto; }
+    .tab {
+      border: 0; background: none; cursor: pointer; font: inherit;
+      font-size: 14px; font-weight: 600; color: var(--muted); padding: 17px 0 15px;
+      display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+      border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .15s;
+    }
+    .tab:hover { color: var(--ink); }
+    .tab.active { color: var(--ink); border-bottom-color: var(--ink); }
+    .tab .count {
+      background: #f0f1f4; color: var(--muted);
+      font-size: 11.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+    }
+    .tab.active .count { background: var(--ink); color: #fff; }
+
+    .search-wrap { position: relative; width: min(280px, 100%); margin: 8px 0; }
+    .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--faint); }
+    .search {
+      width: 100%; border: 1px solid var(--border); outline: none; background: var(--hover);
+      border-radius: 10px; font: inherit; font-size: 13.5px; padding: 10px 12px 10px 34px; color: var(--ink);
+      transition: border-color .15s, box-shadow .15s, background .15s;
+    }
+    .search::placeholder { color: var(--faint); }
+    .search:focus { background: #fff; border-color: var(--indigo); box-shadow: 0 0 0 3px var(--indigo-bg); }
+
+    /* Rows */
+    .row { padding: 22px 24px 0; border-bottom: 1px solid var(--border); transition: background .15s; }
+    .row:last-child { border-bottom: 0; }
+    .row:hover { background: var(--hover); }
+    .row-main {
+      display: grid;
+      grid-template-columns: minmax(260px, 1.15fr) 1fr 1fr 96px;
+      gap: 28px; align-items: start; padding-bottom: 20px;
+    }
+
+    .title-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .name { font-size: 16px; font-weight: 700; letter-spacing: -0.25px; }
+    .course {
+      font-size: 11.5px; font-weight: 600; padding: 4px 9px; border-radius: 6px;
+      background: var(--amber-bg); color: var(--amber-ink);
+    }
+    .course.alt { background: var(--rose-bg); color: var(--rose-ink); }
+
+    .meta { margin-top: 14px; display: grid; gap: 8px; }
+    .meta div { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; font-weight: 500; }
+    .meta svg { flex: none; color: var(--faint); }
+
+    .col-label {
+      display: flex; align-items: center; gap: 7px; margin-bottom: 10px;
+      font-size: 12px; font-weight: 600; color: var(--muted);
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+    .col-label.ongoing .dot { background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); }
+    .col-label.upcoming .dot { background: var(--indigo); box-shadow: 0 0 0 3px var(--indigo-bg); }
+    .none { color: var(--faint); font-size: 14px; font-weight: 500; }
+    .tool-name { font-size: 14px; font-weight: 650; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .trainer { display: flex; align-items: center; gap: 8px; color: var(--body); font-size: 12.5px; font-weight: 500; margin-top: 8px; }
+    .avatar {
+      width: 20px; height: 20px; border-radius: 50%; flex: none;
+      background: var(--indigo-bg); color: var(--indigo);
+      font-size: 9.5px; font-weight: 700; display: grid; place-items: center;
+    }
+    .end { color: var(--muted); font-size: 12px; font-weight: 500; margin-top: 6px; }
+
+    .status-pill {
+      justify-self: end; display: inline-flex; align-items: center; gap: 6px;
+      background: var(--green-bg); color: var(--green-ink);
+      font-size: 12.5px; font-weight: 700; padding: 6px 12px; border-radius: 999px;
+    }
+    .status-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+    .tools-row { border-top: 1px dashed var(--border); padding: 16px 0 20px; }
+    .tools-label { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: .6px; text-transform: uppercase; margin-bottom: 10px; }
+    .tools { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tool { background: var(--slate); color: #fff; font-size: 12.5px; font-weight: 600; padding: 5px 10px; border-radius: 7px; }
+    .tool.live { background: var(--green-bg); color: var(--green-ink); }
+    .tool.live::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-right: 7px; vertical-align: 1px; }
+    .tool.done { background: none; color: var(--faint); padding-left: 0; }
+
+    .state { text-align: center; color: var(--muted); font-size: 14px; padding: 72px 20px; line-height: 1.7; }
+    .retry { margin-top: 14px; padding: 10px 18px; border: 0; background: var(--slate); color: #fff; border-radius: 9px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+
+    .tab:focus-visible, .retry:focus-visible { outline: 2px solid var(--indigo); outline-offset: 3px; border-radius: 4px; }
+
+    @media (max-width: 900px) {
+      .row-main { grid-template-columns: 1fr 1fr; position: relative; }
+      .title-block { grid-column: 1 / -1; padding-right: 100px; }
+      .status-pill { position: absolute; top: 0; right: 0; }
+    }
+    @media (max-width: 520px) {
+      .page { padding: 32px 14px 56px; }
+      .bar, .row { padding-left: 16px; padding-right: 16px; }
+      .row-main { grid-template-columns: 1fr; gap: 18px; }
+      .title-block { padding-right: 0; }
+      .status-pill { position: static; justify-self: start; order: -1; }
+      .head h1 { font-size: 28px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <div class="head">
+      <h1>Batches</h1>
+      <p class="sub">Course schedules, tools, and trainer assignments.</p>
+    </div>
+
+    <div class="panel">
+    <div class="bar">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-filter="all" role="tab">All <span class="count" id="cAll">0</span></button>
+        <button class="tab" data-filter="upcoming" role="tab">Upcoming <span class="count" id="cUpcoming">0</span></button>
+        <button class="tab" data-filter="ongoing" role="tab">Ongoing <span class="count" id="cOngoing">0</span></button>
+      </div>
+
+      <div class="search-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input class="search" id="searchInput" type="search" placeholder="Search" aria-label="Search batches, tools or trainers" />
+      </div>
+    </div>
+
+    <div id="batchList"><div class="state">Loading batches...</div></div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "/api/public/batches";
+
+    let batches = [];
+    let currentFilter = "all";
+
+    const list = document.getElementById("batchList");
+    const searchInput = document.getElementById("searchInput");
+
+    const ICON = {
+      cal: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+      clock: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+      user: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
+      wrench: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg>',
+      check: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12l5 5 9-10"/></svg>',
+    };
+
+    function escapeHTML(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
+      })[c]);
+    }
+
+    function formatDate(value) {
+      if (!value) return "";
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return String(value);
+      return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    }
+
+    function initials(n) {
+      if (!n) return "?";
+      return n.trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase();
+    }
+
+    function getBatchName(b) { return b.name || b.batchName || "Untitled Batch"; }
+    function getCourse(b) { return b.courseName || b.course?.name || b.courseTitle || ""; }
+
+    function getTiming(b) {
+      const t = [b.startingTime, b.endingTime].filter(Boolean).join(" – ");
+      return t || "Time not set";
+    }
+
+    // Tools: supports ["Jenkins"] or [{name|toolName|toolShortName, status}]
+    function getTools(b) {
+      const raw = b.tools || b.toolList || [];
+      if (!Array.isArray(raw)) return [];
+      return raw.map((t) => {
+        if (typeof t === "string") return { name: t, state: "" };
+        return {
+          name: t.toolShortName || t.toolName || t.name || "",
+          state: t.status || t.state || "",
+        };
+      }).filter((t) => t.name);
+    }
+
+    function renderSession(session, kind) {
+      const label = `<div class="col-label ${kind}"><span class="dot"></span>${kind === "ongoing" ? "Ongoing" : "Upcoming"}</div>`;
+      if (!session) return `<div>${label}<div class="none">Nothing scheduled</div></div>`;
+
+      const end = session.endDate ? formatDate(session.endDate) : "";
+      const start = session.date ? formatDate(session.date) : "";
+      const dateLine = kind === "ongoing"
+        ? (end ? `Ends ${end}` : "")
+        : (start ? `Starts ${start}` : "");
+
+      return `<div>
+        ${label}
+        <div class="tool-name" title="${escapeHTML(session.toolName)}">${escapeHTML(session.toolName || "Training Session")}</div>
+        <div class="trainer"><span class="avatar">${escapeHTML(initials(session.trainerName))}</span>${escapeHTML(session.trainerName || "Not assigned")}</div>
+        ${dateLine ? `<div class="end">${escapeHTML(dateLine)}</div>` : ""}
+      </div>`;
+    }
+
+    function updateCounts() {
+      document.getElementById("cAll").textContent = batches.length;
+      document.getElementById("cUpcoming").textContent = batches.filter((b) => b.latestUpcomingSession).length;
+      document.getElementById("cOngoing").textContent = batches.filter((b) => b.latestOngoingSession).length;
+    }
+
+    function renderBatches() {
+      const search = searchInput.value.trim().toLowerCase();
+
+      const filtered = batches.filter((b) => {
+        if (currentFilter === "ongoing" && !b.latestOngoingSession) return false;
+        if (currentFilter === "upcoming" && !b.latestUpcomingSession) return false;
+
+        const sessions = [b.latestOngoingSession, b.latestUpcomingSession].filter(Boolean);
+        const text = [
+          getBatchName(b), getCourse(b), b.courseId,
+          ...sessions.flatMap((s) => [s.toolName, s.toolShortName, s.trainerName]),
+          ...getTools(b).map((t) => t.name),
+        ].filter(Boolean).join(" ").toLowerCase();
+
+        return text.includes(search);
+      });
+
+      if (!filtered.length) {
+        list.innerHTML = `<div class="state">No batches found.</div>`;
+        return;
+      }
+
+      list.innerHTML = filtered.map((b, i) => {
+        const course = getCourse(b);
+        const tools = getTools(b);
+        const ongoingName = b.latestOngoingSession?.toolName;
+
+        return `
+          <article class="row">
+            <div class="row-main">
+              <div class="title-block">
+                <div class="title-line">
+                  <span class="name">${escapeHTML(getBatchName(b))}</span>
+                  ${course ? `<span class="course ${/genai/i.test(course) ? "alt" : ""}">Course - ${escapeHTML(course.replace(/^course\s*-\s*/i, ""))}</span>` : ""}
+                </div>
+                <div class="meta">
+                  <div>${ICON.cal}Starts ${escapeHTML(formatDate(b.startingDate) || "date not set")}</div>
+                  <div>${ICON.clock}${escapeHTML(getTiming(b))}</div>
+                </div>
+              </div>
+
+              ${renderSession(b.latestOngoingSession, "ongoing")}
+              ${renderSession(b.latestUpcomingSession, "upcoming")}
+
+              <div class="status-pill">Active</div>
+            </div>
+
+            ${tools.length ? `
+              <div class="tools-row">
+                <div class="tools-label">${ICON.wrench}Tools</div>
+                <div class="tools">
+                  ${tools.map((t) => {
+                    const live = ongoingName && ongoingName.toLowerCase().includes(t.name.toLowerCase());
+                    const done = /complete|done/i.test(t.state);
+                    const cls = live ? "live" : done ? "done" : "";
+                    return `<span class="tool ${cls}">${done ? ICON.check + " " : ""}${escapeHTML(t.name)}</span>`;
+                  }).join("")}
+                </div>
+              </div>` : ""}
+          </article>`;
+      }).join("");
+    }
+
+    document.querySelectorAll(".tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+        tab.classList.add("active");
+        currentFilter = tab.dataset.filter;
+        renderBatches();
+      });
+    });
+
+    searchInput.addEventListener("input", renderBatches);
+
+    async function loadBatches() {
+      list.innerHTML = `<div class="state">Loading batches...</div>`;
+      try {
+        const response = await fetch(API_URL, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || "Unable to load batches");
+        }
+
+        batches = Array.isArray(result.data)
+          ? result.data
+          : Array.isArray(result.data?.batches) ? result.data.batches : []; 
+
+        updateCounts();
+        renderBatches();
+      } catch (error) {
+        console.error("Batch loading error:", error);
+        list.innerHTML = `
+          <div class="state">
+            Couldn't load batches. Check your connection and try again.<br />
+            <button class="retry" id="retryButton">Retry</button>
+          </div>`;
+        document.getElementById("retryButton").addEventListener("click", loadBatches);
+      }
+    }
+
+    loadBatches();
+  </script>
+</body>
+</html>
