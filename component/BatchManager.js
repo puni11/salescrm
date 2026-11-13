@@ -241,7 +241,7 @@ const fieldClass =
 
 /* ---------- main component ---------- */
 
-export default function BatchManager() {
+export default function BatchManager({ session }) {
   const [batches, setBatches] = useState([]);
   const [courses, setCourses] = useState([]);
   const [tools, setTools] = useState([]);
@@ -629,12 +629,12 @@ export default function BatchManager() {
               className="h-7 w-32 rounded-[4px] bg-transparent pl-7 pr-2 text-sm outline-none transition-all placeholder:text-[#9B9A97] hover:bg-[rgba(55,53,47,0.06)] focus:w-52 focus:bg-white focus:ring-2 focus:ring-[#2383E2]/40"
             />
           </div>
-          <button
+          {session.user.role !=='placemenCell' &&  <button
             onClick={openCreate}
             className="ml-1 inline-flex h-7 items-center gap-1 rounded-[4px] bg-[#2383E2] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0077D4]"
           >
             <Plus size={15} /> New
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -756,8 +756,9 @@ export default function BatchManager() {
                       ))}
                     </select>
 
+                    {session.user.role !=='placemenCell' &&  
                     <div className="flex items-center gap-0.5 lg:opacity-0 lg:transition-opacity lg:focus-within:opacity-100 lg:group-hover:opacity-100">
-                      <button
+                     <button
                         onClick={() => openEdit(batch)}
                         aria-label={`Edit ${batch.name}`}
                         className={`rounded-[4px] p-1.5 text-[#787774] ${hoverBg}`}
@@ -776,7 +777,7 @@ export default function BatchManager() {
                           <Trash2 size={14} />
                         )}
                       </button>
-                    </div>
+                    </div> }
                   </div>
                 </div>
 

@@ -176,6 +176,7 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   const isAdmin = session?.user?.role === "admin";
+  const isCounsellor = session?.user?.role === "counsellor" || session?.user?.role === "manager";
   const userId = session?.user?.id;
 
   const interactionHref = isAdmin ? `/dashboard/interaction` : `/counsellor/${userId}/interaction`;
@@ -255,29 +256,29 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
           />
 
           {/* Leads, now with a submenu */}
-         <NavItem
+          {(isAdmin || isCounsellor) && (<NavItem
             href={'/leads'}
             icon={User2}
             label="Leads"
             collapsed={collapsed}
             active={pathname.includes('leads')}
-          />
+          />)}
 
-          <NavItem
+         {(isAdmin || isCounsellor) && (  <NavItem
             href={interactionHref}
             icon={HistoryIcon}
             label="Lead Interaction"
             collapsed={collapsed}
             active={pathname.includes(interactionHref)}
-          />
+          />)}
          
-          <NavItem
+        {(isAdmin || isCounsellor) && (   <NavItem
             href={callLogsHref}
             icon={PhoneCall}
             label="Call Activity"
             collapsed={collapsed}
             active={pathname.includes(callLogsHref)}
-          />
+          />)}
 
           {isAdmin && (
             <NavItem
@@ -289,13 +290,15 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             />
           )}
             {/* Leads, now with a submenu */}
-            <NavItem
-            href={'/whatsapp'}
-            icon={WhatsAppIcon}
-            label="Whatsapp"
-            collapsed={collapsed}
-            active={pathname.includes('whatsapp')}
-          />
+        {(isAdmin || isCounsellor) && (
+  <NavItem
+    href="/whatsapp"
+    icon={WhatsAppIcon}
+    label="WhatsApp"
+    collapsed={collapsed}
+    active={pathname.includes("whatsapp")}
+  />
+)}
          <NavItem
             href={'/offerings'}
             icon={Handshake}
@@ -310,15 +313,17 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             collapsed={collapsed}
             setCollapsed={setCollapsed}
             active={pathname.includes("/batch")}
-            items={[
-              { href: "/batches", label: "Batch", active: pathname === "/batches" },
-              
-              { href: "/students", label: "Students", active: pathname === "students" },
-              { href: "/course", label: "Course", active: pathname === "/course" },
-              { href: "/trainers", label: "Trainers", active: pathname === "/trainers" },
-              { href: "/categories", label: "Categories", active: pathname === "/categories" },
-              { href: "/tools", label: "Tools", active: pathname === "/tools" },
-            ]}
+           items={[
+  { href: "/batches", label: "Batch", active: pathname === "/batches" },
+
+  ...((isAdmin || isCounsellor) ? [
+    { href: "/students", label: "Students", active: pathname === "/students" },
+    { href: "/course", label: "Course", active: pathname === "/course" },
+    { href: "/trainers", label: "Trainers", active: pathname === "/trainers" },
+    { href: "/categories", label: "Categories", active: pathname === "/categories" },
+    { href: "/tools", label: "Tools", active: pathname === "/tools" },
+  ] : []),
+]}
           />
         
           {isAdmin && (

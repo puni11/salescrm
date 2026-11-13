@@ -561,7 +561,7 @@ export default function UsersPage() {
                             onChange={(e) => setValue(e.target.value)}
                           >
                             <option value="manager">Manager</option>
-                            <option value="seo">SEO</option>
+                            <option value="placemenCell">Placement Cell</option>
                             <option value="admin">Admin</option>
                             <option value="counsellor">Counsellor</option>
                           </select>

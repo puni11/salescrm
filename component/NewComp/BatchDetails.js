@@ -251,7 +251,7 @@ const EMPTY_SESSION = {
   status: "upcoming",
 };
 
-export default function BatchDetails({ batchId, onBack }) {
+export default function BatchDetails({ batchId, onBack, session }) {
   const [data, setData] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [tab, setTab] = useState("Overview");
@@ -470,6 +470,15 @@ const submitSession = (e) => {
   if (!data) return null;
 
   const students = data.students || [];
+  const demoRequests = data.demoRequests || [];
+
+const pendingDemos = demoRequests.filter(
+  (item) => item.status?.toLowerCase() === "pending"
+).length;
+
+const completedDemos = demoRequests.filter(
+  (item) => item.status?.toLowerCase() === "completed"
+).length;
   const tools = data.tools || [];
   const trainers = data.trainers || [];
   const financials = data.financials || {};
@@ -611,15 +620,136 @@ const submitSession = (e) => {
           )}
 
           {/* ---------- Students ---------- */}
-          {tab === "Students" && (
-            <section>
-              <SectionTitle
-                title="Students"
-                hint={`${students.length} assigned · ${money(financials.totalPaid)} collected`}
-              />
-              <StudentTable students={students} {...studentActions} />
-            </section>
-          )}
+         {/* ---------- Students ---------- */}
+{tab === "Students" && (
+  <section className="space-y-10">
+
+    {/* Students */}
+    <section>
+      <SectionTitle
+        title="Students"
+        hint={`${students.length} assigned · ${money(financials.totalPaid)} collected`}
+      />
+
+      <StudentTable
+        students={students}
+        {...studentActions}
+      />
+    </section>
+
+    {/* Demo Requests */}
+    <section>
+      <SectionTitle
+        title="Demo Requests"
+        hint={`${demoRequests.length} demo requests for this batch`}
+      />
+
+      {/* Demo Statistics */}
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className={`rounded-md border ${line} p-3`}>
+          <p className={`text-xs ${muted}`}>Total Requests</p>
+          <p className="mt-1 text-2xl font-semibold">
+            {demoRequests.length}
+          </p>
+        </div>
+
+        <div className={`rounded-md border ${line} p-3`}>
+          <p className={`text-xs ${muted}`}>Pending</p>
+          <p className="mt-1 text-2xl font-semibold text-amber-600">
+            {pendingDemos}
+          </p>
+        </div>
+
+        <div className={`rounded-md border ${line} p-3`}>
+          <p className={`text-xs ${muted}`}>Completed</p>
+          <p className="mt-1 text-2xl font-semibold text-green-600">
+            {completedDemos}
+          </p>
+        </div>
+      </div>
+
+      {/* Demo Request Table */}
+      {demoRequests.length ? (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[950px] text-left text-sm">
+
+            <thead className={`border-y ${line} text-xs ${muted}`}>
+              <tr>
+                <th className="px-3 py-2 font-normal">Lead</th>
+                <th className="px-3 py-2 font-normal">Course</th>
+                <th className="px-3 py-2 font-normal">Demo Mode</th>
+                <th className="px-3 py-2 font-normal">Counsellor</th>
+                <th className="px-3 py-2 font-normal">Requested At</th>
+                <th className="px-3 py-2 font-normal">Status</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {demoRequests.map((demo) => (
+                <tr
+                  key={demo.id}
+                  className={`border-b ${line} ${hoverBg}`}
+                >
+                  {/* Lead Details */}
+                  <td className="px-3 py-3">
+                    <p className="font-medium">
+                      {demo.leadName || "Unknown lead"}
+                    </p>
+
+                    {demo.leadPhone && (
+                      <p className={`mt-1 flex items-center gap-1 text-xs ${muted}`}>
+                        <Phone size={11} />
+                        {demo.leadPhone}
+                      </p>
+                    )}
+
+                    {demo.leadEmail && (
+                      <p className={`mt-1 flex items-center gap-1 text-xs ${muted}`}>
+                        <Mail size={11} />
+                        {demo.leadEmail}
+                      </p>
+                    )}
+                  </td>
+
+                  {/* Course */}
+                  <td className="px-3 py-3">
+                    {demo.course || "—"}
+                  </td>
+
+                  {/* Demo Mode */}
+                  <td className="px-3 py-3">
+                    <Tag color="blue">
+                      {demo.demoMode || "—"}
+                    </Tag>
+                  </td>
+
+                  {/* Counsellor */}
+                  <td className="px-3 py-3">
+                    {demo.assignedTo?.name || "Unassigned"}
+                  </td>
+
+                  {/* Request Date */}
+                  <td className="px-3 py-3">
+                    {formatDate(demo.requestedAt)}
+                  </td>
+
+                  {/* Status */}
+                  <td className="px-3 py-3">
+                    <Status value={demo.status} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+
+          </table>
+        </div>
+      ) : (
+        <Empty text="No demo requests for this batch yet." />
+      )}
+    </section>
+
+  </section>
+)}
 
          {/* ---------- Sessions ---------- */}
 {tab === "Tools Planing" && (
@@ -628,13 +758,15 @@ const submitSession = (e) => {
       title="Tools Planing "
       hint={`${sessionsDone} of ${sessions.length} completed`}
       action={
-        <Btn
+        <>
+      {session.user.role !=='placemenCell' &&   <Btn
           variant="primary"
           onClick={() => openSessionEditor(null)}
         >
           <Plus size={14} />
          Add New Tool
-        </Btn>
+        </Btn> }
+        </>
       }
     />
 
@@ -812,12 +944,15 @@ const submitSession = (e) => {
                         </Btn>
                       </>
                     ) : (
+                      <>
+                       {session.user.role !=='placemenCell' && 
                       <Btn variant="outline" disabled={saving} onClick={() => completeBatchTool(tool)}>
                         <Square size={14} /> Mark completed
-                      </Btn>
+                      </Btn> }
+                      </>
                     )}
                     <Status value={tool.status} />
-                    <IconBtn
+                    {session.user.role !=='placemenCell' && <IconBtn
                       danger
                       title="Remove tool"
                       onClick={() =>
@@ -831,7 +966,7 @@ const submitSession = (e) => {
                       }
                     >
                       <Trash2 size={15} />
-                    </IconBtn>
+                    </IconBtn>}
                   </div>
                 </div>
               )) : <Empty text="No tools assigned to this batch" />}
@@ -860,7 +995,7 @@ const submitSession = (e) => {
                         </p>
                       </div>
                     </div>
-                    <IconBtn
+                   {session.user.role !=='placemenCell' &&  <IconBtn
                       danger
                       title="Remove trainer"
                       onClick={() =>
@@ -874,7 +1009,7 @@ const submitSession = (e) => {
                       }
                     >
                       <Trash2 size={15} />
-                    </IconBtn>
+                    </IconBtn>}
                   </div>
                 );
               }) : <Empty text="No trainers assigned to this batch" />}

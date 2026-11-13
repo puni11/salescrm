@@ -117,14 +117,20 @@ async function getDb() {
 }
 
 // GET: Complete batch details.
+
 export async function GET(request, { params }) {
   try {
     const { id } = await params;
+
     const batchObjectId = toObjectId(id);
 
     if (!batchObjectId) return fail("Invalid batch ID");
 
     const db = await getDb();
+
+    // --------------------------------
+    // FETCH BATCH
+    // --------------------------------
 
     const batch = await db
       .collection(COLLECTIONS.batches)
@@ -132,11 +138,29 @@ export async function GET(request, { params }) {
 
     if (!batch) return fail("Batch not found", 404);
 
-    const assignments = await db
-      .collection(COLLECTIONS.assignments)
-      .find({ batchId: batchObjectId })
-      .sort({ assignedAt: -1 })
-      .toArray();
+    // --------------------------------
+    // FETCH ASSIGNMENTS & DEMO REQUESTS
+    // --------------------------------
+
+    const [assignments, demoRequests] = await Promise.all([
+      db
+        .collection(COLLECTIONS.assignments)
+        .find({ batchId: batchObjectId })
+        .sort({ assignedAt: -1 })
+        .toArray(),
+
+      db
+        .collection("demoRequests")
+        .find({
+          batchId: str(batchObjectId),
+        })
+        .sort({ requestedAt: -1 })
+        .toArray(),
+    ]);
+
+    // --------------------------------
+    // COLLECT STUDENT IDS
+    // --------------------------------
 
     const studentIds = [
       ...new Set([
@@ -145,7 +169,17 @@ export async function GET(request, { params }) {
       ]),
     ].filter(ObjectId.isValid);
 
-    const toolIds = [...new Set((batch.tools || []).map(str))];
+    // --------------------------------
+    // COLLECT TOOL IDS
+    // --------------------------------
+
+    const toolIds = [
+      ...new Set((batch.tools || []).map(str)),
+    ].filter(ObjectId.isValid);
+
+    // --------------------------------
+    // COLLECT TRAINER IDS
+    // --------------------------------
 
     const trainerIds = [
       ...new Set([
@@ -156,44 +190,123 @@ export async function GET(request, { params }) {
       ]),
     ].filter(ObjectId.isValid);
 
-    const [students, tools, trainers, course] = await Promise.all([
-      studentIds.length
-        ? db
-            .collection(COLLECTIONS.students)
-            .find({ _id: { $in: studentIds.map((sid) => new ObjectId(sid)) } })
-            .toArray()
-        : [],
+    // --------------------------------
+    // COLLECT DEMO LEAD IDS
+    // --------------------------------
 
-      toolIds.length
-        ? db
-            .collection(COLLECTIONS.tools)
-            .find({ _id: { $in: toolIds.map((tid) => new ObjectId(tid)) } })
-            .toArray()
-        : [],
+    const leadIds = [
+      ...new Set(
+        demoRequests
+          .map((item) => str(item.leadId))
+          .filter(ObjectId.isValid)
+      ),
+    ];
 
-      trainerIds.length
-        ? db
-            .collection(COLLECTIONS.trainers)
-            .find({ _id: { $in: trainerIds.map((tid) => new ObjectId(tid)) } })
-            .toArray()
-        : [],
+    // --------------------------------
+    // FETCH ALL RELATED DATA
+    // --------------------------------
 
-      batch.courseId && ObjectId.isValid(str(batch.courseId))
-        ? db.collection(COLLECTIONS.courses).findOne({
-            _id: new ObjectId(str(batch.courseId)),
-          })
-        : null,
-    ]);
+    const [students, tools, trainers, course, leads] =
+      await Promise.all([
+        // Students
+        studentIds.length
+          ? db
+              .collection(COLLECTIONS.students)
+              .find({
+                _id: {
+                  $in: studentIds.map((sid) => new ObjectId(sid)),
+                },
+              })
+              .toArray()
+          : [],
+
+        // Tools
+        toolIds.length
+          ? db
+              .collection(COLLECTIONS.tools)
+              .find({
+                _id: {
+                  $in: toolIds.map((tid) => new ObjectId(tid)),
+                },
+              })
+              .toArray()
+          : [],
+
+        // Trainers
+        trainerIds.length
+          ? db
+              .collection(COLLECTIONS.trainers)
+              .find({
+                _id: {
+                  $in: trainerIds.map((tid) => new ObjectId(tid)),
+                },
+              })
+              .toArray()
+          : [],
+
+        // Course
+        batch.courseId && ObjectId.isValid(str(batch.courseId))
+          ? db.collection(COLLECTIONS.courses).findOne({
+              _id: new ObjectId(str(batch.courseId)),
+            })
+          : null,
+
+        // Leads from DM collection
+        leadIds.length
+          ? db
+              .collection("dm")
+              .find({
+                _id: {
+                  $in: leadIds.map((leadId) => new ObjectId(leadId)),
+                },
+              })
+              .project({
+                name: 1,
+                email: 1,
+                phone: 1,
+                phone10: 1,
+                course: 1,
+                status: 1,
+                source: 1,
+                medium: 1,
+                campaign: 1,
+                assignedTo: 1,
+                profile: 1,
+                createdAt: 1,
+              })
+              .toArray()
+          : [],
+      ]);
+
+    // --------------------------------
+    // CREATE MAPS
+    // --------------------------------
 
     const studentMap = new Map(
       students.map((student) => [str(student._id), student])
     );
-    const toolMap = new Map(tools.map((tool) => [str(tool._id), tool]));
+
+    const toolMap = new Map(
+      tools.map((tool) => [str(tool._id), tool])
+    );
+
     const trainerMap = new Map(
       trainers.map((trainer) => [str(trainer._id), trainer])
     );
 
+    const leadMap = new Map(
+      leads.map((lead) => [str(lead._id), lead])
+    );
+
+    // --------------------------------
+    // COMPLETION MAP
+    // --------------------------------
+
     const completionMap = batchCompletionMap(batch);
+
+    // --------------------------------
+    // FORMAT TOOLS
+    // --------------------------------
 
     const formattedTools = (batch.tools || []).map((toolId) => {
       const tid = str(toolId);
@@ -203,9 +316,11 @@ export async function GET(request, { params }) {
         .filter((item) => str(item.toolId) === tid)
         .map((item) => {
           const trainerId = str(item.trainerId);
+
           return {
             trainerId,
-            trainerName: trainerMap.get(trainerId)?.name || "Unknown trainer",
+            trainerName:
+              trainerMap.get(trainerId)?.name || "Unknown trainer",
           };
         });
 
@@ -219,10 +334,18 @@ export async function GET(request, { params }) {
       };
     });
 
+    // --------------------------------
+    // FORMAT STUDENTS
+    // --------------------------------
+
     const formattedStudents = assignments.map((assignment) => {
       const studentId = str(assignment.studentId);
       const student = studentMap.get(studentId);
-      const completion = completionSummary(assignment, completionMap);
+
+      const completion = completionSummary(
+        assignment,
+        completionMap
+      );
 
       const assignedToolIds = (assignment.toolIds || []).map(str);
 
@@ -237,6 +360,7 @@ export async function GET(request, { params }) {
           .filter((item) => str(item.toolId) === toolId)
           .map((item) => {
             const trainerId = str(item.trainerId);
+
             return {
               trainerId,
               trainerName:
@@ -259,7 +383,8 @@ export async function GET(request, { params }) {
         phone: student?.phone ? String(student.phone) : "",
         studentStatus: student?.status || "",
         course: student?.course || "",
-        assignedAt: assignment.assignedAt || assignment.createdAt || null,
+        assignedAt:
+          assignment.assignedAt || assignment.createdAt || null,
         mode: assignment.mode || "full_course",
         tools: assignedTools,
         toolIds: assignedToolIds,
@@ -270,50 +395,144 @@ export async function GET(request, { params }) {
       };
     });
 
-    const totalFees = formattedStudents.reduce((s, x) => s + x.totalFee, 0);
-    const totalPaid = formattedStudents.reduce((s, x) => s + x.paidFee, 0);
-    const totalBalance = formattedStudents.reduce(
-      (s, x) => s + x.balanceDue,
+    // --------------------------------
+    // FORMAT DEMO REQUESTS
+    // --------------------------------
+
+    const formattedDemoRequests = demoRequests.map((demo) => {
+      const leadId = str(demo.leadId);
+      const lead = leadMap.get(leadId);
+
+      return {
+        id: str(demo._id),
+
+        leadId,
+
+        // Lead details from DM, fallback to demoRequests
+        leadName:
+          lead?.name || demo.leadName || "Unknown lead",
+
+        leadEmail:
+          lead?.email || demo.leadEmail || "",
+
+        leadPhone:
+          lead?.phone
+            ? String(lead.phone)
+            : demo.leadPhone
+              ? String(demo.leadPhone)
+              : "",
+
+        leadStatus: lead?.status || "",
+        course: lead?.course || demo.courseName || "",
+        source: lead?.source || "",
+        medium: lead?.medium || "",
+
+        profile: lead?.profile || "",
+
+        assignedTo: lead?.assignedTo || null,
+
+        batchId: str(batchObjectId),
+        batchName: demo.batchName || batch.name || "",
+
+        demoMode: demo.demoMode || "",
+        status: demo.status || "pending",
+
+        requestedAt: demo.requestedAt || null,
+        completedAt: demo.completedAt || null,
+
+        createdAt: demo.createdAt || null,
+        updatedAt: demo.updatedAt || null,
+      };
+    });
+
+    // --------------------------------
+    // FINANCIAL SUMMARY
+    // --------------------------------
+
+    const totalFees = formattedStudents.reduce(
+      (sum, student) => sum + student.totalFee,
       0
     );
+
+    const totalPaid = formattedStudents.reduce(
+      (sum, student) => sum + student.paidFee,
+      0
+    );
+
+    const totalBalance = formattedStudents.reduce(
+      (sum, student) => sum + student.balanceDue,
+      0
+    );
+
+    // --------------------------------
+    // FORMAT BATCH
+    // --------------------------------
 
     const formattedBatch = {
       id: str(batch._id),
       name: batch.name || "",
+
       courseId: str(batch.courseId),
       courseName: course?.name || "Unknown course",
+
       startingDate: batch.startingDate || "",
       startingTime: batch.startingTime || "",
+
       status: batch.status || "upcoming",
       fee: Number(batch.fee) || 0,
+
       studentCount: formattedStudents.length,
+
       tools: formattedTools,
       students: formattedStudents,
+
       trainers: (batch.trainers || []).map((trainerId) => {
         const tid = str(trainerId);
+
         return {
           id: tid,
           name: trainerMap.get(tid)?.name || "Unknown trainer",
         };
       }),
-      toolTrainerAssignments: (batch.toolTrainerAssignments || []).map(
-        (item) => ({
-          toolId: str(item.toolId),
-          trainerId: str(item.trainerId),
-          toolName: toolMap.get(str(item.toolId))?.name || "Unknown tool",
-          trainerName:
-            trainerMap.get(str(item.trainerId))?.name || "Unknown trainer",
-        })
-      ),
+
+      toolTrainerAssignments: (
+        batch.toolTrainerAssignments || []
+      ).map((item) => ({
+        toolId: str(item.toolId),
+        trainerId: str(item.trainerId),
+        toolName:
+          toolMap.get(str(item.toolId))?.name || "Unknown tool",
+        trainerName:
+          trainerMap.get(str(item.trainerId))?.name ||
+          "Unknown trainer",
+      })),
+
+      // Demo Requests
+      demoRequests: formattedDemoRequests,
+      demoRequestCount: formattedDemoRequests.length,
+
+      // Financials
+      financials: {
+        totalFees,
+        totalPaid,
+        totalBalance,
+      },
+
       createdAt: batch.createdAt || null,
       updatedAt: batch.updatedAt || null,
-      financials: { totalFees, totalPaid, totalBalance },
     };
 
-    return NextResponse.json({ success: true, data: formattedBatch });
+    return NextResponse.json({
+      success: true,
+      data: formattedBatch,
+    });
   } catch (error) {
     console.error("Get batch details error:", error);
-    return fail(error.message || "Failed to fetch batch details", 500);
+
+    return fail(
+      error.message || "Failed to fetch batch details",
+      500
+    );
   }
 }
 
