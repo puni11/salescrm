@@ -7,6 +7,8 @@ import {
   User, Calendar, Phone, BookOpen,
   Smartphone,
   Headphones,
+  Cross,
+  PhoneOffIcon,
 } from "lucide-react";
 import BackButton from "@/lib/BackButton";
 import { fetchCounsellors } from "@/lib/helper/helper";
@@ -132,17 +134,33 @@ const TrendLine = ({ trend, label }) => {
 
 const STAT_CARDS = [
   { key: "totalCalls", label: "Total calls", icon: Activity },
-  { key: "averageCallTime", label: "Avg. call time", icon: Clock, format: formatTime },
-  { key: "incomingCalls", label: "Incoming", icon: PhoneIncoming },
-  { key: "outgoingCalls", label: "Outgoing", icon: PhoneOutgoing },
-  { key: "missedCalls", label: "Missed", icon: PhoneMissed },
-  { key: "unregisteredCalls", label: "Unregistered", icon: UserMinus },
+
   {
-  key: "totalCallTime",
-  label: "Total Call Timing",
-  icon: Activity,
-  format: formatTime2,
-}
+    key: "averageCallTime",
+    label: "Avg. call time",
+    icon: Clock,
+    format: formatTime,
+  },
+    {
+    key: "totalCallTime",
+    label: "Total Call Timing",
+    icon: Activity,
+    format: formatTime2,
+  },
+
+  { key: "incomingCalls", label: "Incoming", icon: PhoneIncoming },
+
+  { key: "outgoingCalls", label: "Outgoing", icon: PhoneOutgoing },
+
+  { key: "missedCalls", label: "Missed", icon: PhoneMissed },
+
+  { key: "rejectedCalls", label: "Rejected", icon: PhoneOffIcon },
+
+  { key: "otherCalls", label: "Call Drop", icon: Phone },
+
+  { key: "unregisteredCalls", label: "Unregistered", icon: UserMinus },
+
+
 ];
 
 const Th = ({ icon: Icon, children }) => (
@@ -351,7 +369,7 @@ export default function CallLogsPage({ id, session }) {
   /* ---------- Render ---------- */
   return (
     <div className="min-h-screen bg-white text-[#37352f]">
-      <div className="mx-auto w-full px-4 pb-20 pt-4 sm:px-10 lg:px-16">
+      <div className="mx-auto w-full px-4 pb-20 pt-4 sm:px-10 lg:px-8">
         {/* Top bar */}
         <div className="flex items-center gap-2">
           <BackButton />
@@ -364,11 +382,11 @@ export default function CallLogsPage({ id, session }) {
             Refresh
           </button>
         </div>
-        <h1 className="mt-3 text-[40px] font-bold leading-[1.2] tracking-[-0.01em]">Call logs</h1>
+        <h1 className="mt-3 text-[28px] font-bold leading-[1.2] tracking-[-0.01em]">Call logs</h1>
         <p className={`mt-1 text-[15px] ${MUTED}`}>View and monitor all calling activity.</p>
 
         {/* Stats strip */}
-        <div className={`mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-md border ${BORDER} bg-[rgba(55,53,47,0.09)] md:grid-cols-3 xl:grid-cols-7`}>
+        <div className={`mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-md border ${BORDER} bg-[rgba(55,53,47,0.09)] md:grid-cols-3 xl:grid-cols-5`}>
           {STAT_CARDS.map(({ key, label, icon: Icon, format }) => {
             const s = stats?.[key];
             return (
