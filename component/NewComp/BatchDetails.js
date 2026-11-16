@@ -14,6 +14,7 @@ import {
   Phone,
   Plus,
   RefreshCw,
+  Search,
   Square,
   Trash2,
   Users,
@@ -268,6 +269,9 @@ export default function BatchDetails({ batchId, onBack, session }) {
   const [sessionForm, setSessionForm] = useState(EMPTY_SESSION);
   const [confirm, setConfirm] = useState(null);
 
+  // Assign student modal
+  const [assignModal, setAssignModal] = useState(false);
+
   const endpoint = `/api/batches/${batchId}`;
   const sessionsEndpoint = `${endpoint}/sessions`;
 
@@ -303,6 +307,7 @@ export default function BatchDetails({ batchId, onBack, session }) {
       setEditBatch(false);
       setEditStudent(null);
       setSessionModal(null);
+      setAssignModal(false);
       await loadBatch();
       return true;
     } catch (err) {
@@ -338,22 +343,28 @@ export default function BatchDetails({ batchId, onBack, session }) {
     setEditStudent(student);
   };
 
-const openSessionEditor = (session) => {
-  setSessionForm(
-    session
-      ? {
-          date: session.date || "",
-          endDate: session.endDate || session.date || "",
-          time: session.time || "10:00",
-          toolId: session.toolId || "",
-          notes: session.notes || "",
-          status: session.status || "pending",
-        }
-      : { ...EMPTY_SESSION }
-  );
+  const openSessionEditor = (session) => {
+    setSessionForm(
+      session
+        ? {
+            date: session.date || "",
+            endDate: session.endDate || session.date || "",
+            time: session.time || "10:00",
+            toolId: session.toolId || "",
+            notes: session.notes || "",
+            status: session.status || "pending",
+          }
+        : { ...EMPTY_SESSION }
+    );
 
-  setSessionModal(session || {});
-};
+    setSessionModal(session || {});
+  };
+
+  const openAssignModal = () => setAssignModal(true);
+
+  // The batch is selected automatically: it is part of the URL
+  const submitAssign = (payload) =>
+    run(() => request(`${endpoint}/students`, "POST", payload));
 
   const submitBatch = (e) => {
     e.preventDefault();
@@ -369,40 +380,38 @@ const openSessionEditor = (session) => {
     });
   };
 
-const submitSession = (e) => {
-  e.preventDefault();
+  const submitSession = (e) => {
+    e.preventDefault();
 
-  if (!sessionForm.date || !sessionForm.endDate || !sessionForm.time) {
-    window.alert("Please fill in starting date, ending date and time.");
-    return;
-  }
+    if (!sessionForm.date || !sessionForm.endDate || !sessionForm.time) {
+      window.alert("Please fill in starting date, ending date and time.");
+      return;
+    }
 
-  if (sessionForm.endDate < sessionForm.date) {
-    window.alert("Ending date cannot be before starting date.");
-    return;
-  }
+    if (sessionForm.endDate < sessionForm.date) {
+      window.alert("Ending date cannot be before starting date.");
+      return;
+    }
 
-  const editing = Boolean(sessionModal?.id);
+    const editing = Boolean(sessionModal?.id);
 
-  const payload = {
-    date: sessionForm.date,
-    endDate: sessionForm.endDate,
-    time: sessionForm.time,
-    toolId: sessionForm.toolId,
-    notes: sessionForm.notes,
-    status: sessionForm.status,
+    const payload = {
+      date: sessionForm.date,
+      endDate: sessionForm.endDate,
+      time: sessionForm.time,
+      toolId: sessionForm.toolId,
+      notes: sessionForm.notes,
+      status: sessionForm.status,
+    };
+
+    run(() =>
+      request(
+        sessionsEndpoint,
+        editing ? "PATCH" : "POST",
+        editing ? { sessionId: sessionModal.id, ...payload } : payload
+      )
+    );
   };
-
-  run(() =>
-    request(
-      sessionsEndpoint,
-      editing ? "PATCH" : "POST",
-      editing
-        ? { sessionId: sessionModal.id, ...payload }
-        : payload
-    )
-  );
-};
 
   const toggleSession = (session) =>
     run(() =>
@@ -447,7 +456,7 @@ const submitSession = (e) => {
       onConfirm: () => saveAction({ action: "reopen_batch_tool", toolId: tool.id }),
     });
 
-    if (loading && !data) {
+  if (loading && !data) {
     return (
       <div className={`flex min-h-80 items-center justify-center text-sm ${muted}`}>
         <RefreshCw className="mr-2 animate-spin" size={16} />
@@ -472,18 +481,19 @@ const submitSession = (e) => {
   const students = data.students || [];
   const demoRequests = data.demoRequests || [];
 
-const pendingDemos = demoRequests.filter(
-  (item) => item.status?.toLowerCase() === "pending"
-).length;
+  const pendingDemos = demoRequests.filter(
+    (item) => item.status?.toLowerCase() === "pending"
+  ).length;
 
-const completedDemos = demoRequests.filter(
-  (item) => item.status?.toLowerCase() === "completed"
-).length;
+  const completedDemos = demoRequests.filter(
+    (item) => item.status?.toLowerCase() === "completed"
+  ).length;
   const tools = data.tools || [];
   const trainers = data.trainers || [];
   const financials = data.financials || {};
   const sessionsDone = sessions.filter((s) => s.status === "completed").length;
   const toolName = (id) => tools.find((t) => t.id === id)?.name;
+  const canEdit = session?.user?.role !== "placemenCell";
 
   const studentActions = {
     onEdit: openStudentEditor,
@@ -517,7 +527,6 @@ const completedDemos = demoRequests.filter(
       <div className="px-6 pb-20">
         {/* Page header */}
         <div className="pt-4">
-            
           <h1 className="mt-4 text-3xl font-bold tracking-tight">{data.name}</h1>
           <div className="flex flex-col gap-2 sm:flex-row sm:gap-4 mt-5">
             <Prop icon={BookOpen} label="Course">{data.courseName}</Prop>
@@ -576,10 +585,8 @@ const completedDemos = demoRequests.filter(
                 <Callout icon={IndianRupee} label="Total fees" value={money(financials.totalFees)} />
                 <Callout icon={Wallet} label="Collected" value={money(financials.totalPaid)} />
                 <Callout icon={IndianRupee} label="Balance due" value={money(financials.totalBalance)} />
-                 <Callout icon={CalendarCheck} label="Sessions done" value={`${sessionsDone} / ${sessions.length}`} />
+                <Callout icon={CalendarCheck} label="Sessions done" value={`${sessionsDone} / ${sessions.length}`} />
               </section>
-
-        
 
               <section className="grid gap-8 lg:grid-cols-2">
                 <div>
@@ -620,301 +627,240 @@ const completedDemos = demoRequests.filter(
           )}
 
           {/* ---------- Students ---------- */}
-         {/* ---------- Students ---------- */}
-{tab === "Students" && (
-  <section className="space-y-10">
+          {tab === "Students" && (
+            <section className="space-y-10">
+              {/* Students */}
+              <section>
+                <SectionTitle
+                  title="Students"
+                  hint={`${students.length} assigned · ${money(financials.totalPaid)} collected`}
+                  action={
+                    canEdit && (
+                      <Btn variant="primary" onClick={openAssignModal}>
+                        <Plus size={14} /> Assign student
+                      </Btn>
+                    )
+                  }
+                />
 
-    {/* Students */}
-    <section>
-      <SectionTitle
-        title="Students"
-        hint={`${students.length} assigned · ${money(financials.totalPaid)} collected`}
-      />
+                <StudentTable students={students} {...studentActions} />
+              </section>
 
-      <StudentTable
-        students={students}
-        {...studentActions}
-      />
-    </section>
+              {/* Demo Requests */}
+              <section>
+                <SectionTitle
+                  title="Demo Requests"
+                  hint={`${demoRequests.length} demo requests for this batch`}
+                />
 
-    {/* Demo Requests */}
-    <section>
-      <SectionTitle
-        title="Demo Requests"
-        hint={`${demoRequests.length} demo requests for this batch`}
-      />
-
-      {/* Demo Statistics */}
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <div className={`rounded-md border ${line} p-3`}>
-          <p className={`text-xs ${muted}`}>Total Requests</p>
-          <p className="mt-1 text-2xl font-semibold">
-            {demoRequests.length}
-          </p>
-        </div>
-
-        <div className={`rounded-md border ${line} p-3`}>
-          <p className={`text-xs ${muted}`}>Pending</p>
-          <p className="mt-1 text-2xl font-semibold text-amber-600">
-            {pendingDemos}
-          </p>
-        </div>
-
-        <div className={`rounded-md border ${line} p-3`}>
-          <p className={`text-xs ${muted}`}>Completed</p>
-          <p className="mt-1 text-2xl font-semibold text-green-600">
-            {completedDemos}
-          </p>
-        </div>
-      </div>
-
-      {/* Demo Request Table */}
-      {demoRequests.length ? (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[950px] text-left text-sm">
-
-            <thead className={`border-y ${line} text-xs ${muted}`}>
-              <tr>
-                <th className="px-3 py-2 font-normal">Lead</th>
-                <th className="px-3 py-2 font-normal">Course</th>
-                <th className="px-3 py-2 font-normal">Demo Mode</th>
-                <th className="px-3 py-2 font-normal">Counsellor</th>
-                <th className="px-3 py-2 font-normal">Requested At</th>
-                <th className="px-3 py-2 font-normal">Status</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {demoRequests.map((demo) => (
-                <tr
-                  key={demo.id}
-                  className={`border-b ${line} ${hoverBg}`}
-                >
-                  {/* Lead Details */}
-                  <td className="px-3 py-3">
-                    <p className="font-medium">
-                      {demo.leadName || "Unknown lead"}
-                    </p>
-
-                    {demo.leadPhone && (
-                      <p className={`mt-1 flex items-center gap-1 text-xs ${muted}`}>
-                        <Phone size={11} />
-                        {demo.leadPhone}
-                      </p>
-                    )}
-
-                    {demo.leadEmail && (
-                      <p className={`mt-1 flex items-center gap-1 text-xs ${muted}`}>
-                        <Mail size={11} />
-                        {demo.leadEmail}
-                      </p>
-                    )}
-                  </td>
-
-                  {/* Course */}
-                  <td className="px-3 py-3">
-                    {demo.course || "—"}
-                  </td>
-
-                  {/* Demo Mode */}
-                  <td className="px-3 py-3">
-                    <Tag color="blue">
-                      {demo.demoMode || "—"}
-                    </Tag>
-                  </td>
-
-                  {/* Counsellor */}
-                  <td className="px-3 py-3">
-                    {demo.assignedTo?.name || "Unassigned"}
-                  </td>
-
-                  {/* Request Date */}
-                  <td className="px-3 py-3">
-                    {formatDate(demo.requestedAt)}
-                  </td>
-
-                  {/* Status */}
-                  <td className="px-3 py-3">
-                    <Status value={demo.status} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-
-          </table>
-        </div>
-      ) : (
-        <Empty text="No demo requests for this batch yet." />
-      )}
-    </section>
-
-  </section>
-)}
-
-         {/* ---------- Sessions ---------- */}
-{tab === "Tools Planing" && (
-  <section>
-    <SectionTitle
-      title="Tools Planing "
-      hint={`${sessionsDone} of ${sessions.length} completed`}
-      action={
-        <>
-      {session.user.role !=='placemenCell' &&   <Btn
-          variant="primary"
-          onClick={() => openSessionEditor(null)}
-        >
-          <Plus size={14} />
-         Add New Tool
-        </Btn> }
-        </>
-      }
-    />
-
-    {sessions.length ? (
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[800px] text-left text-sm">
-          <thead className={`border-y ${line} text-xs ${muted}`}>
-            <tr>
-              <th className="px-3 py-2 font-normal">Start Date</th>
-               <th className="px-3 py-2 font-normal">End Date</th>
-              <th className="px-3 py-2 font-normal">Tool</th>
-              <th className="px-3 py-2 font-normal">Notes</th>
-              <th className="px-3 py-2 font-normal">Status</th>
-              <th className="px-3 py-2 text-right font-normal">
-                Actions
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {sessions.map((session) => (
-              <tr
-                key={session.id}
-                className={`border-b ${line} ${hoverBg}`}
-              >
-                {/* Date range */}
-                <td className="px-3 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <CalendarDays
-                      size={14}
-                      className={muted}
-                    />
-
-                    <div>
-                      <p className="font-medium">
-                        {formatDate(session.date)}
-                      </p>
-
-                      
-                    </div>
+                {/* Demo Statistics */}
+                <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div className={`rounded-md border ${line} p-3`}>
+                    <p className={`text-xs ${muted}`}>Total Requests</p>
+                    <p className="mt-1 text-2xl font-semibold">{demoRequests.length}</p>
                   </div>
-                </td>
-                <td className="px-3 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <CalendarDays
-                      size={14}
-                      className={muted}
-                    />
 
-                    <div>
-                      <p className="font-medium">
-                        {formatDate(session.endDate)}
-                      </p>
-
-                      
-                    </div>
+                  <div className={`rounded-md border ${line} p-3`}>
+                    <p className={`text-xs ${muted}`}>Pending</p>
+                    <p className="mt-1 text-2xl font-semibold text-amber-600">{pendingDemos}</p>
                   </div>
-                </td>
-                {/* Tool */}
-                <td className="px-3 py-2.5">
-                  {session.toolId ? (
-                    <Tag color="blue">
-                      {toolName(session.toolId) || "Unknown tool"}
-                    </Tag>
-                  ) : (
-                    <span className={muted}>All tools</span>
-                  )}
-                </td>
 
-                {/* Notes */}
-                <td className="max-w-xs px-3 py-2.5">
-                  <span
-                    className={`block truncate ${muted}`}
-                    title={session.notes || ""}
-                  >
-                    {session.notes || "—"}
-                  </span>
-                </td>
-
-                {/* Status */}
-                <td className="px-3 py-2.5">
-                  <button
-                    onClick={() => toggleSession(session)}
-                    disabled={saving}
-                    title="Click to switch status"
-                  >
-                    <Tag
-                      color={
-                        session.status === "completed"
-                          ? "green"
-                          : "yellow"
-                      }
-                    >
-                      {session.status === "completed" && (
-                        <Check size={12} />
-                      )}
-                      {session.status || "pending"}
-                    </Tag>
-                  </button>
-                </td>
-
-                {/* Actions */}
-                <td className="px-3 py-2.5">
-                  <div className="flex justify-end gap-0.5">
-                    <IconBtn
-                      onClick={() => openSessionEditor(session)}
-                      title="Edit session"
-                    >
-                      <Pencil size={14} />
-                    </IconBtn>
-
-                    <IconBtn
-                      danger
-                      title="Delete session"
-                      onClick={() =>
-                        ask({
-                          title: "Delete session?",
-                          message: `Delete session from ${formatDate(
-                            session.date
-                          )} to ${formatDate(
-                            session.endDate || session.date
-                          )}?`,
-                          confirmLabel: "Delete",
-                          danger: true,
-                          onConfirm: () =>
-                            run(() =>
-                              request(
-                                `${sessionsEndpoint}?sessionId=${session.id}`,
-                                "DELETE"
-                              )
-                            ),
-                        })
-                      }
-                    >
-                      <Trash2 size={14} />
-                    </IconBtn>
+                  <div className={`rounded-md border ${line} p-3`}>
+                    <p className={`text-xs ${muted}`}>Completed</p>
+                    <p className="mt-1 text-2xl font-semibold text-green-600">{completedDemos}</p>
                   </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    ) : (
-      <Empty text="No sessions yet. Add the first one with New session." />
-    )}
-  </section>
-)}
+                </div>
+
+                {/* Demo Request Table */}
+                {demoRequests.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[950px] text-left text-sm">
+                      <thead className={`border-y ${line} text-xs ${muted}`}>
+                        <tr>
+                          <th className="px-3 py-2 font-normal">Lead</th>
+                          <th className="px-3 py-2 font-normal">Course</th>
+                          <th className="px-3 py-2 font-normal">Demo Mode</th>
+                          <th className="px-3 py-2 font-normal">Counsellor</th>
+                          <th className="px-3 py-2 font-normal">Requested At</th>
+                          <th className="px-3 py-2 font-normal">Status</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {demoRequests.map((demo) => (
+                          <tr key={demo.id} className={`border-b ${line} ${hoverBg}`}>
+                            {/* Lead Details */}
+                            <td className="px-3 py-3">
+                              <p className="font-medium">{demo.leadName || "Unknown lead"}</p>
+
+                              {demo.leadPhone && (
+                                <p className={`mt-1 flex items-center gap-1 text-xs ${muted}`}>
+                                  <Phone size={11} />
+                                  {demo.leadPhone}
+                                </p>
+                              )}
+
+                              {demo.leadEmail && (
+                                <p className={`mt-1 flex items-center gap-1 text-xs ${muted}`}>
+                                  <Mail size={11} />
+                                  {demo.leadEmail}
+                                </p>
+                              )}
+                            </td>
+
+                            {/* Course */}
+                            <td className="px-3 py-3">{demo.course || "—"}</td>
+
+                            {/* Demo Mode */}
+                            <td className="px-3 py-3">
+                              <Tag color="blue">{demo.demoMode || "—"}</Tag>
+                            </td>
+
+                            {/* Counsellor */}
+                            <td className="px-3 py-3">
+                              {demo.assignedTo?.name || "Unassigned"}
+                            </td>
+
+                            {/* Request Date */}
+                            <td className="px-3 py-3">{formatDate(demo.requestedAt)}</td>
+
+                            {/* Status */}
+                            <td className="px-3 py-3">
+                              <Status value={demo.status} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <Empty text="No demo requests for this batch yet." />
+                )}
+              </section>
+            </section>
+          )}
+
+          {/* ---------- Sessions ---------- */}
+          {tab === "Tools Planing" && (
+            <section>
+              <SectionTitle
+                title="Tools Planing "
+                hint={`${sessionsDone} of ${sessions.length} completed`}
+                action={
+                  canEdit && (
+                    <Btn variant="primary" onClick={() => openSessionEditor(null)}>
+                      <Plus size={14} />
+                      Add New Tool
+                    </Btn>
+                  )
+                }
+              />
+
+              {sessions.length ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[800px] text-left text-sm">
+                    <thead className={`border-y ${line} text-xs ${muted}`}>
+                      <tr>
+                        <th className="px-3 py-2 font-normal">Start Date</th>
+                        <th className="px-3 py-2 font-normal">End Date</th>
+                        <th className="px-3 py-2 font-normal">Tool</th>
+                        <th className="px-3 py-2 font-normal">Notes</th>
+                        <th className="px-3 py-2 font-normal">Status</th>
+                        <th className="px-3 py-2 text-right font-normal">Actions</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {sessions.map((row) => (
+                        <tr key={row.id} className={`border-b ${line} ${hoverBg}`}>
+                          {/* Start date */}
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <CalendarDays size={14} className={muted} />
+                              <p className="font-medium">{formatDate(row.date)}</p>
+                            </div>
+                          </td>
+
+                          {/* End date */}
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <CalendarDays size={14} className={muted} />
+                              <p className="font-medium">{formatDate(row.endDate)}</p>
+                            </div>
+                          </td>
+
+                          {/* Tool */}
+                          <td className="px-3 py-2.5">
+                            {row.toolId ? (
+                              <Tag color="blue">{toolName(row.toolId) || "Unknown tool"}</Tag>
+                            ) : (
+                              <span className={muted}>All tools</span>
+                            )}
+                          </td>
+
+                          {/* Notes */}
+                          <td className="max-w-xs px-3 py-2.5">
+                            <span className={`block truncate ${muted}`} title={row.notes || ""}>
+                              {row.notes || "—"}
+                            </span>
+                          </td>
+
+                          {/* Status */}
+                          <td className="px-3 py-2.5">
+                            <button
+                              onClick={() => toggleSession(row)}
+                              disabled={saving}
+                              title="Click to switch status"
+                            >
+                              <Tag color={row.status === "completed" ? "green" : "yellow"}>
+                                {row.status === "completed" && <Check size={12} />}
+                                {row.status || "pending"}
+                              </Tag>
+                            </button>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-3 py-2.5">
+                            <div className="flex justify-end gap-0.5">
+                              <IconBtn onClick={() => openSessionEditor(row)} title="Edit session">
+                                <Pencil size={14} />
+                              </IconBtn>
+
+                              <IconBtn
+                                danger
+                                title="Delete session"
+                                onClick={() =>
+                                  ask({
+                                    title: "Delete session?",
+                                    message: `Delete session from ${formatDate(
+                                      row.date
+                                    )} to ${formatDate(row.endDate || row.date)}?`,
+                                    confirmLabel: "Delete",
+                                    danger: true,
+                                    onConfirm: () =>
+                                      run(() =>
+                                        request(
+                                          `${sessionsEndpoint}?sessionId=${row.id}`,
+                                          "DELETE"
+                                        )
+                                      ),
+                                  })
+                                }
+                              >
+                                <Trash2 size={14} />
+                              </IconBtn>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <Empty text="No sessions yet. Add the first one with Add New Tool." />
+              )}
+            </section>
+          )}
 
           {/* ---------- Tools ---------- */}
           {tab === "Tools" && (
@@ -944,29 +890,30 @@ const completedDemos = demoRequests.filter(
                         </Btn>
                       </>
                     ) : (
-                      <>
-                       {session.user.role !=='placemenCell' && 
-                      <Btn variant="outline" disabled={saving} onClick={() => completeBatchTool(tool)}>
-                        <Square size={14} /> Mark completed
-                      </Btn> }
-                      </>
+                      canEdit && (
+                        <Btn variant="outline" disabled={saving} onClick={() => completeBatchTool(tool)}>
+                          <Square size={14} /> Mark completed
+                        </Btn>
+                      )
                     )}
                     <Status value={tool.status} />
-                    {session.user.role !=='placemenCell' && <IconBtn
-                      danger
-                      title="Remove tool"
-                      onClick={() =>
-                        ask({
-                          title: "Remove tool?",
-                          message: `Remove ${tool.name} from this batch and all student assignments? Completion records for it will also be removed.`,
-                          confirmLabel: "Remove",
-                          danger: true,
-                          onConfirm: () => saveAction({ action: "remove_tool", toolId: tool.id }),
-                        })
-                      }
-                    >
-                      <Trash2 size={15} />
-                    </IconBtn>}
+                    {canEdit && (
+                      <IconBtn
+                        danger
+                        title="Remove tool"
+                        onClick={() =>
+                          ask({
+                            title: "Remove tool?",
+                            message: `Remove ${tool.name} from this batch and all student assignments? Completion records for it will also be removed.`,
+                            confirmLabel: "Remove",
+                            danger: true,
+                            onConfirm: () => saveAction({ action: "remove_tool", toolId: tool.id }),
+                          })
+                        }
+                      >
+                        <Trash2 size={15} />
+                      </IconBtn>
+                    )}
                   </div>
                 </div>
               )) : <Empty text="No tools assigned to this batch" />}
@@ -995,21 +942,23 @@ const completedDemos = demoRequests.filter(
                         </p>
                       </div>
                     </div>
-                   {session.user.role !=='placemenCell' &&  <IconBtn
-                      danger
-                      title="Remove trainer"
-                      onClick={() =>
-                        ask({
-                          title: "Remove trainer?",
-                          message: `Remove ${trainer.name} from this batch?`,
-                          confirmLabel: "Remove",
-                          danger: true,
-                          onConfirm: () => saveAction({ action: "remove_trainer", trainerId: trainer.id }),
-                        })
-                      }
-                    >
-                      <Trash2 size={15} />
-                    </IconBtn>}
+                    {canEdit && (
+                      <IconBtn
+                        danger
+                        title="Remove trainer"
+                        onClick={() =>
+                          ask({
+                            title: "Remove trainer?",
+                            message: `Remove ${trainer.name} from this batch?`,
+                            confirmLabel: "Remove",
+                            danger: true,
+                            onConfirm: () => saveAction({ action: "remove_trainer", trainerId: trainer.id }),
+                          })
+                        }
+                      >
+                        <Trash2 size={15} />
+                      </IconBtn>
+                    )}
                   </div>
                 );
               }) : <Empty text="No trainers assigned to this batch" />}
@@ -1128,143 +1077,123 @@ const completedDemos = demoRequests.filter(
         </Modal>
       )}
 
-     {/* ---------- Add / edit session ---------- */}
-{sessionModal && (
-  <Modal
-    title={sessionModal.id ? "Edit Tool Learning" : "Tool Learning"}
-    onClose={() => setSessionModal(null)}
-  >
-    <form onSubmit={submitSession} className="space-y-4">
-
-      {/* Starting and ending dates */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Starting Date">
-          <input
-            type="date"
-            required
-            className={inputClass}
-            value={sessionForm.date}
-            onChange={(e) =>
-              setSessionForm((current) => ({
-                ...current,
-                date: e.target.value,
-                endDate:
-                  current.endDate &&
-                  current.endDate < e.target.value
-                    ? e.target.value
-                    : current.endDate,
-              }))
-            }
-          />
-        </Field>
-
-        <Field label="Ending Date">
-          <input
-            type="date"
-            required
-            min={sessionForm.date || undefined}
-            className={inputClass}
-            value={sessionForm.endDate}
-            onChange={(e) =>
-              setSessionForm((current) => ({
-                ...current,
-                endDate: e.target.value,
-              }))
-            }
-          />
-        </Field>
-
-        <Field label="Time">
-          <input
-            type="time"
-            required
-            className={inputClass}
-            value={sessionForm.time}
-            onChange={(e) =>
-              setSessionForm({
-                ...sessionForm,
-                time: e.target.value,
-              })
-            }
-          />
-        </Field>
-
-        <Field label="Tool">
-          <select
-            className={inputClass}
-            value={sessionForm.toolId}
-            onChange={(e) =>
-              setSessionForm({
-                ...sessionForm,
-                toolId: e.target.value,
-              })
-            }
-          >
-            <option value="">All tools</option>
-
-            {tools.map((tool) => (
-              <option key={tool.id} value={tool.id}>
-                {tool.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Status">
-          <select
-            className={inputClass}
-            value={sessionForm.status}
-            onChange={(e) =>
-              setSessionForm({
-                ...sessionForm,
-                status: e.target.value,
-              })
-            }
-          >
-            <option value="upcoming">Upcoming</option>
-            <option value="ongoing">Ongoing</option>
-            <option value="completed">Completed</option>
-          </select>
-        </Field>
-      </div>
-
-      {/* Notes */}
-      <Field label="Notes (optional)">
-        <textarea
-          rows={3}
-          className={inputClass}
-          placeholder="Add session notes..."
-          value={sessionForm.notes}
-          onChange={(e) =>
-            setSessionForm({
-              ...sessionForm,
-              notes: e.target.value,
-            })
-          }
-        />
-      </Field>
-
-      {/* Actions */}
-      <div className="flex justify-end gap-2 pt-2">
-        <Btn
-          type="button"
-          variant="outline"
-          onClick={() => setSessionModal(null)}
+      {/* ---------- Add / edit session ---------- */}
+      {sessionModal && (
+        <Modal
+          title={sessionModal.id ? "Edit Tool Learning" : "Tool Learning"}
+          onClose={() => setSessionModal(null)}
         >
-          Cancel
-        </Btn>
+          <form onSubmit={submitSession} className="space-y-4">
+            {/* Starting and ending dates */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Starting Date">
+                <input
+                  type="date"
+                  required
+                  className={inputClass}
+                  value={sessionForm.date}
+                  onChange={(e) =>
+                    setSessionForm((current) => ({
+                      ...current,
+                      date: e.target.value,
+                      endDate:
+                        current.endDate && current.endDate < e.target.value
+                          ? e.target.value
+                          : current.endDate,
+                    }))
+                  }
+                />
+              </Field>
 
-        <Btn variant="primary" disabled={saving}>
-          {saving
-            ? "Saving..."
-            : sessionModal.id
-              ? "Save changes"
-              : "Add session"}
-        </Btn>
-      </div>
-    </form>
-  </Modal>
-)}
+              <Field label="Ending Date">
+                <input
+                  type="date"
+                  required
+                  min={sessionForm.date || undefined}
+                  className={inputClass}
+                  value={sessionForm.endDate}
+                  onChange={(e) =>
+                    setSessionForm((current) => ({
+                      ...current,
+                      endDate: e.target.value,
+                    }))
+                  }
+                />
+              </Field>
+
+              <Field label="Time">
+                <input
+                  type="time"
+                  required
+                  className={inputClass}
+                  value={sessionForm.time}
+                  onChange={(e) => setSessionForm({ ...sessionForm, time: e.target.value })}
+                />
+              </Field>
+
+              <Field label="Tool">
+                <select
+                  className={inputClass}
+                  value={sessionForm.toolId}
+                  onChange={(e) => setSessionForm({ ...sessionForm, toolId: e.target.value })}
+                >
+                  <option value="">All tools</option>
+                  {tools.map((tool) => (
+                    <option key={tool.id} value={tool.id}>
+                      {tool.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Status">
+                <select
+                  className={inputClass}
+                  value={sessionForm.status}
+                  onChange={(e) => setSessionForm({ ...sessionForm, status: e.target.value })}
+                >
+                  <option value="upcoming">Upcoming</option>
+                  <option value="ongoing">Ongoing</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </Field>
+            </div>
+
+            {/* Notes */}
+            <Field label="Notes (optional)">
+              <textarea
+                rows={3}
+                className={inputClass}
+                placeholder="Add session notes..."
+                value={sessionForm.notes}
+                onChange={(e) => setSessionForm({ ...sessionForm, notes: e.target.value })}
+              />
+            </Field>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-2 pt-2">
+              <Btn type="button" variant="outline" onClick={() => setSessionModal(null)}>
+                Cancel
+              </Btn>
+
+              <Btn variant="primary" disabled={saving}>
+                {saving ? "Saving..." : sessionModal.id ? "Save changes" : "Add session"}
+              </Btn>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ---------- Assign student ---------- */}
+      {assignModal && (
+        <AssignStudentModal
+          endpoint={endpoint}
+          busy={saving}
+          onClose={() => setAssignModal(false)}
+          onSubmit={submitAssign}
+        />
+      )}
+
       {/* ---------- Are you sure? ---------- */}
       {confirm && (
         <ConfirmDialog
@@ -1275,6 +1204,301 @@ const completedDemos = demoRequests.filter(
         />
       )}
     </div>
+  );
+}
+
+/* ---------- Assign student modal ---------- */
+function AssignStudentModal({ endpoint, busy, onClose, onSubmit }) {
+  const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [page, setPage] = useState(1);
+
+  const [list, setList] = useState([]);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const [batch, setBatch] = useState({ fee: 0, tools: [] });
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+
+  const [selected, setSelected] = useState(null); // whole student object
+  const [mode, setMode] = useState("full_course");
+  const [toolIds, setToolIds] = useState([]);
+  const [totalFee, setTotalFee] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [isOldStudent, setIsOldStudent] = useState(false);
+  const [jobGuarantee, setJobGuarantee] = useState(false); // default: not guaranteed
+
+  // Wait a moment after typing before searching
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebounced(search.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Load students (server-side search + pagination)
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setLoading(true);
+      setLoadError("");
+      try {
+        const params = new URLSearchParams({ page: String(page), pageSize: "8" });
+        if (debounced) params.set("search", debounced);
+
+        const result = await request(`${endpoint}/students?${params}`, "GET");
+        if (cancelled) return;
+
+        setList(result.data.students || []);
+        setPagination(result.data.pagination || { total: 0, totalPages: 1 });
+        setBatch((current) => {
+          // Fill the fee from the batch the first time only
+          if (current.id !== result.data.batch?.id) {
+            setTotalFee(String(result.data.batch?.fee ?? 0));
+          }
+          return result.data.batch || current;
+        });
+      } catch (err) {
+        if (!cancelled) setLoadError(err.message || "Unable to load students");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [endpoint, debounced, page]);
+
+  const fee = Number(totalFee) || 0;
+  const firstPayment = Number(paymentAmount) || 0;
+  const feeError =
+    fee < 0 ? "Fee cannot be negative"
+    : firstPayment < 0 ? "Payment cannot be negative"
+    : firstPayment > fee ? "Payment cannot be more than the total fee"
+    : "";
+
+  const canSubmit =
+    selected &&
+    !busy &&
+    !feeError &&
+    !(mode === "selected_tools" && toolIds.length === 0);
+
+  const submit = () =>
+    onSubmit({
+      studentId: selected.id,
+      mode,
+      toolIds: mode === "selected_tools" ? toolIds : undefined,
+      totalFee: fee,
+      paymentAmount: firstPayment || undefined,
+      isOldStudent,
+      jobGuarantee,
+    });
+
+  return (
+    <Modal title="Assign student" onClose={onClose} width="max-w-xl">
+      <div className="space-y-4">
+        {/* Search */}
+        <div className="relative">
+          <Search
+            size={14}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#9b9a97]"
+          />
+          <input
+            autoFocus
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, phone or email"
+            className={`${inputClass} pl-8`}
+          />
+        </div>
+
+        {/* Student list */}
+        <div className={`rounded-md border ${line}`}>
+          <div className="max-h-64 overflow-y-auto">
+            {loading ? (
+              <div className={`flex items-center justify-center gap-2 py-10 text-sm ${muted}`}>
+                <RefreshCw size={14} className="animate-spin" /> Loading students...
+              </div>
+            ) : loadError ? (
+              <Empty text={loadError} />
+            ) : list.length ? (
+              list.map((student) => {
+                const active = selected?.id === student.id;
+                return (
+                  <button
+                    type="button"
+                    key={student.id}
+                    onClick={() => setSelected(student)}
+                    className={`flex w-full items-center justify-between gap-3 border-b ${line} px-3 py-2.5 text-left text-sm last:border-b-0 ${
+                      active ? "bg-[#d3e5ef]" : hoverBg
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{student.name || "Unnamed"}</p>
+                      <p className={`mt-0.5 flex flex-wrap gap-x-3 text-xs ${muted}`}>
+                        {student.phone && (
+                          <span className="flex items-center gap-1">
+                            <Phone size={11} /> {student.phone}
+                          </span>
+                        )}
+                        {student.email && (
+                          <span className="flex items-center gap-1">
+                            <Mail size={11} /> {student.email}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {student.status && <Status value={student.status} />}
+                      {active && <Check size={15} className="text-[#183347]" />}
+                    </div>
+                  </button>
+                );
+              })
+            ) : (
+              <Empty text={debounced ? "No matching students." : "No students available to assign."} />
+            )}
+          </div>
+
+          {pagination.totalPages > 1 && (
+            <div className={`flex items-center justify-between border-t ${line} px-3 py-1.5 text-xs ${muted}`}>
+              <span>
+                Page {page} of {pagination.totalPages} · {pagination.total} students
+              </span>
+              <div className="flex gap-1">
+                <Btn type="button" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>
+                  Previous
+                </Btn>
+                <Btn
+                  type="button"
+                  disabled={page >= pagination.totalPages || loading}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next
+                </Btn>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Assignment details */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Learning">
+            <select
+              className={inputClass}
+              value={mode}
+              onChange={(e) => setMode(e.target.value)}
+            >
+              <option value="full_course">Full course</option>
+              <option value="selected_tools">Selected tools</option>
+            </select>
+          </Field>
+
+          <Field label="Total course fee">
+            <input
+              type="number"
+              min="0"
+              className={inputClass}
+              value={totalFee}
+              onChange={(e) => setTotalFee(e.target.value)}
+            />
+          </Field>
+        </div>
+
+        {mode === "selected_tools" && (
+          <Field label="Learning tools">
+            <div className={`max-h-36 space-y-1 overflow-y-auto rounded-md border ${line} p-2`}>
+              {batch.tools?.length ? (
+                batch.tools.map((tool) => (
+                  <label
+                    key={tool.id}
+                    className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm ${hoverBg}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={toolIds.includes(tool.id)}
+                      onChange={(e) =>
+                        setToolIds((current) =>
+                          e.target.checked
+                            ? [...current, tool.id]
+                            : current.filter((id) => id !== tool.id)
+                        )
+                      }
+                    />
+                    {tool.name}
+                  </label>
+                ))
+              ) : (
+                <span className={`text-xs ${muted}`}>This batch has no tools.</span>
+              )}
+            </div>
+          </Field>
+        )}
+
+        <Field label="First payment (optional)">
+          <input
+            type="number"
+            min="0"
+            className={inputClass}
+            placeholder="0"
+            value={paymentAmount}
+            onChange={(e) => setPaymentAmount(e.target.value)}
+          />
+        </Field>
+        {feeError && <p className="-mt-2 text-xs text-[#eb5757]">{feeError}</p>}
+
+        {/* Two extra details */}
+        <div className="space-y-3 rounded-md bg-[#f7f6f3] p-3 text-sm">
+          <label className="flex cursor-pointer items-center justify-between gap-3">
+            <span>
+              <span className="font-medium">Old student</span>
+              <span className={`block text-xs ${muted}`}>
+                Select if this student studied here before
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={isOldStudent}
+              onChange={(e) => setIsOldStudent(e.target.checked)}
+            />
+          </label>
+
+          <div className="flex items-center justify-between gap-3">
+            <span>
+              <span className="font-medium">Job guarantee</span>
+              <span className={`block text-xs ${muted}`}>Defaults to not guaranteed</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setJobGuarantee((v) => !v)}
+              title="Click to switch"
+            >
+              <Tag color={jobGuarantee ? "green" : "gray"}>
+                {jobGuarantee ? <Check size={12} /> : null}
+                {jobGuarantee ? "Guaranteed" : "Not guaranteed"}
+              </Tag>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <span className={`truncate text-xs ${muted}`}>
+            {selected ? `Selected: ${selected.name}` : "Click a student to select"}
+          </span>
+          <div className="flex gap-2">
+            <Btn type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Btn>
+            <Btn type="button" variant="primary" disabled={!canSubmit} onClick={submit}>
+              {busy ? "Saving..." : "Assign to batch"}
+            </Btn>
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1321,6 +1545,8 @@ function StudentTable({ students, onEdit, onRemove }) {
                   {student.batchCompleted && (
                     <Tag color="green"><Check size={12} /> Batch completed</Tag>
                   )}
+                  {student.isOldStudent && <Tag color="yellow">Old student</Tag>}
+                  {student.jobGuarantee && <Tag color="green">Job guarantee</Tag>}
                 </div>
               </td>
               <td className="max-w-56 px-3 py-2.5">

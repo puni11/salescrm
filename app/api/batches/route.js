@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
@@ -11,6 +10,10 @@ const VALID_STATUSES = [
   "upcoming",
   "completed",
 ];
+
+// Batch type: "normal" is the default (also used for older batches without a type)
+const VALID_BATCH_TYPES = ["regular", "special"];
+const DEFAULT_BATCH_TYPE = "regular";
 
 async function getCollection() {
   const client = await clientPromise;
@@ -33,6 +36,14 @@ function validateBatch(body) {
   const status = body.status ?? "upcoming";
   const tools = body.tools;
   const assignments = body.toolTrainerAssignments;
+
+  // Missing / empty type falls back to "normal"
+  const batchType =
+    body.batchType === undefined ||
+    body.batchType === null ||
+    body.batchType === ""
+      ? DEFAULT_BATCH_TYPE
+      : String(body.batchType).trim().toLowerCase();
 
   if (!name) {
     return { error: "Batch name is required" };
@@ -141,6 +152,12 @@ function validateBatch(body) {
     };
   }
 
+  if (!VALID_BATCH_TYPES.includes(batchType)) {
+    return {
+      error: "Batch type must be normal or special",
+    };
+  }
+
   const trainers = [
     ...new Set(normalizedAssignments.map((item) => item.trainerId)),
   ];
@@ -154,8 +171,9 @@ function validateBatch(body) {
       toolTrainerAssignments: normalizedAssignments,
       startingDate,
       startingTime,
-      endingTime, // IMPORTANT: this was missing
+      endingTime,
       status,
+      batchType,
     },
   };
 }
@@ -258,6 +276,7 @@ export async function GET(request) {
     const id = searchParams.get("id");
     const status = searchParams.get("status");
     const courseId = searchParams.get("courseId");
+    const batchType = searchParams.get("batchType");
 
     const { collection } = await getCollection();
 
@@ -286,6 +305,13 @@ export async function GET(request) {
       );
     }
 
+    if (batchType && !VALID_BATCH_TYPES.includes(batchType)) {
+      return NextResponse.json(
+        { success: false, message: "Invalid batch type" },
+        { status: 400 }
+      );
+    }
+
     // =========================================
     // BUILD FILTER
     // =========================================
@@ -295,6 +321,13 @@ export async function GET(request) {
     if (id) filter._id = new ObjectId(id);
     if (status) filter.status = status;
     if (courseId) filter.courseId = courseId;
+
+    // Older batches have no batchType and count as "normal"
+    if (batchType === "special") {
+      filter.batchType = "special";
+    } else if (batchType === "regular") {
+      filter.batchType = { $ne: "special" };
+    }
 
     // =========================================
     // COMMON SESSION PIPELINE
@@ -525,7 +558,7 @@ export async function GET(request) {
       },
 
       // =========================================
-      // ADD SESSION DATA
+      // ADD SESSION DATA + DEFAULT BATCH TYPE
       // =========================================
 
       {
@@ -548,6 +581,15 @@ export async function GET(request) {
             $ifNull: [
               { $arrayElemAt: ["$completedSessions", 0] },
               null,
+            ],
+          },
+
+          // Older batches without a type are returned as "normal"
+          batchType: {
+            $cond: [
+              { $eq: ["$batchType", "special"] },
+              "special",
+              DEFAULT_BATCH_TYPE,
             ],
           },
         },
@@ -676,6 +718,7 @@ export async function POST(request) {
 
     const now = new Date();
 
+    // batchData already includes the validated batchType
     const batch = {
       ...batchData,
       studentIds: [],
@@ -745,7 +788,7 @@ export async function PATCH(request) {
 
     const body = await request.json();
 
-    // Status-only updates
+    // Status-only updates (batch type is left untouched)
     const suppliedKeys = Object.keys(body);
     const statusOnly =
       suppliedKeys.length === 1 &&
@@ -797,6 +840,9 @@ export async function PATCH(request) {
         body.toolTrainerAssignments ??
         existing.toolTrainerAssignments,
       status: body.status ?? existing.status,
+      // Keep the saved type if none is sent; old batches default to "normal"
+      batchType:
+        body.batchType ?? existing.batchType ?? DEFAULT_BATCH_TYPE,
     };
 
     const validation = validateBatch(mergedBody);

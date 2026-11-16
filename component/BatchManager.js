@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus, X, Loader2, Pencil, Trash2, Search, CalendarDays,
-  Users, Wrench, BookOpen, CircleDot, Check, Clock2, User,
+  Users, Wrench, BookOpen, CircleDot, Check, Clock2, User, Tag,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import Link from "next/link";
@@ -48,6 +48,7 @@ const EMPTY_FORM = {
   startingTime: "",
   endingTime: "",
   status: "upcoming",
+  batchType: "regular",
 };
 
 const STATUS_OPTIONS = [
@@ -56,6 +57,20 @@ const STATUS_OPTIONS = [
   { value: "inactive", label: "Inactive" },
   { value: "completed", label: "Completed" },
 ];
+
+const BATCH_TYPE_OPTIONS = [
+  { value: "regular", label: "Regular" },
+  { value: "special", label: "Special" },
+];
+
+// Missing / unknown type always falls back to "regular"
+const normalizeBatchType = (value) =>
+  String(value || "").toLowerCase() === "special" ? "special" : "regular";
+
+const batchTypeStyles = {
+  regular: "bg-[#E3E2E0] text-[#32302C]",
+  special: "bg-[#FADEC9] text-[#49290E]",
+};
 
 const statusStyles = {
   upcoming: "bg-[#D3E5EF] text-[#183347]",
@@ -158,7 +173,7 @@ function Pill({ className = "", children }) {
  * Session summary slot.
  * Completed sessions are intentionally muted; active and upcoming stay prominent.
  */
-function SessionBlock({ label, dotClass, session, dateLabel, date, muted = false }) {
+function SessionBlock({ label, dotClass, session, toolName, dateLabel, date, muted = false }) {
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-1.5 text-xs text-[#787774]">
@@ -169,7 +184,7 @@ function SessionBlock({ label, dotClass, session, dateLabel, date, muted = false
       {session ? (
         <>
           <p className={`mt-1 truncate text-sm font-medium ${muted ? "text-[#A8A7A3]" : "text-[#37352F]"}`}>
-            {session.toolName || "Untitled topic"}
+            {toolName || session.toolName || "Untitled topic"}
           </p>
           <p className={`mt-0.5 flex items-center gap-1 truncate text-xs ${muted ? "text-[#B8B7B2]" : "text-[#787774]"}`}>
             <User size={12} className="shrink-0 text-[#B8B7B2]" />
@@ -239,6 +254,27 @@ function Property({ icon: Icon, label, hint, children }) {
 const fieldClass =
   "w-full rounded-[4px] bg-transparent px-2 py-1.5 text-sm text-[#37352F] outline-none transition-colors placeholder:text-[#C7C6C3] hover:bg-[rgba(55,53,47,0.06)] focus:bg-white focus:ring-2 focus:ring-[#2383E2]/40";
 
+// Shared tab button so status tabs and type tabs look identical.
+function TabButton({ label, count, selected, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={`-mb-px flex items-center gap-1.5 border-b-2 px-2 pb-2 pt-1 text-sm transition-colors ${
+        selected
+          ? "border-[#37352F] font-medium text-[#37352F]"
+          : "border-transparent text-[#787774] hover:text-[#37352F]"
+      }`}
+    >
+      {label}
+      <span className="rounded-[3px] bg-[rgba(55,53,47,0.08)] px-1 text-xs text-[#787774]">
+        {count}
+      </span>
+    </button>
+  );
+}
+
 /* ---------- main component ---------- */
 
 export default function BatchManager({ session }) {
@@ -257,6 +293,7 @@ export default function BatchManager({ session }) {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all"); // "all" | "regular" | "special"
 
   const loadData = async () => {
     try {
@@ -308,6 +345,12 @@ export default function BatchManager({ session }) {
       active: batches.filter((b) => b.status === "active").length,
       inactive: batches.filter((b) => b.status === "inactive").length,
       completed: batches.filter((b) => b.status === "completed").length,
+      regular: batches.filter(
+        (b) => normalizeBatchType(b.batchType) === "regular"
+      ).length,
+      special: batches.filter(
+        (b) => normalizeBatchType(b.batchType) === "special"
+      ).length,
     }),
     [batches]
   );
@@ -321,14 +364,19 @@ export default function BatchManager({ session }) {
         courses
           .find((c) => String(c._id) === String(batch.courseId))
           ?.name?.toLowerCase()
-          .includes(query);
+          .includes(query) ||
+        normalizeBatchType(batch.batchType).includes(query);
 
       const matchesStatus =
         statusFilter === "all" || batch.status === statusFilter;
 
-      return matchesSearch && matchesStatus;
+      const matchesType =
+        typeFilter === "all" ||
+        normalizeBatchType(batch.batchType) === typeFilter;
+
+      return matchesSearch && matchesStatus && matchesType;
     });
-  }, [batches, courses, search, statusFilter]);
+  }, [batches, courses, search, statusFilter, typeFilter]);
 
   const getCourse = (id) =>
     courses.find((course) => String(course._id) === String(id));
@@ -348,11 +396,19 @@ export default function BatchManager({ session }) {
   const getTrainer = (id) =>
     trainers.find((trainer) => String(trainer._id) === String(id));
 
+  // Short name for a session's tool; falls back to the session's own toolName.
+  const getSessionToolName = (session) => {
+    const tool = session?.toolId ? getTool(session.toolId) : null;
+    return tool ? getToolDisplayName(tool) : session?.toolName;
+  };
+
   const openCreate = () => {
     setEditingId(null);
     setForm({
       ...EMPTY_FORM,
       courseId: courses[0]?._id || "",
+      // Pre-select the type tab the user is currently viewing
+      batchType: typeFilter === "special" ? "special" : "regular",
       tools: [],
       trainers: [],
       toolTrainerAssignments: {},
@@ -379,6 +435,7 @@ export default function BatchManager({ session }) {
       startingTime: batch.startingTime || "",
       endingTime: batch.endingTime || "",
       status: batch.status || "upcoming",
+      batchType: normalizeBatchType(batch.batchType),
     });
     setShowModal(true);
   };
@@ -497,6 +554,7 @@ export default function BatchManager({ session }) {
             startingTime: form.startingTime,
             endingTime: form.endingTime,
             status: form.status,
+            batchType: normalizeBatchType(form.batchType),
           }),
         }
       );
@@ -576,7 +634,12 @@ export default function BatchManager({ session }) {
     ...STATUS_OPTIONS.map((s) => [s.value, s.label, counts[s.value]]),
   ];
 
-  const isFiltered = search || statusFilter !== "all";
+  const typeTabs = [
+    ["regular", "Regular Batch", counts.regular],
+    ["special", "Special Batch", counts.special],
+  ];
+
+  const isFiltered = search || statusFilter !== "all" || typeFilter !== "all";
 
   return (
     <div className="w-full text-[#37352F]">
@@ -594,24 +657,34 @@ export default function BatchManager({ session }) {
       {/* Tabs + toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E9E9E7]">
         <div className="flex flex-wrap items-center gap-1">
-          {tabs.map(([key, label, count]) => {
-            const selected = statusFilter === key;
+          {/* Status tabs */}
+          {tabs.map(([key, label, count]) => (
+            <TabButton
+              key={key}
+              label={label}
+              count={count}
+              selected={statusFilter === key}
+              onClick={() => setStatusFilter(key)}
+            />
+          ))}
+
+          {/* Divider */}
+          <span
+            className="mx-1.5 -mb-px h-4 w-px self-center bg-[#E3E2E0]"
+            aria-hidden="true"
+          />
+
+          {/* Batch type tabs (click again to clear) */}
+          {typeTabs.map(([key, label, count]) => {
+            const selected = typeFilter === key;
             return (
-              <button
+              <TabButton
                 key={key}
-                onClick={() => setStatusFilter(key)}
-                aria-pressed={selected}
-                className={`-mb-px flex items-center gap-1.5 border-b-2 px-2 pb-2 pt-1 text-sm transition-colors ${
-                  selected
-                    ? "border-[#37352F] font-medium text-[#37352F]"
-                    : "border-transparent text-[#787774] hover:text-[#37352F]"
-                }`}
-              >
-                {label}
-                <span className="rounded-[3px] bg-[rgba(55,53,47,0.08)] px-1 text-xs text-[#787774]">
-                  {count}
-                </span>
-              </button>
+                label={label}
+                count={count}
+                selected={selected}
+                onClick={() => setTypeFilter(selected ? "all" : key)}
+              />
             );
           })}
         </div>
@@ -629,12 +702,14 @@ export default function BatchManager({ session }) {
               className="h-7 w-32 rounded-[4px] bg-transparent pl-7 pr-2 text-sm outline-none transition-all placeholder:text-[#9B9A97] hover:bg-[rgba(55,53,47,0.06)] focus:w-52 focus:bg-white focus:ring-2 focus:ring-[#2383E2]/40"
             />
           </div>
-          {session.user.role !=='placemenCell' &&  <button
-            onClick={openCreate}
-            className="ml-1 inline-flex h-7 items-center gap-1 rounded-[4px] bg-[#2383E2] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0077D4]"
-          >
-            <Plus size={15} /> New
-          </button>}
+          {session.user.role !== "placemenCell" && (
+            <button
+              onClick={openCreate}
+              className="ml-1 inline-flex h-7 items-center gap-1 rounded-[4px] bg-[#2383E2] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0077D4]"
+            >
+              <Plus size={15} /> New
+            </button>
+          )}
         </div>
       </div>
 
@@ -672,6 +747,7 @@ export default function BatchManager({ session }) {
             const toolStates = getToolStates(batch, batchTools);
 
             const statusKey = batch.status || "inactive";
+            const typeKey = normalizeBatchType(batch.batchType);
             const timing =
               batch.startingTime && batch.endingTime
                 ? `${formatTime(batch.startingTime)} – ${formatTime(batch.endingTime)}`
@@ -685,14 +761,14 @@ export default function BatchManager({ session }) {
                 <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))_auto]">
                   {/* Identity */}
                   <div className="min-w-0 sm:col-span-2 lg:col-span-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Link
                         href={`/batches/${batch._id}`}
                         className="block truncate text-[15px] font-semibold text-[#37352F] hover:underline hover:decoration-[#9B9A97] hover:underline-offset-[3px]"
                       >
                         {batch.name}
                       </Link>
-                      <div>
+                      <div className="flex flex-wrap items-center gap-1.5">
                         {course ? (
                           <Pill className={tagColor(course._id)}>
                             Course - {course.name}
@@ -702,6 +778,9 @@ export default function BatchManager({ session }) {
                             Course unavailable
                           </span>
                         )}
+                        <Pill className={batchTypeStyles[typeKey]}>
+                          {typeKey === "special" ? "Special" : "Regular"}
+                        </Pill>
                       </div>
                     </div>
 
@@ -722,6 +801,7 @@ export default function BatchManager({ session }) {
                     label="Ongoing"
                     dotClass="bg-[#2F9E5B]"
                     session={batch.latestOngoingSession}
+                    toolName={getSessionToolName(batch.latestOngoingSession)}
                     dateLabel="Ends"
                     date={batch.latestOngoingSession?.endDate}
                   />
@@ -731,6 +811,7 @@ export default function BatchManager({ session }) {
                     label="Upcoming"
                     dotClass="bg-[#37352F]"
                     session={batch.latestUpcomingSession}
+                    toolName={getSessionToolName(batch.latestUpcomingSession)}
                     dateLabel="Starts"
                     date={
                       batch.latestUpcomingSession?.startDate ||
@@ -756,28 +837,29 @@ export default function BatchManager({ session }) {
                       ))}
                     </select>
 
-                    {session.user.role !=='placemenCell' &&  
-                    <div className="flex items-center gap-0.5 lg:opacity-0 lg:transition-opacity lg:focus-within:opacity-100 lg:group-hover:opacity-100">
-                     <button
-                        onClick={() => openEdit(batch)}
-                        aria-label={`Edit ${batch.name}`}
-                        className={`rounded-[4px] p-1.5 text-[#787774] ${hoverBg}`}
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        onClick={() => deleteBatch(batch)}
-                        disabled={deletingId === batch._id}
-                        aria-label={`Delete ${batch.name}`}
-                        className="rounded-[4px] p-1.5 text-[#787774] transition-colors hover:bg-[#FFE2DD] hover:text-[#E03E3E]"
-                      >
-                        {deletingId === batch._id ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <Trash2 size={14} />
-                        )}
-                      </button>
-                    </div> }
+                    {session.user.role !== "placemenCell" && (
+                      <div className="flex items-center gap-0.5 lg:opacity-0 lg:transition-opacity lg:focus-within:opacity-100 lg:group-hover:opacity-100">
+                        <button
+                          onClick={() => openEdit(batch)}
+                          aria-label={`Edit ${batch.name}`}
+                          className={`rounded-[4px] p-1.5 text-[#787774] ${hoverBg}`}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => deleteBatch(batch)}
+                          disabled={deletingId === batch._id}
+                          aria-label={`Delete ${batch.name}`}
+                          className="rounded-[4px] p-1.5 text-[#787774] transition-colors hover:bg-[#FFE2DD] hover:text-[#E03E3E]"
+                        >
+                          {deletingId === batch._id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -936,6 +1018,22 @@ export default function BatchManager({ session }) {
                       {STATUS_OPTIONS.map((status) => (
                         <option key={status.value} value={status.value}>
                           {status.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Property>
+
+                  <Property icon={Tag} label="Batch type">
+                    <select
+                      value={form.batchType}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, batchType: e.target.value }))
+                      }
+                      className={fieldClass}
+                    >
+                      {BATCH_TYPE_OPTIONS.map((type) => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
                         </option>
                       ))}
                     </select>

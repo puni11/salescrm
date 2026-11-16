@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Search,
-  Users,
   BookOpen,
   Wrench,
   CalendarDays,
@@ -11,10 +10,8 @@ import {
   X,
   Check,
   UserRound,
-  GraduationCap,
   Trash2,
   RefreshCw,
-  Pencil,
   Plus,
   Table2,
   Type,
@@ -51,27 +48,49 @@ const formatCurrency = (value) =>
     maximumFractionDigits: 0,
   }).format(Number(value) || 0);
 
-/* Fee summary for a batch assignment (null when no fee is recorded) */
-const getFeeInfo = (assignment) => {
-  if (!assignment || assignment.totalFee == null) return null;
-
-  const total = Number(assignment.totalFee) || 0;
-  const paid = Number(assignment.paidFee) || 0;
-  const due = Math.max(total - paid, 0);
-
-  let label = "Due";
-  let color = "bg-[#FFE2DD] text-[#5D1715]";
-
-  if (total > 0 && due === 0) {
-    label = "Paid";
-    color = "bg-[#DBEDDB] text-[#1C3829]";
-  } else if (paid > 0) {
-    label = "Partial";
-    color = "bg-[#FDECC8] text-[#402C1B]";
-  }
-
-  return { total, paid, due, label, color };
+const todayLocal = () => {
+  const today = new Date();
+  const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 10);
 };
+
+/* Aggregate fee information across every batch assigned to a student (row display). */
+const getStudentFeeSummary = (student) => {
+  const assignments = student?.batchAssignments || [];
+
+  const total = assignments.reduce(
+    (sum, item) => sum + (Number(item.totalFee) || 0),
+    0
+  );
+
+  const paid = assignments.reduce((sum, item) => {
+    // Prefer the API's paidFee aggregate. Fall back to payment history when absent.
+    const paymentHistory = (item.payments || []).reduce(
+      (paymentSum, payment) => paymentSum + (Number(payment.amount) || 0),
+      0
+    );
+    const legacyPaid = Number(item.legacyPaidFee) || 0;
+    const calculatedPaid = legacyPaid + paymentHistory;
+    const itemPaid =
+      item.paidFee != null ? Number(item.paidFee) || 0 : calculatedPaid;
+
+    return sum + itemPaid;
+  }, 0);
+
+  const due = Math.max(total - paid, 0);
+  const status =
+    total <= 0 ? "unrecorded" : due === 0 ? "paid" : paid > 0 ? "partial" : "due";
+
+  return { total, paid, due, status };
+};
+
+const getStudentRegistrationDate = (student) =>
+  student?.createdAt ||
+  student?.created_at ||
+  student?.registeredAt ||
+  student?.registrationDate ||
+  student?.createdOn ||
+  null;
 
 /* Notion tag palette (background + text) */
 const TAG_COLORS = [
@@ -93,7 +112,7 @@ const tagColor = (key = "") => {
 };
 
 const GRID =
-  "grid grid-cols-[minmax(210px,1.5fr)_minmax(200px,1.4fr)_130px_minmax(150px,1.1fr)_130px_minmax(190px,1.3fr)_120px_minmax(220px,1.6fr)_minmax(170px,1fr)_76px]";
+  "grid grid-cols-[minmax(210px,1.35fr)_minmax(190px,1.2fr)_125px_minmax(150px,1fr)_125px_minmax(180px,1.2fr)_120px_minmax(220px,1.3fr)_135px_minmax(145px,0.9fr)_minmax(145px,0.9fr)_minmax(145px,0.9fr)_125px_76px]";
 
 const hoverBg = "hover:bg-[rgba(55,53,47,0.06)]";
 
@@ -147,16 +166,49 @@ function Property({ icon: Icon, label, children }) {
 const fieldClass =
   "w-full rounded-[4px] border border-[#E3E2E0] bg-white px-2.5 py-2 text-sm text-[#37352F] outline-none transition-shadow focus:border-[#2383E2] focus:ring-2 focus:ring-[#2383E2]/30";
 
+const pagerBtn =
+  "h-8 rounded-[4px] border border-[#E3E2E0] text-[#37352F] hover:bg-[#F7F6F3] disabled:cursor-not-allowed disabled:opacity-40";
+
 export default function StudentBatchAssignmentsPage() {
+  /* Server data (current page only) */
   const [students, setStudents] = useState([]);
   const [batches, setBatches] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [counts, setCounts] = useState({ all: 0, registered: 0, converted: 0 });
+  const [summary, setSummary] = useState({
+    assigned: 0,
+    awaiting: 0,
+    pendingFees: 0,
+    totalFees: 0,
+    collectedFees: 0,
+  });
+  const [courseOptions, setCourseOptions] = useState([]);
+  const [feeTotals, setFeeTotals] = useState({
+    totalFees: 0,
+    collectedFees: 0,
+    pendingFees: 0,
+  });
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  /* Filters (all sent to the API) */
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
-  const searchRef = useRef(null);
+  const [courseFilter, setCourseFilter] = useState("all");
+  const [feeFilter, setFeeFilter] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
 
+  const searchRef = useRef(null);
+  const abortRef = useRef(null);
+
+  /* Modal state */
   const [showModal, setShowModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [selectedBatchId, setSelectedBatchId] = useState("");
@@ -164,83 +216,103 @@ export default function StudentBatchAssignmentsPage() {
   const [selectedTools, setSelectedTools] = useState([]);
   const [totalFee, setTotalFee] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentDate, setPaymentDate] = useState(() => {
-    const today = new Date();
-    const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000);
-    return localDate.toISOString().slice(0, 10);
-  });
+  const [paymentDate, setPaymentDate] = useState(todayLocal);
   const [removingId, setRemovingId] = useState(null);
 
-  const loadData = async () => {
+  /* ---------------------------- Data loading ---------------------------- */
+  const loadData = useCallback(async () => {
+    abortRef.current?.abort(); // cancel the previous in-flight request
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       setLoading(true);
 
-      const response = await fetch(API, {
-        cache: "no-store",
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
       });
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (courseFilter !== "all") params.set("course", courseFilter);
+      if (feeFilter !== "all") params.set("feeStatus", feeFilter);
+      if (fromDate) params.set("fromDate", fromDate);
+      if (toDate) params.set("toDate", toDate);
 
+      const response = await fetch(`${API}?${params.toString()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
       const result = await response.json();
 
       if (!response.ok || !result.success) {
         throw new Error(result.message || "Failed to load students");
       }
 
-      setStudents(result.data.students || []);
-      setBatches(result.data.batches || []);
+      const data = result.data;
+      setStudents(data.students || []);
+      setBatches(data.batches || []);
+      setTotal(data.pagination?.total ?? 0);
+      setTotalPages(Math.max(1, data.pagination?.totalPages ?? 1));
+      setCounts(data.counts || { all: 0, registered: 0, converted: 0 });
+      setSummary(
+        data.summary || {
+          assigned: 0,
+          awaiting: 0,
+          pendingFees: 0,
+          totalFees: 0,
+          collectedFees: 0,
+        }
+      );
+      setCourseOptions(data.courseOptions || []);
+      setFeeTotals(
+        data.feeTotals || { totalFees: 0, collectedFees: 0, pendingFees: 0 }
+      );
+
+      // Page out of range (e.g. last row on the last page was removed)
+      if (data.pagination && page > data.pagination.totalPages && data.pagination.totalPages > 0) {
+        setPage(data.pagination.totalPages);
+      }
     } catch (error) {
+      if (error.name === "AbortError") return;
       toast.error(error.message || "Failed to load data");
     } finally {
-      setLoading(false);
+      if (abortRef.current === controller) setLoading(false);
     }
-  };
+  }, [page, pageSize, debouncedSearch, statusFilter, courseFilter, feeFilter, fromDate, toDate]);
 
+  // Fetch whenever any filter / page changes
   useEffect(() => {
     loadData();
-  }, []);
+    return () => abortRef.current?.abort();
+  }, [loadData]);
+
+  // Debounce typing in the search box
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     if (searchOpen) searchRef.current?.focus();
   }, [searchOpen]);
 
-  const filteredStudents = useMemo(() => {
-    const query = search.trim().toLowerCase();
+  const clearFilters = () => {
+    setSearch("");
+    setDebouncedSearch("");
+    setSearchOpen(false);
+    setStatusFilter("all");
+    setCourseFilter("all");
+    setFeeFilter("all");
+    setFromDate("");
+    setToDate("");
+    setPage(1);
+  };
 
-    return students.filter((student) => {
-      const assignments = student.batchAssignments || [];
-      const matchesSearch = [
-        student.name,
-        student.email,
-        student.phone,
-        student.course,
-        ...assignments.flatMap((item) => [item.batchName, item.batch?.name]),
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query));
-
-      const status = String(student.status).toLowerCase();
-      const matchesStatus = statusFilter === "all" || status === statusFilter;
-      return matchesSearch && matchesStatus;
-    });
-  }, [students, search, statusFilter]);
-
-  const assignedCount = students.filter(
-    (student) => (student.batchAssignments || []).length > 0
-  ).length;
-
-  const pendingFees = useMemo(
-    () =>
-      students.reduce(
-        (sum, student) =>
-          sum + (student.batchAssignments || []).reduce(
-            (assignmentSum, assignment) =>
-              assignmentSum + (getFeeInfo(assignment)?.due || 0),
-            0
-          ),
-        0
-      ),
-    [students]
-  );
-
+  /* ---------------------------- Modal derived ---------------------------- */
   const selectedBatch = batches.find((batch) => batch.id === selectedBatchId);
 
   const eligibleBatches = batches.filter(
@@ -256,7 +328,7 @@ export default function StudentBatchAssignmentsPage() {
   );
 
   const alreadyPaid =
-    Number(selectedAssignment?.legacyPaidFee) +
+    (Number(selectedAssignment?.legacyPaidFee) || 0) +
     (selectedAssignment?.payments || []).reduce(
       (sum, payment) => sum + (Number(payment.amount) || 0),
       0
@@ -273,11 +345,7 @@ export default function StudentBatchAssignmentsPage() {
     setSelectedTools([]);
     setTotalFee("");
     setPaymentAmount("");
-    setPaymentDate(() => {
-      const today = new Date();
-      const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000);
-      return localDate.toISOString().slice(0, 10);
-    });
+    setPaymentDate(todayLocal());
     setShowModal(true);
   };
 
@@ -315,24 +383,15 @@ export default function StudentBatchAssignmentsPage() {
       setMode(existingAssignment.mode === "selected_tools" ? "selected_tools" : "full_course");
       setSelectedTools(existingAssignment.toolIds?.map(String) || []);
       setTotalFee(existingAssignment.totalFee != null ? String(existingAssignment.totalFee) : "");
-      // A new installment is entered separately; existing payments remain in history.
-      setPaymentAmount("");
-      setPaymentDate(() => {
-        const today = new Date();
-        const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000);
-        return localDate.toISOString().slice(0, 10);
-      });
     } else {
       setMode("full_course");
       setSelectedTools(batch?.tools?.map((tool) => tool.id) || []);
       setTotalFee(batch?.fee != null ? String(batch.fee) : "");
-      setPaymentAmount("");
-      setPaymentDate(() => {
-        const today = new Date();
-        const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000);
-        return localDate.toISOString().slice(0, 10);
-      });
     }
+
+    // A new installment is entered separately; existing payments remain in history.
+    setPaymentAmount("");
+    setPaymentDate(todayLocal());
   };
 
   const toggleTool = (toolId) => {
@@ -343,6 +402,7 @@ export default function StudentBatchAssignmentsPage() {
     );
   };
 
+  /* ------------------------------- Actions ------------------------------- */
   const assignBatch = async (event) => {
     event.preventDefault();
 
@@ -435,33 +495,13 @@ export default function StudentBatchAssignmentsPage() {
       }
 
       toast.success("Batch assignment removed");
-      setStudents((previous) =>
-        previous.map((item) =>
-          item.id === student.id
-            ? {
-                ...item,
-                batchAssignments: (item.batchAssignments || []).filter(
-                  (a) => String(a.batchId) !== String(assignment.batchId)
-                ),
-              }
-            : item
-        )
-      );
+      // Reload so fee filter, counts and totals stay correct
+      await loadData();
     } catch (error) {
       toast.error(error.message || "Failed to remove assignment");
     } finally {
       setRemovingId(null);
     }
-  };
-
-  const counts = {
-    all: students.length,
-    registered: students.filter(
-      (student) => String(student.status).toLowerCase() === "registered"
-    ).length,
-    converted: students.filter(
-      (student) => String(student.status).toLowerCase() === "converted"
-    ).length,
   };
 
   const tabs = [
@@ -473,8 +513,11 @@ export default function StudentBatchAssignmentsPage() {
   const iconBtn =
     "inline-flex h-7 w-7 items-center justify-center rounded-[4px] text-[#787774] transition-colors hover:bg-[rgba(55,53,47,0.08)] disabled:opacity-50";
 
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(page * pageSize, total);
+
   return (
-    <main className="min-h-screen bg-white px-4 py-6 text-[#37352F] sm:px-8 lg:px-[30px]">
+    <main className="flex min-h-screen flex-col bg-white px-4 pt-6 text-[#37352F] sm:px-8 lg:px-[30px]">
       {/* Title */}
       <div className="flex items-center gap-3">
         <h1 className="text-[28px] font-bold leading-tight tracking-[-0.01em] sm:text-[32px]">
@@ -496,7 +539,10 @@ export default function StudentBatchAssignmentsPage() {
               <button
                 key={value}
                 type="button"
-                onClick={() => setStatusFilter(value)}
+                onClick={() => {
+                  setStatusFilter(value);
+                  setPage(1);
+                }}
                 aria-pressed={active}
                 className={`inline-flex h-8 items-center gap-2 rounded-[8px] px-3 text-sm transition-colors ${
                   active
@@ -512,40 +558,88 @@ export default function StudentBatchAssignmentsPage() {
           })}
         </div>
 
-        <div className="flex items-center gap-0.5">
-          {searchOpen || search ? (
-            <div className="relative">
-              <Search
-                size={14}
-                className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[#9B9A97]"
-              />
-              <input
-                ref={searchRef}
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                onBlur={() => {
-                  if (!search) setSearchOpen(false);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setSearch("");
-                    setSearchOpen(false);
-                  }
-                }}
-                placeholder="Name, email, phone, course or batch"
-                className="h-7 w-64 rounded-[4px] bg-white pl-7 pr-2 text-sm outline-none ring-1 ring-[#E3E2E0] placeholder:text-[#9B9A97] focus:ring-2 focus:ring-[#2383E2]/50"
-              />
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setSearchOpen(true)}
-              aria-label="Search students"
-              className={iconBtn}
-            >
-              <Search size={16} />
-            </button>
-          )}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[230px] flex-1 sm:flex-none">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#9B9A97]"
+            />
+            <input
+              ref={searchRef}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search name, email, phone, course..."
+              className="h-9 w-full rounded-[5px] border border-[#E3E2E0] bg-white pl-8 pr-3 text-sm outline-none focus:border-[#2383E2] focus:ring-2 focus:ring-[#2383E2]/20 sm:w-[270px]"
+            />
+          </div>
+
+          <select
+            value={courseFilter}
+            onChange={(event) => {
+              setCourseFilter(event.target.value);
+              setPage(1);
+            }}
+            className="h-9 min-w-[145px] rounded-[5px] border border-[#E3E2E0] bg-white px-2.5 text-sm outline-none focus:border-[#2383E2]"
+            aria-label="Filter by course"
+          >
+            <option value="all">All courses</option>
+            {courseOptions.map((course) => (
+              <option key={course} value={course}>{course}</option>
+            ))}
+          </select>
+
+          <select
+            value={feeFilter}
+            onChange={(event) => {
+              setFeeFilter(event.target.value);
+              setPage(1);
+            }}
+            className="h-9 min-w-[135px] rounded-[5px] border border-[#E3E2E0] bg-white px-2.5 text-sm outline-none focus:border-[#2383E2]"
+            aria-label="Filter by fee status"
+          >
+            <option value="all">All fee status</option>
+            <option value="paid">Paid</option>
+            <option value="partial">Partial</option>
+            <option value="due">Due</option>
+            <option value="unrecorded">Not recorded</option>
+          </select>
+
+          <div className="flex items-center gap-1.5 rounded-[5px] border border-[#E3E2E0] bg-white px-2">
+            <CalendarDays size={14} className="text-[#9B9A97]" />
+            <input
+              type="date"
+              value={fromDate}
+              max={toDate || undefined}
+              onChange={(event) => {
+                setFromDate(event.target.value);
+                setPage(1);
+              }}
+              aria-label="Registration date from"
+              title="Registration date from"
+              className="h-8 w-[125px] bg-transparent text-xs text-[#37352F] outline-none"
+            />
+            <span className="text-xs text-[#9B9A97]">to</span>
+            <input
+              type="date"
+              value={toDate}
+              min={fromDate || undefined}
+              onChange={(event) => {
+                setToDate(event.target.value);
+                setPage(1);
+              }}
+              aria-label="Registration date to"
+              title="Registration date to"
+              className="h-8 w-[125px] bg-transparent text-xs text-[#37352F] outline-none"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="h-9 rounded-[5px] px-2.5 text-sm text-[#787774] hover:bg-[rgba(55,53,47,0.06)]"
+          >
+            Clear filters
+          </button>
 
           <button
             type="button"
@@ -560,8 +654,8 @@ export default function StudentBatchAssignmentsPage() {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="mt-3 overflow-x-auto">
+      {/* Table (only this part scrolls horizontally) */}
+      <div className="mt-3 flex-1 overflow-x-auto">
         <div className="min-w-[1600px]">
           <div className={`${GRID} border-y border-[#E9E9E7]`}>
             <HeadCell icon={Type}>Student</HeadCell>
@@ -572,8 +666,12 @@ export default function StudentBatchAssignmentsPage() {
             <HeadCell icon={Layers3}>Batch</HeadCell>
             <HeadCell icon={ListChecks}>Plan</HeadCell>
             <HeadCell icon={Wrench}>Assigned tools</HeadCell>
-            <HeadCell icon={IndianRupee}>Fees</HeadCell>
-            <HeadCell last />
+            <HeadCell icon={CalendarDays}>Registered</HeadCell>
+            <HeadCell icon={IndianRupee}>Total fees</HeadCell>
+            <HeadCell icon={IndianRupee}>Paid fees</HeadCell>
+            <HeadCell icon={IndianRupee}>Pending fees</HeadCell>
+            <HeadCell>Payment</HeadCell>
+            <HeadCell last>Actions</HeadCell>
           </div>
 
           {loading ? (
@@ -581,7 +679,7 @@ export default function StudentBatchAssignmentsPage() {
               <Loader2 size={16} className="animate-spin" />
               Loading students
             </div>
-          ) : filteredStudents.length === 0 ? (
+          ) : students.length === 0 ? (
             <div className="border-b border-[#E9E9E7] py-16 text-center">
               <p className="text-sm font-medium">No students found</p>
               <p className="mt-1 text-sm text-[#787774]">
@@ -590,14 +688,25 @@ export default function StudentBatchAssignmentsPage() {
               </p>
             </div>
           ) : (
-            filteredStudents.map((student) => {
+            students.map((student) => {
               const assignments = student.batchAssignments || [];
-              const totalFee = assignments.reduce((sum, item) => sum + (Number(item.totalFee) || 0), 0);
-              const totalPaid = assignments.reduce((sum, item) => sum + (Number(item.paidFee) || 0), 0);
-              const totalDue = assignments.reduce(
-                (sum, item) => sum + Math.max((Number(item.totalFee) || 0) - (Number(item.paidFee) || 0), 0),
-                0
-              );
+              const feeSummary = getStudentFeeSummary(student);
+              const {
+                total: totalFees,
+                paid: totalPaid,
+                due: totalDue,
+                status: paymentStatus,
+              } = feeSummary;
+              const registeredDate = getStudentRegistrationDate(student);
+              const paymentStatusLabel =
+                paymentStatus === "paid" ? "Paid" :
+                paymentStatus === "partial" ? "Partial" :
+                paymentStatus === "due" ? "Due" : "Not recorded";
+              const paymentStatusClass =
+                paymentStatus === "paid" ? "bg-[#DBEDDB] text-[#1C3829]" :
+                paymentStatus === "partial" ? "bg-[#FDECC8] text-[#402C1B]" :
+                paymentStatus === "due" ? "bg-[#FFE2DD] text-[#5D1715]" :
+                "bg-[#F1F1EF] text-[#787774]";
               const converted = String(student.status).toLowerCase() === "converted";
 
               return (
@@ -635,13 +744,42 @@ export default function StudentBatchAssignmentsPage() {
                   </Cell>
                   <Cell>
                     <div className="flex flex-wrap gap-1">
-                      {[...new Set(assignments.flatMap((a) => a.toolNames || a.selectedTools?.map((t) => t.name) || []))].length
-                        ? [...new Set(assignments.flatMap((a) => a.toolNames || a.selectedTools?.map((t) => t.name) || []))].map((name) => <Tagged key={name} className={tagColor(name)}>{name}</Tagged>)
-                        : <span className="text-[#C7C6C3]">—</span>}
+                      {(() => {
+                        const toolNames = [...new Set(
+                          assignments.flatMap((assignment) =>
+                            assignment.toolNames ||
+                            assignment.selectedTools?.map((tool) => tool.name) ||
+                            []
+                          )
+                        )];
+                        return toolNames.length
+                          ? toolNames.map((name) => (
+                              <Tagged key={name} className={tagColor(name)}>{name}</Tagged>
+                            ))
+                          : <span className="text-[#C7C6C3]">—</span>;
+                      })()}
                     </div>
                   </Cell>
                   <Cell>
-                    {assignments.length ? <span title={`Total ${formatCurrency(totalFee)} · Paid ${formatCurrency(totalPaid)} · Due ${formatCurrency(totalDue)}`} className="truncate text-sm text-[#787774]">{totalDue > 0 ? `${formatCurrency(totalDue)} due` : formatCurrency(totalFee)}</span> : <span className="text-[#C7C6C3]">—</span>}
+                    <span className="truncate text-xs text-[#787774]" title={registeredDate ? formatDate(registeredDate) : "Registration date unavailable"}>
+                      {formatDate(registeredDate)}
+                    </span>
+                  </Cell>
+                  <Cell>
+                    <span className="whitespace-nowrap text-sm font-medium tabular-nums">{assignments.length ? formatCurrency(totalFees) : "—"}</span>
+                  </Cell>
+                  <Cell>
+                    <span className="whitespace-nowrap text-sm tabular-nums text-[#1C7C45]">{assignments.length ? formatCurrency(totalPaid) : "—"}</span>
+                  </Cell>
+                  <Cell>
+                    <span className={`whitespace-nowrap text-sm font-medium tabular-nums ${totalDue > 0 ? "text-[#B54735]" : "text-[#787774]"}`}>
+                      {assignments.length ? formatCurrency(totalDue) : "—"}
+                    </span>
+                  </Cell>
+                  <Cell last>
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${paymentStatusClass}`}>
+                      {paymentStatusLabel}
+                    </span>
                   </Cell>
                   <Cell last className="justify-center gap-0.5 px-1">
                     <button type="button" onClick={() => openAssignModal(student)} aria-label="Assign another batch" title="Assign another batch" className={`rounded-[4px] p-1.5 text-[#787774] opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100 ${hoverBg}`}><Plus size={15} /></button>
@@ -656,33 +794,95 @@ export default function StudentBatchAssignmentsPage() {
               );
             })
           )}
+        </div>
+      </div>
 
-          {!loading && (
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-2 py-2 text-[13px] text-[#9B9A97]">
-              <span>
-                <span className="uppercase tracking-wide">Count</span>
-                <span className="ml-1.5 text-[#37352F]">
-                  {filteredStudents.length}
-                </span>
-              </span>
-              <span>
-                <span className="uppercase tracking-wide">Assigned</span>
-                <span className="ml-1.5 text-[#37352F]">{assignedCount}</span>
-              </span>
-              <span>
-                <span className="uppercase tracking-wide">Awaiting</span>
-                <span className="ml-1.5 text-[#37352F]">
-                  {counts.all - assignedCount}
-                </span>
-              </span>
-              <span>
-                <span className="uppercase tracking-wide">Pending fees</span>
-                <span className="ml-1.5 text-[#37352F]">
-                  {formatCurrency(pendingFees)}
-                </span>
-              </span>
-            </div>
-          )}
+      {/* Fixed footer: summary + pagination (outside the scroll area) */}
+      <div className="sticky bottom-0 z-30 -mx-4 border-t border-[#E9E9E7] bg-white px-4 sm:-mx-8 sm:px-8 lg:-mx-[30px] lg:px-[30px]">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b border-[#E9E9E7] px-2 py-2 text-[13px] text-[#9B9A97]">
+          <span>
+            <span className="uppercase tracking-wide">Filtered count</span>
+            <span className="ml-1.5 font-medium text-[#37352F]">{total}</span>
+          </span>
+          <span>
+            <span className="uppercase tracking-wide">Assigned (all)</span>
+            <span className="ml-1.5 text-[#37352F]">{summary.assigned}</span>
+          </span>
+          <span>
+            <span className="uppercase tracking-wide">Awaiting (all)</span>
+            <span className="ml-1.5 text-[#37352F]">{summary.awaiting}</span>
+          </span>
+          <span>
+            <span className="uppercase tracking-wide">Total fees</span>
+            <span className="ml-1.5 font-medium text-[#37352F]">{formatCurrency(feeTotals.totalFees)}</span>
+          </span>
+          <span>
+            <span className="uppercase tracking-wide">Collected fees</span>
+            <span className="ml-1.5 font-medium text-[#1C7C45]">{formatCurrency(feeTotals.collectedFees)}</span>
+          </span>
+          <span>
+            <span className="uppercase tracking-wide">Pending fees</span>
+            <span className="ml-1.5 font-medium text-[#B54735]">{formatCurrency(feeTotals.pendingFees)}</span>
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 px-2 py-2.5">
+          <div className="flex items-center gap-2 text-sm text-[#787774]">
+            <span>Rows per page</span>
+            <select
+              value={pageSize}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value));
+                setPage(1);
+              }}
+              className="h-8 rounded-[4px] border border-[#E3E2E0] bg-white px-2 text-sm text-[#37352F] outline-none"
+            >
+              {[10, 25, 50, 100].map((size) => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+            <span className="ml-2">
+              {total === 0 ? "0 results" : `${rangeStart}–${rangeEnd} of ${total}`}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage(1)}
+              className={`${pagerBtn} px-2 text-xs`}
+            >
+              First
+            </button>
+            <button
+              type="button"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              className={`${pagerBtn} px-3 text-sm`}
+            >
+              Previous
+            </button>
+            <span className="px-2 text-sm tabular-nums text-[#787774]">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              className={`${pagerBtn} px-3 text-sm`}
+            >
+              Next
+            </button>
+            <button
+              type="button"
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage(totalPages)}
+              className={`${pagerBtn} px-2 text-xs`}
+            >
+              Last
+            </button>
+          </div>
         </div>
       </div>
 

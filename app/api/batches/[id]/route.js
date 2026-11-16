@@ -386,6 +386,8 @@ export async function GET(request, { params }) {
         assignedAt:
           assignment.assignedAt || assignment.createdAt || null,
         mode: assignment.mode || "full_course",
+        isOldStudent: Boolean(assignment.isOldStudent),
+        jobGuarantee: Boolean(assignment.jobGuarantee),
         tools: assignedTools,
         toolIds: assignedToolIds,
         batchCompleted: completion.batchCompleted,
