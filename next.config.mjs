@@ -17,6 +17,10 @@ const nextConfig = {
         protocol: "https",
         hostname: "openshift.grras.com",
       },
+       {
+        protocol: "https",
+        hostname: "i.pinimg.com",
+      },
     ],
   },
 };

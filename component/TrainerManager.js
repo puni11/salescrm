@@ -7,6 +7,7 @@ import {
   User2Icon,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import Link from "next/link";
 
 const emptyForm = {
   name: "",
@@ -356,15 +357,15 @@ export function TrainerManager() {
                   key={trainer._id}
                   className={`group ${GRID} items-center border-b border-[#E9E9E7] transition-colors hover:bg-[rgba(55,53,47,0.03)]`}
                 >
-                  <button
-                    onClick={() => openEdit(trainer)}
+                  <Link
+                    href={`/trainers/${trainer._id}`}
                     className="flex min-w-0 items-center gap-2 px-2 py-2.5 text-left"
                   >
                     <span className="shrink-0 text-base"><User2Icon size={16}/></span>
                     <span className="truncate text-sm font-medium underline decoration-[#E3E2E0] decoration-1 underline-offset-[3px] group-hover:decoration-[#9B9A97]">
                       {trainer.name}
                     </span>
-                  </button>
+                  </Link>
 
                   <div className="px-2 py-2.5 text-sm tabular-nums">
                     {trainer.experience}

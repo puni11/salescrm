@@ -27,16 +27,7 @@ export default function AnimatedInput({
 
   return (
     <div className={`w-full ${className}`}>
-      {label && (
-        <motion.label
-          initial={{ opacity: 0, y: -5 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="block mb-2 text-sm font-medium text-gray-700"
-        >
-          {label}
-        </motion.label>
-      )}
-
+      
       <div className="relative">
         <motion.input
           type={inputType}
@@ -45,13 +36,13 @@ export default function AnimatedInput({
           disabled={disabled || isLoading}
           whileFocus={{ scale: 1.01 }}
           className={`
-            w-full px-4 py-3 
+            w-full px-4 py-2 shadow
             border transition-all duration-200
-            rounded-lg
+            rounded-md
             outline-none
             ${error
               ? "border-red-500 focus:ring-2 focus:ring-red-200"
-              : "border-gray-300 focus:border-black focus:ring-2 focus:ring-gray-200"}
+              : "border-gray-200 focus:border-black focus:ring-2 focus:ring-gray-200"}
             ${disabled ? "bg-gray-100 cursor-not-allowed" : "bg-white"}
           `}
           placeholder={placeholder}
@@ -68,9 +59,9 @@ export default function AnimatedInput({
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
           >
-            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
         )}
       </div>

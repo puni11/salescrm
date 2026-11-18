@@ -27,8 +27,9 @@ export default function AnimatedButton({
         cursor-pointer
         px-6 py-3 mt-3
          rounded-lg
+         text-sm
         font-semibold
-        bg-[#1A2A3A] text-white
+        bg-[#1a213a] text-white
         hover:bg-[#2C4159]
         disabled:opacity-50
         disabled:cursor-not-allowed
