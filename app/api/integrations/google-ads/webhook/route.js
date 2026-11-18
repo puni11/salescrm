@@ -18,15 +18,7 @@ export async function POST(req) {
       );
     }
 
-    // Ignore test leads for CRM insertion
-    if (body.is_test === true) {
-      console.log("Google Ads test webhook received");
 
-      return NextResponse.json({
-        success: true,
-        message: "Test webhook received successfully",
-      });
-    }
 
     const result = await saveGoogleAdsLead(body);
 
