@@ -339,6 +339,8 @@ export default function BatchDetails({ batchId, onBack, session }) {
       mode: student.mode || "full_course",
       totalFee: student.totalFee ?? 0,
       toolIds: student.toolIds || [],
+      isOldStudent: student.isOldStudent ?? false,
+      jobGuarantee: student.jobGuarantee ?? false,
     });
     setEditStudent(student);
   };
@@ -371,13 +373,48 @@ export default function BatchDetails({ batchId, onBack, session }) {
     saveAction({ action: "update_batch", ...batchForm });
   };
 
+  // Send only the fields that actually changed, so toggling
+  // Old student / Job guarantee never triggers fee or tool validation.
   const submitStudent = (e) => {
     e.preventDefault();
-    saveAction({
+
+    const payload = {
       action: "update_student",
       studentId: editStudent.studentId,
-      ...studentForm,
-    });
+    };
+
+    if (studentForm.isOldStudent !== Boolean(editStudent.isOldStudent)) {
+      payload.isOldStudent = studentForm.isOldStudent;
+    }
+
+    if (studentForm.jobGuarantee !== Boolean(editStudent.jobGuarantee)) {
+      payload.jobGuarantee = studentForm.jobGuarantee;
+    }
+
+    if (studentForm.mode !== (editStudent.mode || "full_course")) {
+      payload.mode = studentForm.mode;
+    }
+
+    if (Number(studentForm.totalFee) !== Number(editStudent.totalFee || 0)) {
+      payload.totalFee = studentForm.totalFee;
+    }
+
+    const originalTools = editStudent.toolIds || [];
+    const sameTools =
+      studentForm.toolIds.length === originalTools.length &&
+      studentForm.toolIds.every((id) => originalTools.includes(id));
+
+    if (!sameTools) {
+      payload.toolIds = studentForm.toolIds;
+    }
+
+    // Nothing changed: just close the modal.
+    if (Object.keys(payload).length === 2) {
+      setEditStudent(null);
+      return;
+    }
+
+    saveAction(payload);
   };
 
   const submitSession = (e) => {
@@ -689,7 +726,6 @@ export default function BatchDetails({ batchId, onBack, session }) {
                       <tbody>
                         {demoRequests.map((demo) => (
                           <tr key={demo.id} className={`border-b ${line} ${hoverBg}`}>
-                            {/* Lead Details */}
                             <td className="px-3 py-3">
                               <p className="font-medium">{demo.leadName || "Unknown lead"}</p>
 
@@ -708,23 +744,18 @@ export default function BatchDetails({ batchId, onBack, session }) {
                               )}
                             </td>
 
-                            {/* Course */}
                             <td className="px-3 py-3">{demo.course || "—"}</td>
 
-                            {/* Demo Mode */}
                             <td className="px-3 py-3">
                               <Tag color="blue">{demo.demoMode || "—"}</Tag>
                             </td>
 
-                            {/* Counsellor */}
                             <td className="px-3 py-3">
                               {demo.assignedTo?.name || "Unassigned"}
                             </td>
 
-                            {/* Request Date */}
                             <td className="px-3 py-3">{formatDate(demo.requestedAt)}</td>
 
-                            {/* Status */}
                             <td className="px-3 py-3">
                               <Status value={demo.status} />
                             </td>
@@ -773,7 +804,6 @@ export default function BatchDetails({ batchId, onBack, session }) {
                     <tbody>
                       {sessions.map((row) => (
                         <tr key={row.id} className={`border-b ${line} ${hoverBg}`}>
-                          {/* Start date */}
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-2">
                               <CalendarDays size={14} className={muted} />
@@ -781,7 +811,6 @@ export default function BatchDetails({ batchId, onBack, session }) {
                             </div>
                           </td>
 
-                          {/* End date */}
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-2">
                               <CalendarDays size={14} className={muted} />
@@ -789,7 +818,6 @@ export default function BatchDetails({ batchId, onBack, session }) {
                             </div>
                           </td>
 
-                          {/* Tool */}
                           <td className="px-3 py-2.5">
                             {row.toolId ? (
                               <Tag color="blue">{toolName(row.toolId) || "Unknown tool"}</Tag>
@@ -798,14 +826,12 @@ export default function BatchDetails({ batchId, onBack, session }) {
                             )}
                           </td>
 
-                          {/* Notes */}
                           <td className="max-w-xs px-3 py-2.5">
                             <span className={`block truncate ${muted}`} title={row.notes || ""}>
                               {row.notes || "—"}
                             </span>
                           </td>
 
-                          {/* Status */}
                           <td className="px-3 py-2.5">
                             <button
                               onClick={() => toggleSession(row)}
@@ -819,7 +845,6 @@ export default function BatchDetails({ batchId, onBack, session }) {
                             </button>
                           </td>
 
-                          {/* Actions */}
                           <td className="px-3 py-2.5">
                             <div className="flex justify-end gap-0.5">
                               <IconBtn onClick={() => openSessionEditor(row)} title="Edit session">
@@ -1053,6 +1078,53 @@ export default function BatchDetails({ batchId, onBack, session }) {
                 onChange={(e) => setStudentForm({ ...studentForm, totalFee: e.target.value })} />
             </Field>
 
+            {/* Old student and job guarantee */}
+            <div className="space-y-3 rounded-md bg-[#f7f6f3] p-3 text-sm">
+              <label className="flex cursor-pointer items-center justify-between gap-3">
+                <span>
+                  <span className="font-medium">Old student</span>
+                  <span className={`block text-xs ${muted}`}>
+                    Select if this student studied here before
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={Boolean(studentForm.isOldStudent)}
+                  onChange={(e) =>
+                    setStudentForm((current) => ({
+                      ...current,
+                      isOldStudent: e.target.checked,
+                    }))
+                  }
+                />
+              </label>
+
+              <div className="flex items-center justify-between gap-3">
+                <span>
+                  <span className="font-medium">Job guarantee</span>
+                  <span className={`block text-xs ${muted}`}>
+                    Enable if this student has a job guarantee
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setStudentForm((current) => ({
+                      ...current,
+                      jobGuarantee: !current.jobGuarantee,
+                    }))
+                  }
+                  title="Click to switch job guarantee"
+                >
+                  <Tag color={studentForm.jobGuarantee ? "green" : "gray"}>
+                    {studentForm.jobGuarantee ? <Check size={12} /> : null}
+                    {studentForm.jobGuarantee ? "Guaranteed" : "Not guaranteed"}
+                  </Tag>
+                </button>
+              </div>
+            </div>
+
             <div className="rounded-md bg-[#f7f6f3] p-3 text-sm">
               <div className="flex justify-between">
                 <span className={muted}>Already paid</span>
@@ -1084,7 +1156,6 @@ export default function BatchDetails({ batchId, onBack, session }) {
           onClose={() => setSessionModal(null)}
         >
           <form onSubmit={submitSession} className="space-y-4">
-            {/* Starting and ending dates */}
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Starting Date">
                 <input
@@ -1159,7 +1230,6 @@ export default function BatchDetails({ batchId, onBack, session }) {
               </Field>
             </div>
 
-            {/* Notes */}
             <Field label="Notes (optional)">
               <textarea
                 rows={3}
@@ -1170,7 +1240,6 @@ export default function BatchDetails({ batchId, onBack, session }) {
               />
             </Field>
 
-            {/* Actions */}
             <div className="flex justify-end gap-2 pt-2">
               <Btn type="button" variant="outline" onClick={() => setSessionModal(null)}>
                 Cancel

@@ -1118,10 +1118,16 @@ const handleBulkAction = async () => {
             ) : (
               leads.map((lead) => {
                 const leadId = getLeadId(lead);
-                const parsedDate = typeof lead.createdAt === 'object' && lead.createdAt !== null
-                  ? new Date(lead.createdAt.$date)
-                  : new Date(lead.createdAt);
-                const validDate = !Number.isNaN(parsedDate.getTime());
+               const parsedDate =
+  typeof lead.createdAt === "object" && lead.createdAt !== null
+    ? new Date(lead.createdAt.$date)
+    : new Date(lead.createdAt);
+
+const validDate = !Number.isNaN(parsedDate.getTime());
+
+const formattedDate = validDate
+  ? parsedDate.toLocaleDateString("en-GB")
+  : "";
                 const [statusPill, statusDot] = getStatusStyle(lead.status || "New Lead");
                 const lastComment = lead.comments?.length
                   ? lead.comments[lead.comments.length - 1]
@@ -1222,18 +1228,22 @@ const handleBulkAction = async () => {
                       )}
                     </Cell>
 
-                    <Cell>
-                      {validDate ? (
-                        <span className="truncate text-[#787774]">
-                          {parsedDate.toLocaleDateString()}{" "}
-                          <span className="text-[#9B9A97]">
-                            {parsedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </span>
-                      ) : (
-                        <Empty />
-                      )}
-                    </Cell>
+                  <Cell>
+  {validDate ? (
+    <span className="truncate text-[#787774]">
+      {parsedDate.toLocaleDateString("en-GB")}{" "}
+      <span className="text-[#9B9A97]">
+        {parsedDate.toLocaleTimeString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        })}
+      </span>
+    </span>
+  ) : (
+    <Empty />
+  )}
+</Cell>
 <Cell>
   {lead.updatedAt ? (
     <span className="truncate text-[#787774]">

@@ -60,17 +60,23 @@ function paymentSummary(assignment) {
   };
 }
 
-// Batch-level completion map from the batch document: toolId -> completedAt.
+// Batch-level completion map from the batch document.
 function batchCompletionMap(batch) {
-  const list = Array.isArray(batch.toolCompletions) ? batch.toolCompletions : [];
-  return new Map(list.map((item) => [str(item.toolId), item.completedAt || null]));
+  const list = Array.isArray(batch.toolCompletions)
+    ? batch.toolCompletions
+    : [];
+
+  return new Map(
+    list.map((item) => [str(item.toolId), item.completedAt || null])
+  );
 }
 
-// A student's progress, derived from the batch's completed tools.
-// Their batch is complete when every tool they are enrolled in is complete.
+// A student's progress, derived from completed batch tools.
 function completionSummary(assignment, completionMap) {
   const toolIds = (assignment.toolIds || []).map(str);
+
   const completedToolIds = toolIds.filter((id) => completionMap.has(id));
+
   const batchCompleted =
     toolIds.length > 0 && completedToolIds.length === toolIds.length;
 
@@ -84,19 +90,24 @@ function completionSummary(assignment, completionMap) {
     batchCompleted,
     batchCompletedAt:
       batchCompleted && times.length ? new Date(Math.max(...times)) : null,
-    progress: { done: completedToolIds.length, total: toolIds.length },
+    progress: {
+      done: completedToolIds.length,
+      total: toolIds.length,
+    },
   };
 }
 
-// Saves batchCompleted on every student assignment of this batch,
-// based on which batch tools are completed.
+// Sync completion status for every student in the batch.
 async function syncStudentsCompletion(assignments, batchId, batch, now) {
   const completionMap = batchCompletionMap(batch);
   const list = await assignments.find({ batchId }).toArray();
 
   for (const doc of list) {
     const summary = completionSummary(doc, completionMap);
-    if (summary.batchCompleted === Boolean(doc.batchCompleted)) continue;
+
+    if (summary.batchCompleted === Boolean(doc.batchCompleted)) {
+      continue;
+    }
 
     await assignments.updateOne(
       { _id: doc._id },
@@ -116,32 +127,31 @@ async function getDb() {
   return client.db(DB_NAME);
 }
 
-// GET: Complete batch details.
+// =====================================================
+// GET: Complete batch details
+// =====================================================
 
 export async function GET(request, { params }) {
   try {
     const { id } = await params;
-
     const batchObjectId = toObjectId(id);
 
-    if (!batchObjectId) return fail("Invalid batch ID");
+    if (!batchObjectId) {
+      return fail("Invalid batch ID");
+    }
 
     const db = await getDb();
 
-    // --------------------------------
-    // FETCH BATCH
-    // --------------------------------
-
+    // Fetch batch
     const batch = await db
       .collection(COLLECTIONS.batches)
       .findOne({ _id: batchObjectId });
 
-    if (!batch) return fail("Batch not found", 404);
+    if (!batch) {
+      return fail("Batch not found", 404);
+    }
 
-    // --------------------------------
-    // FETCH ASSIGNMENTS & DEMO REQUESTS
-    // --------------------------------
-
+    // Fetch assignments and demo requests
     const [assignments, demoRequests] = await Promise.all([
       db
         .collection(COLLECTIONS.assignments)
@@ -151,17 +161,12 @@ export async function GET(request, { params }) {
 
       db
         .collection("demoRequests")
-        .find({
-          batchId: str(batchObjectId),
-        })
+        .find({ batchId: str(batchObjectId) })
         .sort({ requestedAt: -1 })
         .toArray(),
     ]);
 
-    // --------------------------------
-    // COLLECT STUDENT IDS
-    // --------------------------------
-
+    // Collect student IDs
     const studentIds = [
       ...new Set([
         ...(batch.studentIds || []).map(str),
@@ -169,18 +174,12 @@ export async function GET(request, { params }) {
       ]),
     ].filter(ObjectId.isValid);
 
-    // --------------------------------
-    // COLLECT TOOL IDS
-    // --------------------------------
+    // Collect tool IDs
+    const toolIds = [...new Set((batch.tools || []).map(str))].filter(
+      ObjectId.isValid
+    );
 
-    const toolIds = [
-      ...new Set((batch.tools || []).map(str)),
-    ].filter(ObjectId.isValid);
-
-    // --------------------------------
-    // COLLECT TRAINER IDS
-    // --------------------------------
-
+    // Collect trainer IDs
     const trainerIds = [
       ...new Set([
         ...(batch.trainers || []).map(str),
@@ -190,124 +189,74 @@ export async function GET(request, { params }) {
       ]),
     ].filter(ObjectId.isValid);
 
-    // --------------------------------
-    // COLLECT DEMO LEAD IDS
-    // --------------------------------
-
+    // Collect demo lead IDs
     const leadIds = [
       ...new Set(
-        demoRequests
-          .map((item) => str(item.leadId))
-          .filter(ObjectId.isValid)
+        demoRequests.map((item) => str(item.leadId)).filter(ObjectId.isValid)
       ),
     ];
 
-    // --------------------------------
-    // FETCH ALL RELATED DATA
-    // --------------------------------
+    // Fetch all related data
+    const [students, tools, trainers, course, leads] = await Promise.all([
+      studentIds.length
+        ? db
+            .collection(COLLECTIONS.students)
+            .find({ _id: { $in: studentIds.map((sid) => new ObjectId(sid)) } })
+            .toArray()
+        : [],
 
-    const [students, tools, trainers, course, leads] =
-      await Promise.all([
-        // Students
-        studentIds.length
-          ? db
-              .collection(COLLECTIONS.students)
-              .find({
-                _id: {
-                  $in: studentIds.map((sid) => new ObjectId(sid)),
-                },
-              })
-              .toArray()
-          : [],
+      toolIds.length
+        ? db
+            .collection(COLLECTIONS.tools)
+            .find({ _id: { $in: toolIds.map((tid) => new ObjectId(tid)) } })
+            .toArray()
+        : [],
 
-        // Tools
-        toolIds.length
-          ? db
-              .collection(COLLECTIONS.tools)
-              .find({
-                _id: {
-                  $in: toolIds.map((tid) => new ObjectId(tid)),
-                },
-              })
-              .toArray()
-          : [],
+      trainerIds.length
+        ? db
+            .collection(COLLECTIONS.trainers)
+            .find({ _id: { $in: trainerIds.map((tid) => new ObjectId(tid)) } })
+            .toArray()
+        : [],
 
-        // Trainers
-        trainerIds.length
-          ? db
-              .collection(COLLECTIONS.trainers)
-              .find({
-                _id: {
-                  $in: trainerIds.map((tid) => new ObjectId(tid)),
-                },
-              })
-              .toArray()
-          : [],
+      batch.courseId && ObjectId.isValid(str(batch.courseId))
+        ? db
+            .collection(COLLECTIONS.courses)
+            .findOne({ _id: new ObjectId(str(batch.courseId)) })
+        : null,
 
-        // Course
-        batch.courseId && ObjectId.isValid(str(batch.courseId))
-          ? db.collection(COLLECTIONS.courses).findOne({
-              _id: new ObjectId(str(batch.courseId)),
+      leadIds.length
+        ? db
+            .collection("dm")
+            .find({ _id: { $in: leadIds.map((l) => new ObjectId(l)) } })
+            .project({
+              name: 1,
+              email: 1,
+              phone: 1,
+              phone10: 1,
+              course: 1,
+              status: 1,
+              source: 1,
+              medium: 1,
+              campaign: 1,
+              assignedTo: 1,
+              profile: 1,
+              createdAt: 1,
             })
-          : null,
+            .toArray()
+        : [],
+    ]);
 
-        // Leads from DM collection
-        leadIds.length
-          ? db
-              .collection("dm")
-              .find({
-                _id: {
-                  $in: leadIds.map((leadId) => new ObjectId(leadId)),
-                },
-              })
-              .project({
-                name: 1,
-                email: 1,
-                phone: 1,
-                phone10: 1,
-                course: 1,
-                status: 1,
-                source: 1,
-                medium: 1,
-                campaign: 1,
-                assignedTo: 1,
-                profile: 1,
-                createdAt: 1,
-              })
-              .toArray()
-          : [],
-      ]);
+    // Create maps
+    const studentMap = new Map(students.map((s) => [str(s._id), s]));
+    const toolMap = new Map(tools.map((t) => [str(t._id), t]));
+    const trainerMap = new Map(trainers.map((t) => [str(t._id), t]));
+    const leadMap = new Map(leads.map((l) => [str(l._id), l]));
 
-    // --------------------------------
-    // CREATE MAPS
-    // --------------------------------
-
-    const studentMap = new Map(
-      students.map((student) => [str(student._id), student])
-    );
-
-    const toolMap = new Map(
-      tools.map((tool) => [str(tool._id), tool])
-    );
-
-    const trainerMap = new Map(
-      trainers.map((trainer) => [str(trainer._id), trainer])
-    );
-
-    const leadMap = new Map(
-      leads.map((lead) => [str(lead._id), lead])
-    );
-
-    // --------------------------------
-    // COMPLETION MAP
-    // --------------------------------
-
+    // Completion map
     const completionMap = batchCompletionMap(batch);
 
-    // --------------------------------
-    // FORMAT TOOLS
-    // --------------------------------
-
+    // Format tools
     const formattedTools = (batch.tools || []).map((toolId) => {
       const tid = str(toolId);
       const tool = toolMap.get(tid);
@@ -316,11 +265,9 @@ export async function GET(request, { params }) {
         .filter((item) => str(item.toolId) === tid)
         .map((item) => {
           const trainerId = str(item.trainerId);
-
           return {
             trainerId,
-            trainerName:
-              trainerMap.get(trainerId)?.name || "Unknown trainer",
+            trainerName: trainerMap.get(trainerId)?.name || "Unknown trainer",
           };
         });
 
@@ -334,18 +281,12 @@ export async function GET(request, { params }) {
       };
     });
 
-    // --------------------------------
-    // FORMAT STUDENTS
-    // --------------------------------
-
+    // Format students
     const formattedStudents = assignments.map((assignment) => {
       const studentId = str(assignment.studentId);
       const student = studentMap.get(studentId);
 
-      const completion = completionSummary(
-        assignment,
-        completionMap
-      );
+      const completion = completionSummary(assignment, completionMap);
 
       const assignedToolIds = (assignment.toolIds || []).map(str);
 
@@ -360,7 +301,6 @@ export async function GET(request, { params }) {
           .filter((item) => str(item.toolId) === toolId)
           .map((item) => {
             const trainerId = str(item.trainerId);
-
             return {
               trainerId,
               trainerName:
@@ -383,11 +323,13 @@ export async function GET(request, { params }) {
         phone: student?.phone ? String(student.phone) : "",
         studentStatus: student?.status || "",
         course: student?.course || "",
-        assignedAt:
-          assignment.assignedAt || assignment.createdAt || null,
+        assignedAt: assignment.assignedAt || assignment.createdAt || null,
         mode: assignment.mode || "full_course",
+
+        // Student classification flags
         isOldStudent: Boolean(assignment.isOldStudent),
         jobGuarantee: Boolean(assignment.jobGuarantee),
+
         tools: assignedTools,
         toolIds: assignedToolIds,
         batchCompleted: completion.batchCompleted,
@@ -397,79 +339,47 @@ export async function GET(request, { params }) {
       };
     });
 
-    // --------------------------------
-    // FORMAT DEMO REQUESTS
-    // --------------------------------
-
+    // Format demo requests
     const formattedDemoRequests = demoRequests.map((demo) => {
       const leadId = str(demo.leadId);
       const lead = leadMap.get(leadId);
 
       return {
         id: str(demo._id),
-
         leadId,
-
-        // Lead details from DM, fallback to demoRequests
-        leadName:
-          lead?.name || demo.leadName || "Unknown lead",
-
-        leadEmail:
-          lead?.email || demo.leadEmail || "",
-
-        leadPhone:
-          lead?.phone
-            ? String(lead.phone)
-            : demo.leadPhone
-              ? String(demo.leadPhone)
-              : "",
-
+        leadName: lead?.name || demo.leadName || "Unknown lead",
+        leadEmail: lead?.email || demo.leadEmail || "",
+        leadPhone: lead?.phone
+          ? String(lead.phone)
+          : demo.leadPhone
+            ? String(demo.leadPhone)
+            : "",
         leadStatus: lead?.status || "",
         course: lead?.course || demo.courseName || "",
         source: lead?.source || "",
         medium: lead?.medium || "",
-
         profile: lead?.profile || "",
-
         assignedTo: lead?.assignedTo || null,
-
         batchId: str(batchObjectId),
         batchName: demo.batchName || batch.name || "",
-
         demoMode: demo.demoMode || "",
         status: demo.status || "pending",
-
         requestedAt: demo.requestedAt || null,
         completedAt: demo.completedAt || null,
-
         createdAt: demo.createdAt || null,
         updatedAt: demo.updatedAt || null,
       };
     });
 
-    // --------------------------------
-    // FINANCIAL SUMMARY
-    // --------------------------------
-
-    const totalFees = formattedStudents.reduce(
-      (sum, student) => sum + student.totalFee,
-      0
-    );
-
-    const totalPaid = formattedStudents.reduce(
-      (sum, student) => sum + student.paidFee,
-      0
-    );
-
+    // Financial summary
+    const totalFees = formattedStudents.reduce((s, x) => s + x.totalFee, 0);
+    const totalPaid = formattedStudents.reduce((s, x) => s + x.paidFee, 0);
     const totalBalance = formattedStudents.reduce(
-      (sum, student) => sum + student.balanceDue,
+      (s, x) => s + x.balanceDue,
       0
     );
 
-    // --------------------------------
-    // FORMAT BATCH
-    // --------------------------------
-
+    // Format batch
     const formattedBatch = {
       id: str(batch._id),
       name: batch.name || "",
@@ -490,74 +400,67 @@ export async function GET(request, { params }) {
 
       trainers: (batch.trainers || []).map((trainerId) => {
         const tid = str(trainerId);
-
         return {
           id: tid,
           name: trainerMap.get(tid)?.name || "Unknown trainer",
         };
       }),
 
-      toolTrainerAssignments: (
-        batch.toolTrainerAssignments || []
-      ).map((item) => ({
-        toolId: str(item.toolId),
-        trainerId: str(item.trainerId),
-        toolName:
-          toolMap.get(str(item.toolId))?.name || "Unknown tool",
-        trainerName:
-          trainerMap.get(str(item.trainerId))?.name ||
-          "Unknown trainer",
-      })),
+      toolTrainerAssignments: (batch.toolTrainerAssignments || []).map(
+        (item) => ({
+          toolId: str(item.toolId),
+          trainerId: str(item.trainerId),
+          toolName: toolMap.get(str(item.toolId))?.name || "Unknown tool",
+          trainerName:
+            trainerMap.get(str(item.trainerId))?.name || "Unknown trainer",
+        })
+      ),
 
-      // Demo Requests
       demoRequests: formattedDemoRequests,
       demoRequestCount: formattedDemoRequests.length,
 
-      // Financials
-      financials: {
-        totalFees,
-        totalPaid,
-        totalBalance,
-      },
+      financials: { totalFees, totalPaid, totalBalance },
 
       createdAt: batch.createdAt || null,
       updatedAt: batch.updatedAt || null,
     };
 
-    return NextResponse.json({
-      success: true,
-      data: formattedBatch,
-    });
+    return NextResponse.json({ success: true, data: formattedBatch });
   } catch (error) {
     console.error("Get batch details error:", error);
-
-    return fail(
-      error.message || "Failed to fetch batch details",
-      500
-    );
+    return fail(error.message || "Failed to fetch batch details", 500);
   }
 }
 
-// PATCH: Edit batch, student assignment, complete tools, or remove items.
+// =====================================================
+// PATCH: Edit batch, student assignment, complete tools,
+// or remove items.
+// =====================================================
+
 export async function PATCH(request, { params }) {
   try {
     const { id } = await params;
     const batchObjectId = toObjectId(id);
 
-    if (!batchObjectId) return fail("Invalid batch ID");
+    if (!batchObjectId) {
+      return fail("Invalid batch ID");
+    }
 
     const body = await request.json();
     const db = await getDb();
+
     const batches = db.collection(COLLECTIONS.batches);
     const assignments = db.collection(COLLECTIONS.assignments);
 
     const batch = await batches.findOne({ _id: batchObjectId });
 
-    if (!batch) return fail("Batch not found", 404);
+    if (!batch) {
+      return fail("Batch not found", 404);
+    }
 
     const now = new Date();
 
-    // ---------- Update batch information ----------
+    // Update batch information
     if (body.action === "update_batch") {
       const update = {};
 
@@ -635,8 +538,12 @@ export async function PATCH(request, { params }) {
         ) {
           return fail("Invalid tool trainer assignments");
         }
+
         update.toolTrainerAssignments = body.toolTrainerAssignments.map(
-          (item) => ({ toolId: item.toolId, trainerId: item.trainerId })
+          (item) => ({
+            toolId: item.toolId,
+            trainerId: item.trainerId,
+          })
         );
       }
 
@@ -650,15 +557,24 @@ export async function PATCH(request, { params }) {
       });
     }
 
-    // ---------- Edit a student's assignment ----------
+    // Edit a student's assignment
     if (body.action === "update_student") {
       const studentObjectId = toObjectId(body.studentId);
-      if (!studentObjectId) return fail("Invalid student ID");
 
-      const filter = { batchId: batchObjectId, studentId: studentObjectId };
+      if (!studentObjectId) {
+        return fail("Invalid student ID");
+      }
+
+      const filter = {
+        batchId: batchObjectId,
+        studentId: studentObjectId,
+      };
+
       const existing = await assignments.findOne(filter);
 
-      if (!existing) return fail("Student assignment not found", 404);
+      if (!existing) {
+        return fail("Student assignment not found", 404);
+      }
 
       const update = { updatedAt: now };
 
@@ -669,38 +585,76 @@ export async function PATCH(request, { params }) {
         update.mode = body.mode;
       }
 
+      // Tools: only validate/save when they actually changed.
       if (body.toolIds !== undefined) {
         if (
           !Array.isArray(body.toolIds) ||
           !body.toolIds.every(
-            (toolId) =>
-              typeof toolId === "string" &&
-              ObjectId.isValid(toolId) &&
-              (batch.tools || []).map(str).includes(toolId)
+            (t) => typeof t === "string" && ObjectId.isValid(t)
           )
         ) {
           return fail("Invalid student tools");
         }
-        update.toolIds = [...new Set(body.toolIds)];
+
+        const batchTools = (batch.tools || []).map(str);
+        const existingTools = (existing.toolIds || []).map(str);
+
+        const unchanged =
+          body.toolIds.length === existingTools.length &&
+          body.toolIds.every((t) => existingTools.includes(t));
+
+        if (!unchanged) {
+          // Only block NEW tools that are not part of this batch
+          const invalid = body.toolIds.filter(
+            (t) => !batchTools.includes(t) && !existingTools.includes(t)
+          );
+
+          if (invalid.length) {
+            return fail("Invalid student tools");
+          }
+
+          update.toolIds = [...new Set(body.toolIds)];
+        }
       }
 
+      // Fee: only enforce the paid-fee rule when the fee actually changes.
       if (body.totalFee !== undefined) {
         const totalFee = Number(body.totalFee);
-        const summary = paymentSummary(existing);
 
-        if (
-          !Number.isFinite(totalFee) ||
-          totalFee < 0 ||
-          totalFee < summary.paidFee
-        ) {
-          return fail("Total fee cannot be less than fees already paid");
+        if (!Number.isFinite(totalFee) || totalFee < 0) {
+          return fail("Invalid total fee");
         }
-        update.totalFee = totalFee;
+
+        if (totalFee !== (Number(existing.totalFee) || 0)) {
+          const summary = paymentSummary(existing);
+
+          if (totalFee < summary.paidFee) {
+            return fail("Total fee cannot be less than fees already paid");
+          }
+
+          update.totalFee = totalFee;
+        }
+      }
+
+      // Save Old Student flag
+      if (body.isOldStudent !== undefined) {
+        if (typeof body.isOldStudent !== "boolean") {
+          return fail("Invalid old student value");
+        }
+        update.isOldStudent = body.isOldStudent;
+      }
+
+      // Save Job Guarantee flag
+      if (body.jobGuarantee !== undefined) {
+        if (typeof body.jobGuarantee !== "boolean") {
+          return fail("Invalid job guarantee value");
+        }
+        update.jobGuarantee = body.jobGuarantee;
       }
 
       await assignments.updateOne(filter, { $set: update });
 
-      // Keep batchCompleted correct after mode/tool changes.
+      // Keep batch completion correct after tool changes.
       await syncStudentsCompletion(assignments, batchObjectId, batch, now);
 
       const saved = await assignments.findOne(filter);
@@ -710,16 +664,23 @@ export async function PATCH(request, { params }) {
         message: "Student assignment updated successfully",
         data: {
           studentId: str(saved.studentId),
+          isOldStudent: Boolean(saved.isOldStudent),
+          jobGuarantee: Boolean(saved.jobGuarantee),
           ...paymentSummary(saved),
         },
       });
     }
 
-    // ---------- Mark a batch tool completed (applies to all its students) ----------
-    if (body.action === "complete_batch_tool" || body.action === "reopen_batch_tool") {
+    // Mark or reopen a batch tool
+    if (
+      body.action === "complete_batch_tool" ||
+      body.action === "reopen_batch_tool"
+    ) {
       const toolId = str(body.toolId);
 
-      if (!ObjectId.isValid(toolId)) return fail("Invalid tool ID");
+      if (!ObjectId.isValid(toolId)) {
+        return fail("Invalid tool ID");
+      }
 
       if (!(batch.tools || []).map(str).includes(toolId)) {
         return fail("Tool is not part of this batch");
@@ -728,9 +689,12 @@ export async function PATCH(request, { params }) {
       const completing = body.action === "complete_batch_tool";
 
       if (completing) {
-        // The $ne guard makes a double click or double request harmless.
+        // Prevent duplicate completion entries.
         await batches.updateOne(
-          { _id: batchObjectId, "toolCompletions.toolId": { $ne: toolId } },
+          {
+            _id: batchObjectId,
+            "toolCompletions.toolId": { $ne: toolId },
+          },
           {
             $push: { toolCompletions: { toolId, completedAt: now } },
             $set: { updatedAt: now },
@@ -746,8 +710,9 @@ export async function PATCH(request, { params }) {
         );
       }
 
-      // Re-read the batch, then update every student's batchCompleted flag.
+      // Re-read batch and sync student completion.
       const fresh = await batches.findOne({ _id: batchObjectId });
+
       await syncStudentsCompletion(assignments, batchObjectId, fresh, now);
 
       const finished = await assignments.countDocuments({
@@ -764,10 +729,13 @@ export async function PATCH(request, { params }) {
       });
     }
 
-    // ---------- Remove student from the batch ----------
+    // Remove student from batch
     if (body.action === "remove_student") {
       const studentObjectId = toObjectId(body.studentId);
-      if (!studentObjectId) return fail("Invalid student ID");
+
+      if (!studentObjectId) {
+        return fail("Invalid student ID");
+      }
 
       const result = await assignments.deleteOne({
         batchId: batchObjectId,
@@ -792,10 +760,13 @@ export async function PATCH(request, { params }) {
       });
     }
 
-    // ---------- Remove a tool from the batch and student assignments ----------
+    // Remove a tool from batch and student assignments
     if (body.action === "remove_tool") {
       const toolId = str(body.toolId);
-      if (!ObjectId.isValid(toolId)) return fail("Invalid tool ID");
+
+      if (!ObjectId.isValid(toolId)) {
+        return fail("Invalid tool ID");
+      }
 
       const remainingAssignments = (batch.toolTrainerAssignments || []).filter(
         (item) => str(item.toolId) !== toolId
@@ -804,7 +775,10 @@ export async function PATCH(request, { params }) {
       await batches.updateOne(
         { _id: batchObjectId },
         {
-          $pull: { tools: toolId, toolCompletions: { toolId } },
+          $pull: {
+            tools: toolId,
+            toolCompletions: { toolId },
+          },
           $set: {
             toolTrainerAssignments: remainingAssignments,
             updatedAt: now,
@@ -812,15 +786,17 @@ export async function PATCH(request, { params }) {
         }
       );
 
+      // toolIds may be stored as strings or ObjectIds: pull both forms.
       await assignments.updateMany(
         { batchId: batchObjectId },
         {
-          $pull: { toolIds: toolId },
+          $pull: { toolIds: { $in: [toolId, new ObjectId(toolId)] } },
           $set: { updatedAt: now },
         }
       );
 
       const fresh = await batches.findOne({ _id: batchObjectId });
+
       await syncStudentsCompletion(assignments, batchObjectId, fresh, now);
 
       return NextResponse.json({
@@ -829,10 +805,13 @@ export async function PATCH(request, { params }) {
       });
     }
 
-    // ---------- Remove a trainer from the batch ----------
+    // Remove a trainer from batch
     if (body.action === "remove_trainer") {
       const trainerId = str(body.trainerId);
-      if (!ObjectId.isValid(trainerId)) return fail("Invalid trainer ID");
+
+      if (!ObjectId.isValid(trainerId)) {
+        return fail("Invalid trainer ID");
+      }
 
       const remainingAssignments = (batch.toolTrainerAssignments || []).filter(
         (item) => str(item.trainerId) !== trainerId
