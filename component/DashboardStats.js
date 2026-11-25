@@ -8,6 +8,7 @@ import {
   Building2,
   CalendarDays,
 } from "lucide-react";
+import Link from "next/link";
 
 // --- Minimal trend text ---
 const TrendBadge = ({ trend }) => {
@@ -116,11 +117,12 @@ export default function DashboardStats({ stats }) {
         <Metric icon={Building2} label="GRRAS" value={grrasCount} />
         <Metric icon={Building2} label="AP2V" value={ap2vCount} />
         {stats.courses && stats.courses.length > 0 && (
-          <Metric
+         <Link href='/leads?todayFollowUp=true'> <Metric
             icon={CalendarDays}
             label="Today follow up"
             value={stats.todayFollowUps ?? 0}
           />
+          </Link>
         )}
       </div>
 

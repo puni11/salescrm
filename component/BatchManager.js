@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus, X, Loader2, Pencil, Trash2, Search, CalendarDays,
-  Users, Wrench, BookOpen, CircleDot, Check, Clock2, User, Tag,
+  Users, Wrench, BookOpen, CircleDot, Check, Clock2, User, Tag, Table2, LayoutList,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import Link from "next/link";
@@ -299,6 +299,66 @@ export default function BatchManager({ session }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all"); // "all" | "regular" | "special"
+
+  // Persist each user's preferred batch view without causing an initial overwrite.
+  const viewStorageKey = `batch-manager-view:${session?.user?.id || session?.user?.role || "default"}`;
+  const [viewMode, setViewMode] = useState("list");
+  const [viewPreferenceLoaded, setViewPreferenceLoaded] = useState(false);
+  const tableViewportRef = useRef(null);
+  const stickyTableScrollRef = useRef(null);
+  const [tableScrollWidth, setTableScrollWidth] = useState(1350);
+
+  // Keep a second horizontal scrollbar available at the bottom while the
+  // table is long, and keep it synchronized with the table's own scroller.
+  useEffect(() => {
+    if (viewMode !== "table") return;
+    const tableViewport = tableViewportRef.current;
+    const table = tableViewport?.querySelector("table");
+    if (!tableViewport || !table) return;
+
+    const updateWidth = () => {
+      setTableScrollWidth(Math.max(table.scrollWidth, tableViewport.clientWidth));
+    };
+    updateWidth();
+    const observer = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(updateWidth)
+      : null;
+    observer?.observe(table);
+    observer?.observe(tableViewport);
+    window.addEventListener("resize", updateWidth);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updateWidth);
+    };
+  }, [viewMode, batches.length, search, statusFilter, typeFilter]);
+
+  const syncTableScroll = (source) => {
+    const tableViewport = tableViewportRef.current;
+    const stickyViewport = stickyTableScrollRef.current;
+    if (!tableViewport || !stickyViewport) return;
+    if (source === "table") stickyViewport.scrollLeft = tableViewport.scrollLeft;
+    else tableViewport.scrollLeft = stickyViewport.scrollLeft;
+  };
+
+  useEffect(() => {
+    try {
+      const savedView = window.localStorage.getItem(viewStorageKey);
+      if (savedView === "list" || savedView === "table") setViewMode(savedView);
+    } catch (error) {
+      console.warn("Unable to read batch view preference", error);
+    } finally {
+      setViewPreferenceLoaded(true);
+    }
+  }, [viewStorageKey]);
+
+  useEffect(() => {
+    if (!viewPreferenceLoaded) return;
+    try {
+      window.localStorage.setItem(viewStorageKey, viewMode);
+    } catch (error) {
+      console.warn("Unable to save batch view preference", error);
+    }
+  }, [viewMode, viewPreferenceLoaded, viewStorageKey]);
 
   const loadData = async () => {
     try {
@@ -731,6 +791,28 @@ export default function BatchManager({ session }) {
               className="h-7 w-32 rounded-[4px] bg-transparent pl-7 pr-2 text-sm outline-none transition-all placeholder:text-[#9B9A97] hover:bg-[rgba(55,53,47,0.06)] focus:w-52 focus:bg-white focus:ring-2 focus:ring-[#2383E2]/40"
             />
           </div>
+          <div className="ml-2 inline-flex h-8 items-center rounded-[5px] border border-[#E3E2E0] bg-white p-0.5">
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              aria-label="List view"
+              aria-pressed={viewMode === "list"}
+              title="List view"
+              className={`inline-flex h-7 items-center gap-1.5 rounded-[3px] px-2 text-xs transition-colors ${viewMode === "list" ? "bg-[#F1F1EF] font-medium text-[#37352F]" : "text-[#787774] hover:bg-[#F7F6F3]"}`}
+            >
+              <LayoutList size={14} /> List
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("table")}
+              aria-label="Table view"
+              aria-pressed={viewMode === "table"}
+              title="Table view"
+              className={`inline-flex h-7 items-center gap-1.5 rounded-[3px] px-2 text-xs transition-colors ${viewMode === "table" ? "bg-[#F1F1EF] font-medium text-[#37352F]" : "text-[#787774] hover:bg-[#F7F6F3]"}`}
+            >
+              <Table2 size={14} /> Table
+            </button>
+          </div>
           {canManageBatches && (
             <button
               onClick={openCreate}
@@ -771,6 +853,137 @@ export default function BatchManager({ session }) {
               </button>
             )}
           </div>
+        ) : viewMode === "table" ? (
+          <>
+          <div ref={tableViewportRef} onScroll={() => syncTableScroll("table")} className="mt-2 overflow-x-auto rounded-[5px] border border-[#E9E9E7]">
+            <table className="w-full min-w-[1750px] border-collapse text-left">
+              <thead className="bg-[#FAFAF9]">
+                <tr className="border-b border-[#E9E9E7]">
+                  {["Batch", "Course / Type", "Start date", "Schedule", "Trainers", "Ongoing tools", "Upcoming tools", "Remaining tools", "Completed tools", "Status", "Actions"].map((heading) => (
+                    <th key={heading} className="whitespace-nowrap px-3 py-3 text-xs font-medium text-[#787774]">{heading}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredBatches.map((batch) => {
+                  const course = getCourse(batch.courseId);
+                  const trainerAssignments = (batch.toolTrainerAssignments || []).filter(
+                    (assignment) => String(assignment?.trainerId) === trainerId
+                  );
+                  const assignedToolIds = new Set(trainerAssignments.map((assignment) => String(assignment.toolId)));
+                  const visibleToolIds = isTrainer ? assignedToolIds : new Set((batch.tools || []).map(String));
+                  const rowTools = (batch.tools || [])
+                    .filter((toolId) => visibleToolIds.has(String(toolId)))
+                    .map((toolId) => getTool(toolId))
+                    .filter(Boolean);
+                  const rowTrainerIds = isTrainer
+                    ? [...new Set(trainerAssignments.map((item) => String(item.trainerId)))]
+                    : [...new Set((batch.toolTrainerAssignments || []).map((item) => String(item.trainerId)))];
+                  const rowToolStates = getToolStates(batch, rowTools);
+                  const ongoingTools = rowToolStates.filter((item) => item.state === "ongoing");
+                  const upcomingTools = rowToolStates.filter((item) => item.state === "upcoming");
+                  const remainingTools = rowToolStates.filter((item) => item.state === "notScheduled");
+                  const completedTools = rowToolStates.filter((item) => item.state === "completed");
+                  const renderToolGroup = (items, emptyLabel, className, state) => (
+                    <div className={`flex ${items === remainingTools ? "min-w-[320px]" : "min-w-[220px]"} flex-wrap items-center gap-x-2 gap-y-1`}>
+                      {items.length ? items.map(({ tool }) => {
+                        const scheduledSession = (batch.sessions || [])
+                          .filter((session) => String(session.toolId) === String(tool._id))
+                          .find((session) => session.status === state) ||
+                          (state === "ongoing" ? batch.latestOngoingSession : batch.latestUpcomingSession);
+                        const sessionMatchesTool = scheduledSession && String(scheduledSession.toolId) === String(tool._id);
+                        const startDate = sessionMatchesTool
+                          ? (scheduledSession.startDate || scheduledSession.date)
+                          : null;
+                        const endDate = sessionMatchesTool ? scheduledSession.endDate : null;
+                        return (
+                          <div key={tool._id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <Pill className={className}>{getToolDisplayName(tool)}</Pill>
+                            {(startDate || endDate) && (
+                              <span className="whitespace-nowrap text-[11px] leading-4 text-[#787774]">
+                                {startDate ? `Start: ${formatDate(startDate)}` : "Start: —"}
+                                {" · "}
+                                {endDate ? `End: ${formatDate(endDate)}` : "End: —"}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      }) : <span className="text-xs text-[#C7C6C3]">{emptyLabel}</span>}
+                    </div>
+                  );
+                  const rowStatus = batch.status || "inactive";
+                  const rowType = normalizeBatchType(batch.batchType);
+                  const rowTiming = batch.startingTime && batch.endingTime
+                    ? `${formatTime(batch.startingTime)} – ${formatTime(batch.endingTime)}`
+                    : formatTime(batch.startingTime) || "Time not set";
+                  return (
+                    <tr key={batch._id} className="border-b border-[#E9E9E7] last:border-0 hover:bg-[rgba(55,53,47,0.025)]">
+                      <td className="px-3 py-3">
+                        <Link href={isTrainer ? `/trainer/batches/${batch._id}` : `/batches/${batch._id}`} className="leading-0 text-sm font-bold text-[#37352F] hover:underline">{batch.name || "Untitled batch"}</Link>
+                        <p className="mt-0.5 text-xs text-[#9B9A97]">{batch._id}</p>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Pill className={course ? tagColor(course._id) : "bg-[#F1F1EF] text-[#787774]"}>{course?.name || "Course unavailable"}</Pill>
+                          <Pill className={batchTypeStyles[rowType]}>{rowType === "special" ? "Special" : "Regular"}</Pill>
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3 text-sm text-[#787774]">{formatDate(batch.startingDate)}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-sm text-[#787774]">{rowTiming}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex max-w-[190px] flex-wrap gap-1">
+                          {rowTrainerIds.length ? rowTrainerIds.map((id) => (
+                            <Pill key={id} className={tagColor(id)}>{getTrainer(id)?.name || "Trainer"}</Pill>
+                          )) : <span className="text-xs text-[#C7C6C3]">No trainer</span>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">{renderToolGroup(ongoingTools, "None", "bg-[#DBEDDB] text-[#1C3829]", "ongoing")}</td>
+                      <td className="px-3 py-3">{renderToolGroup(upcomingTools, "None", "bg-[#D3E5EF] text-[#183347]", "upcoming")}</td>
+                      <td className="min-w-[340px] px-3 py-3">{renderToolGroup(remainingTools, "None", "bg-[#FDECC8] text-[#402C1B]")}</td>
+                      <td className="px-3 py-3">
+                        {completedTools.length ? (
+                          <div className="flex min-w-[150px] flex-wrap items-center gap-x-2 gap-y-1 opacity-45">
+                            {completedTools.map(({ tool }) => (
+                              <div key={tool._id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <Pill className="bg-[#E8DEEE] text-[#412454] line-through">{getToolDisplayName(tool)}</Pill>
+                                <span className="text-[11px] text-[#9B9A97]">Completed</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : <span className="text-xs text-[#C7C6C3]">None</span>}
+                      </td>
+                      <td className="px-3 py-3">
+                        {isTrainer ? (
+                          <Pill className={statusStyles[rowStatus] || statusStyles.inactive}>{STATUS_OPTIONS.find((item) => item.value === rowStatus)?.label || rowStatus}</Pill>
+                        ) : (
+                          <select aria-label={`Change status for ${batch.name}`} value={rowStatus} onChange={(event) => changeStatus(batch, event.target.value)} className={`cursor-pointer rounded-[3px] border-0 px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-[#2383E2]/40 ${statusStyles[rowStatus] || statusStyles.inactive}`}>
+                            {STATUS_OPTIONS.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
+                          </select>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">
+                        {canManageBatches ? (
+                          <div className="flex items-center gap-1">
+                            <button type="button" onClick={() => openEdit(batch)} aria-label={`Edit ${batch.name}`} title="Edit batch" className={`rounded-[4px] p-1.5 text-[#787774] ${hoverBg}`}><Pencil size={14} /></button>
+                            <button type="button" onClick={() => deleteBatch(batch)} disabled={deletingId === batch._id} aria-label={`Delete ${batch.name}`} title="Delete batch" className="rounded-[4px] p-1.5 text-[#787774] transition-colors hover:bg-[#FFE2DD] hover:text-[#E03E3E] disabled:opacity-50">{deletingId === batch._id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}</button>
+                          </div>
+                        ) : <span className="text-xs text-[#C7C6C3]">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div
+            ref={stickyTableScrollRef}
+            onScroll={() => syncTableScroll("sticky")}
+            className="sticky bottom-0 z-30 mt-1 h-4 overflow-x-auto overflow-y-hidden rounded-b-[5px] border border-[#E9E9E7] bg-white/95 shadow-[0_-2px_8px_rgba(0,0,0,0.06)]"
+            aria-label="Table horizontal scrollbar"
+          >
+            <div style={{ width: `${tableScrollWidth}px`, height: "1px" }} />
+          </div>
+          </>
         ) : (
           filteredBatches.map((batch) => {
             const course = getCourse(batch.courseId);

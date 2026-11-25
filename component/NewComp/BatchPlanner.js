@@ -20,7 +20,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   ArrowDownToLine, Check, CheckSquare, ChevronDown, ChevronUp, Download, FileJson,
-  FileText, Hand, Heading, ListChecks, Loader2, Magnet, Map as MapIcon, Maximize,
+  FileText, FileSpreadsheet, Hand, Heading, ListChecks, Loader2, Magnet, Map as MapIcon, Maximize,
   MousePointer2, Plus, Redo2, Search, Shapes, StickyNote, Type, Undo2, X,
 } from "lucide-react";
 import PlannerNode, { PlannerActionsContext, SWATCH } from "./PlannerNode";
@@ -34,6 +34,7 @@ const SIZES = {
   task: { width: 270, height: 220 },
   checklist: { width: 260, height: 230 },
   shape: { width: 200, height: 130 },
+  spreadsheet: { width: 620, height: 360 },
 };
 const LINK_STYLES = [
   { id: "smoothstep", label: "Rounded" },
@@ -95,6 +96,7 @@ function makeNode(kind, index, position) {
     task: { title: "New task", text: "", color: "white", status: "todo", priority: "medium", dueDate: "" },
     checklist: { title: "Checklist", color: "white", items: [{ id: uid(), text: "", done: false }] },
     shape: { text: "", color: "white", shape: "rectangle" },
+    spreadsheet: { title: "Spreadsheet", color: "white", rows: 10, cols: 6, cells: Array.from({ length: 10 }, () => Array(6).fill("")) },
   };
   return {
     id: uid(),
@@ -109,7 +111,8 @@ function makeNode(kind, index, position) {
 function nodeSearchText(node) {
   const d = node.data || {};
   const items = Array.isArray(d.items) ? d.items.map((item) => item.text).join(" ") : "";
-  return `${d.title || ""} ${d.text || ""} ${items}`.toLowerCase();
+  const cells = Array.isArray(d.cells) ? d.cells.flat().join(" ") : "";
+  return `${d.title || ""} ${d.text || ""} ${items} ${cells}`.toLowerCase();
 }
 
 const safeName = (name) => (name || "batch").replace(/[^a-z0-9-_]/gi, "-");
@@ -688,6 +691,80 @@ function PlannerCanvasInner({ batchId, batchName }) {
         const url = URL.createObjectURL(blob);
         download(url, `${name}-planner.json`);
         setTimeout(() => URL.revokeObjectURL(url), 2000);
+      } else if (type === "excel") {
+        const XLSX = await import("xlsx");
+        const plannerNodes = nodesRef.current.map(cleanNode);
+
+        const itemRows = plannerNodes.map((node, index) => {
+          const data = node.data || {};
+          return {
+            "S. No.": index + 1,
+            "Item Type": data.kind || node.type || "",
+            "Title": data.title || "",
+            "Content": data.text || "",
+            "Color": data.color || "",
+            "Status": data.status || "",
+            "Priority": data.priority || "",
+            "Due Date": data.dueDate || "",
+            "Shape": data.shape || "",
+            "Checklist Items": Array.isArray(data.items) ? data.items.length : 0,
+            "Completed Checklist Items": Array.isArray(data.items)
+              ? data.items.filter((item) => item.done).length
+              : 0,
+            "Canvas X": node.position?.x ?? "",
+            "Canvas Y": node.position?.y ?? "",
+          };
+        });
+
+        const checklistRows = [];
+        plannerNodes.forEach((node) => {
+          const data = node.data || {};
+          if (Array.isArray(data.items)) {
+            data.items.forEach((item, index) => {
+              checklistRows.push({
+                "Parent Item": data.title || data.text || "Checklist",
+                "Item No.": index + 1,
+                "Checklist Item": item.text || "",
+                "Completed": item.done ? "Yes" : "No",
+              });
+            });
+          }
+        });
+
+        const edgeRows = edgesRef.current.map((edge, index) => ({
+          "S. No.": index + 1,
+          "Source Item ID": edge.source || "",
+          "Target Item ID": edge.target || "",
+          "Connection Style": edge.type || "",
+          "Label": edge.label || "",
+        }));
+
+        const workbook = XLSX.utils.book_new();
+        const itemsSheet = XLSX.utils.json_to_sheet(itemRows);
+        itemsSheet["!cols"] = [
+          { wch: 8 }, { wch: 16 }, { wch: 28 }, { wch: 45 },
+          { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 },
+          { wch: 14 }, { wch: 18 }, { wch: 24 }, { wch: 12 }, { wch: 12 },
+        ];
+        XLSX.utils.book_append_sheet(workbook, itemsSheet, "Planner Items");
+
+        if (checklistRows.length) {
+          const checklistSheet = XLSX.utils.json_to_sheet(checklistRows);
+          checklistSheet["!cols"] = [
+            { wch: 28 }, { wch: 12 }, { wch: 45 }, { wch: 14 },
+          ];
+          XLSX.utils.book_append_sheet(workbook, checklistSheet, "Checklist Items");
+        }
+
+        if (edgeRows.length) {
+          const connectionsSheet = XLSX.utils.json_to_sheet(edgeRows);
+          connectionsSheet["!cols"] = [
+            { wch: 8 }, { wch: 38 }, { wch: 38 }, { wch: 18 }, { wch: 24 },
+          ];
+          XLSX.utils.book_append_sheet(workbook, connectionsSheet, "Connections");
+        }
+
+        XLSX.writeFile(workbook, `${name}-planner.xlsx`);
       } else if (type === "png") {
         const { dataUrl } = await renderImage("#f8fafc");
         download(dataUrl, `${name}-planner.png`);
@@ -775,6 +852,7 @@ function PlannerCanvasInner({ batchId, batchName }) {
             </ToolBtn>
             {exportOpen && (
               <div className="absolute right-0 z-30 mt-2 w-44 rounded-lg border bg-white p-1 shadow-xl">
+                <button onClick={() => runExport("excel")} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs hover:bg-slate-50"><FileSpreadsheet size={14} /> Spreadsheet (Excel)</button>
                 <button onClick={() => runExport("png")} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs hover:bg-slate-50"><ArrowDownToLine size={14} /> Image (PNG)</button>
                 <button onClick={() => runExport("pdf")} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs hover:bg-slate-50"><FileText size={14} /> Document (PDF)</button>
                 <button onClick={() => runExport("json")} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs hover:bg-slate-50"><FileJson size={14} /> Backup (JSON)</button>
@@ -793,6 +871,7 @@ function PlannerCanvasInner({ batchId, batchName }) {
         <ToolBtn onClick={() => addItem("text")} title="Text block"><Type size={14} /> Text</ToolBtn>
         <ToolBtn onClick={() => addItem("heading")} title="Heading"><Heading size={14} /> Heading</ToolBtn>
         <ToolBtn onClick={() => addItem("shape")} title="Shape"><Shapes size={14} /> Shape</ToolBtn>
+        <ToolBtn onClick={() => addItem("spreadsheet")} title="Spreadsheet"><FileSpreadsheet size={14} /> Spreadsheet</ToolBtn>
 
         <span className="mx-1 h-6 w-px bg-slate-200" />
 

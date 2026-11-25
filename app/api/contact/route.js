@@ -14,7 +14,6 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Requested-With, Accept",
   "Access-Control-Max-Age": "86400",
 };
-const specialCounsellorId = "6a6888f23bccf7d435b4340d" || "6a688b423bccf7d435b43411";
 export async function GET(req) {
   try {
     const session = await getServerSession(authOptions);
@@ -38,7 +37,7 @@ export async function GET(req) {
     const campaign = searchParams.get("campaign");
     const dateFilter = searchParams.get("dateFilter");
     const counsellorId = searchParams.get("counsellorId") || "";
-
+const todayFollowUp = searchParams.get("todayFollowUp") === "true";
     const skip = (page - 1) * limit;
 
     const client = await clientPromise;

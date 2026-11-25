@@ -1,9 +1,9 @@
 "use client";
 
-import { memo, createContext, useContext, useRef } from "react";
+import { memo, createContext, useContext, useRef, useState } from "react";
 import { Handle, Position, NodeResizer, NodeToolbar } from "@xyflow/react";
 import {
-  CheckSquare, Copy, Heading, ListChecks, Plus, Shapes, StickyNote, Trash2, Type, X,
+  CheckSquare, Copy, FileSpreadsheet, Heading, ListChecks, Plus, Shapes, StickyNote, Trash2, Type, X,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -57,9 +57,69 @@ const handleClass = (selected) =>
     selected ? "!opacity-100" : "!opacity-0 group-hover:!opacity-100"
   }`;
 
+
+function columnLabel(index) {
+  let label = "";
+  let n = index + 1;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    label = String.fromCharCode(65 + rem) + label;
+    n = Math.floor((n - 1) / 26);
+  }
+  return label;
+}
+
+function cellValue(cells, row, col, seen = new Set()) {
+  const raw = String(cells?.[row]?.[col] ?? "").trim();
+  if (!raw.startsWith("=")) {
+    const number = Number(raw);
+    return raw !== "" && Number.isFinite(number) ? number : raw;
+  }
+
+  const key = `${row}:${col}`;
+  if (seen.has(key)) return "#CYCLE!";
+  const nextSeen = new Set(seen);
+  nextSeen.add(key);
+  const formula = raw.slice(1).trim().toUpperCase();
+
+  const getRef = (ref) => {
+    const match = /^([A-Z]+)([1-9]\d*)$/.exec(ref);
+    if (!match) return "#REF!";
+    let colIndex = 0;
+    for (const char of match[1]) colIndex = colIndex * 26 + char.charCodeAt(0) - 64;
+    return cellValue(cells, Number(match[2]) - 1, colIndex - 1, nextSeen);
+  };
+
+  const aggregate = /^(SUM|AVERAGE|MIN|MAX|COUNT)\(([A-Z]+[1-9]\d*):([A-Z]+[1-9]\d*)\)$/.exec(formula);
+  if (aggregate) {
+    const start = /^([A-Z]+)(\d+)$/.exec(aggregate[2]);
+    const end = /^([A-Z]+)(\d+)$/.exec(aggregate[3]);
+    const colNum = (letters) => [...letters].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1;
+    const c1 = colNum(start[1]), c2 = colNum(end[1]);
+    const r1 = Number(start[2]) - 1, r2 = Number(end[2]) - 1;
+    const values = [];
+    for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r++) {
+      for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c++) {
+        const value = cellValue(cells, r, c, nextSeen);
+        if (typeof value === "number" && Number.isFinite(value)) values.push(value);
+      }
+    }
+    if (aggregate[1] === "COUNT") return values.length;
+    if (!values.length) return aggregate[1] === "SUM" ? 0 : "";
+    if (aggregate[1] === "SUM") return values.reduce((a, b) => a + b, 0);
+    if (aggregate[1] === "AVERAGE") return values.reduce((a, b) => a + b, 0) / values.length;
+    if (aggregate[1] === "MIN") return Math.min(...values);
+    return Math.max(...values);
+  }
+
+  if (/^[A-Z]+[1-9]\d*$/.test(formula)) return getRef(formula);
+  return "#FORMULA?";
+}
+
 function PlannerNode({ id, data, selected }) {
   const actions = useContext(PlannerActionsContext);
   const focusItem = useRef(null);
+  const [editingCell, setEditingCell] = useState(null);
 
   const kind = data?.kind || "note";
   const color = FILL[data?.color] ? data.color : kind === "note" ? "yellow" : "white";
@@ -316,6 +376,95 @@ function PlannerNode({ id, data, selected }) {
             onChange={(event) => update({ text: event.target.value })}
             placeholder="Label"
           />
+        </div>
+      </div>
+    );
+  }
+
+
+  if (kind === "spreadsheet") {
+    const rowCount = Math.max(1, Math.min(100, Number(data.rows) || 10));
+    const colCount = Math.max(1, Math.min(26, Number(data.cols) || 6));
+    const cells = Array.from({ length: rowCount }, (_, r) =>
+      Array.from({ length: colCount }, (_, c) => String(data.cells?.[r]?.[c] ?? ""))
+    );
+    const updateCell = (r, c, value) => {
+      const next = cells.map((row) => [...row]);
+      next[r][c] = value;
+      update({ cells: next, rows: rowCount, cols: colCount });
+    };
+    const addRow = () => update({ cells: [...cells, Array(colCount).fill("")], rows: rowCount + 1 }, true);
+    const addColumn = () => update({ cells: cells.map((row) => [...row, ""]), cols: colCount + 1 }, true);
+    const pasteGrid = (event) => {
+      const text = event.clipboardData?.getData("text");
+      if (!text || !text.includes("\t")) return;
+      event.preventDefault();
+      const pasted = text.replace(/\r/g, "").split("\n").filter((line, i, all) => line || i < all.length - 1).map((line) => line.split("\t"));
+      const target = event.target;
+      const r0 = Number(target.dataset.row);
+      const c0 = Number(target.dataset.col);
+      const nextRows = Math.max(rowCount, r0 + pasted.length);
+      const nextCols = Math.max(colCount, c0 + Math.max(...pasted.map((row) => row.length)));
+      if (nextRows > 100 || nextCols > 26) return;
+      const next = Array.from({ length: nextRows }, (_, r) =>
+        Array.from({ length: nextCols }, (_, c) => String(cells[r]?.[c] ?? ""))
+      );
+      pasted.forEach((row, ri) => row.forEach((value, ci) => { next[r0 + ri][c0 + ci] = value; }));
+      update({ cells: next, rows: nextRows, cols: nextCols }, true);
+    };
+
+    body = (
+      <div className={`flex h-full w-full flex-col overflow-hidden rounded-xl border bg-white shadow-sm ${selected ? "ring-2 ring-blue-500" : ""}`}>
+        <div className="flex shrink-0 items-center gap-2 border-b bg-slate-50 px-3 py-2">
+          <FileSpreadsheet size={14} className="text-green-700" />
+          <input className="nodrag min-w-0 flex-1 bg-transparent text-xs font-semibold text-slate-800 outline-none" value={data.title || "Spreadsheet"} onChange={(e) => update({ title: e.target.value })} />
+          <button type="button" className="nodrag rounded border bg-white px-2 py-1 text-[10px] hover:bg-slate-100" onClick={addRow} disabled={rowCount >= 100}>+ Row</button>
+          <button type="button" className="nodrag rounded border bg-white px-2 py-1 text-[10px] hover:bg-slate-100" onClick={addColumn} disabled={colCount >= 26}>+ Column</button>
+        </div>
+        <div className="nodrag nowheel min-h-0 flex-1 overflow-auto" onPaste={pasteGrid}>
+          <table className="w-full border-collapse text-[11px]">
+            <thead className="sticky top-0 z-10 bg-slate-100">
+              <tr>
+                <th className="sticky left-0 z-20 w-8 border border-slate-200 bg-slate-100 px-1 py-1 text-slate-500">#</th>
+                {Array.from({ length: colCount }, (_, c) => <th key={c} className="min-w-[84px] border border-slate-200 px-1 py-1 font-semibold text-slate-600">{columnLabel(c)}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {cells.map((row, r) => (
+                <tr key={r}>
+                  <th className="sticky left-0 border border-slate-200 bg-slate-50 px-1 py-0.5 font-medium text-slate-500">{r + 1}</th>
+                  {row.map((raw, c) => {
+                    const key = `${r}:${c}`;
+                    const result = cellValue(cells, r, c);
+                    const display = typeof result === "number" ? String(Number(result.toFixed(6))) : String(result);
+                    return (
+                      <td key={c} className="border border-slate-200 p-0">
+                        <input
+                          data-row={r}
+                          data-col={c}
+                          aria-label={`${columnLabel(c)}${r + 1}`}
+                          className={`nodrag w-full min-w-[84px] bg-transparent px-2 py-1.5 text-[11px] outline-none focus:bg-blue-50 focus:ring-1 focus:ring-inset focus:ring-blue-400 ${raw.startsWith("=") && !editingCell ? "font-medium text-blue-700" : "text-slate-700"}`}
+                          value={editingCell === key ? raw : raw.startsWith("=") ? display : raw}
+                          onFocus={() => setEditingCell(key)}
+                          onBlur={() => setEditingCell(null)}
+                          onChange={(e) => updateCell(r, c, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              e.currentTarget.parentElement.parentElement.nextElementSibling?.children[c + 1]?.querySelector("input")?.focus();
+                            }
+                          }}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="shrink-0 border-t bg-slate-50 px-3 py-1 text-[10px] text-slate-500">
+          Paste tab-separated cells from Excel · Formulas: =SUM(A1:A5), =AVERAGE(B1:B5), =MIN(), =MAX(), =COUNT(), or =A1
         </div>
       </div>
     );
