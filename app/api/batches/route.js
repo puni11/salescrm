@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/authOptions";
 
 const COLLECTION = "batches";
 
@@ -271,6 +273,33 @@ async function findDuplicateName(
 
 export async function GET(request) {
   try {
+    // =========================================
+    // AUTHENTICATION
+    // =========================================
+
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user) {
+      return NextResponse.json(
+        { success: false, message: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const isTrainer = session.user.role === "trainer";
+    const trainerId = session.user.id?.toString();
+
+    if (isTrainer && !trainerId) {
+      return NextResponse.json(
+        { success: false, message: "Trainer ID not found" },
+        { status: 401 }
+      );
+    }
+
+    // =========================================
+    // QUERY PARAMETERS
+    // =========================================
+
     const { searchParams } = new URL(request.url);
 
     const id = searchParams.get("id");
@@ -318,11 +347,40 @@ export async function GET(request) {
 
     const filter = {};
 
-    if (id) filter._id = new ObjectId(id);
-    if (status) filter.status = status;
-    if (courseId) filter.courseId = courseId;
+    if (id) {
+      filter._id = new ObjectId(id);
+    }
 
-    // Older batches have no batchType and count as "normal"
+    if (status) {
+      filter.status = status;
+    }
+
+    if (courseId) {
+      filter.courseId = courseId;
+    }
+
+    // Trainer can only see assigned batches.
+    // Supports trainer IDs stored as strings or ObjectIds.
+    if (isTrainer) {
+      const trainerIds = [trainerId];
+
+      if (ObjectId.isValid(trainerId)) {
+        trainerIds.push(new ObjectId(trainerId));
+      }
+
+      filter.$or = [
+        {
+          trainers: { $in: trainerIds },
+        },
+        {
+          "toolTrainerAssignments.trainerId": {
+            $in: trainerIds,
+          },
+        },
+      ];
+    }
+
+    // Older batches without batchType count as regular
     if (batchType === "special") {
       filter.batchType = "special";
     } else if (batchType === "regular") {
@@ -338,8 +396,12 @@ export async function GET(request) {
         $match: {
           $expr: {
             $and: [
-              { $eq: ["$batchId", "$$batchObjectId"] },
-              { $eq: ["$status", sessionStatus] },
+              {
+                $eq: ["$batchId", "$$batchObjectId"],
+              },
+              {
+                $eq: ["$status", sessionStatus],
+              },
             ],
           },
         },
@@ -419,7 +481,9 @@ export async function GET(request) {
                           },
                         },
                         as: "assignment",
-                        in: "$$assignment.trainerId",
+                        in: {
+                          $toString: "$$assignment.trainerId",
+                        },
                       },
                     },
                   ],
@@ -488,135 +552,136 @@ export async function GET(request) {
     // FETCH BATCHES
     // =========================================
 
-    const batches = await collection.aggregate([
-      {
-        $match: filter,
-      },
+    const batches = await collection
+      .aggregate([
+        {
+          $match: filter,
+        },
 
-      // =========================================
-      // UPCOMING SESSION
-      // =========================================
+        // =========================================
+        // UPCOMING SESSION
+        // =========================================
 
-      {
-        $lookup: {
-          from: "sessions",
-          let: {
-            batchObjectId: "$_id",
-            batchAssignments: {
-              $ifNull: ["$toolTrainerAssignments", []],
+        {
+          $lookup: {
+            from: "sessions",
+            let: {
+              batchObjectId: "$_id",
+              batchAssignments: {
+                $ifNull: ["$toolTrainerAssignments", []],
+              },
+            },
+            pipeline: buildSessionPipeline("upcoming", {
+              date: 1,
+              time: 1,
+            }),
+            as: "upcomingSessions",
+          },
+        },
+
+        // =========================================
+        // ONGOING SESSION
+        // =========================================
+
+        {
+          $lookup: {
+            from: "sessions",
+            let: {
+              batchObjectId: "$_id",
+              batchAssignments: {
+                $ifNull: ["$toolTrainerAssignments", []],
+              },
+            },
+            pipeline: buildSessionPipeline("ongoing", {
+              date: -1,
+              time: -1,
+            }),
+            as: "ongoingSessions",
+          },
+        },
+
+        // =========================================
+        // COMPLETED SESSION
+        // =========================================
+
+        {
+          $lookup: {
+            from: "sessions",
+            let: {
+              batchObjectId: "$_id",
+              batchAssignments: {
+                $ifNull: ["$toolTrainerAssignments", []],
+              },
+            },
+            pipeline: buildSessionPipeline("completed", {
+              completedAt: -1,
+              date: -1,
+              time: -1,
+            }),
+            as: "completedSessions",
+          },
+        },
+
+        // =========================================
+        // ADD SESSION DATA + DEFAULT BATCH TYPE
+        // =========================================
+
+        {
+          $addFields: {
+            latestUpcomingSession: {
+              $ifNull: [
+                { $arrayElemAt: ["$upcomingSessions", 0] },
+                null,
+              ],
+            },
+
+            latestOngoingSession: {
+              $ifNull: [
+                { $arrayElemAt: ["$ongoingSessions", 0] },
+                null,
+              ],
+            },
+
+            latestCompletedSession: {
+              $ifNull: [
+                { $arrayElemAt: ["$completedSessions", 0] },
+                null,
+              ],
+            },
+
+            batchType: {
+              $cond: [
+                { $eq: ["$batchType", "special"] },
+                "special",
+                DEFAULT_BATCH_TYPE,
+              ],
             },
           },
-          pipeline: buildSessionPipeline("upcoming", {
-            date: 1,
-            time: 1,
-          }),
-          as: "upcomingSessions",
         },
-      },
 
-      // =========================================
-      // ONGOING SESSION
-      // =========================================
+        // =========================================
+        // REMOVE TEMPORARY ARRAYS
+        // =========================================
 
-      {
-        $lookup: {
-          from: "sessions",
-          let: {
-            batchObjectId: "$_id",
-            batchAssignments: {
-              $ifNull: ["$toolTrainerAssignments", []],
-            },
-          },
-          pipeline: buildSessionPipeline("ongoing", {
-            date: -1,
-            time: -1,
-          }),
-          as: "ongoingSessions",
-        },
-      },
-
-      // =========================================
-      // COMPLETED SESSION
-      // =========================================
-
-      {
-        $lookup: {
-          from: "sessions",
-          let: {
-            batchObjectId: "$_id",
-            batchAssignments: {
-              $ifNull: ["$toolTrainerAssignments", []],
-            },
-          },
-          pipeline: buildSessionPipeline("completed", {
-            completedAt: -1,
-            date: -1,
-            time: -1,
-          }),
-          as: "completedSessions",
-        },
-      },
-
-      // =========================================
-      // ADD SESSION DATA + DEFAULT BATCH TYPE
-      // =========================================
-
-      {
-        $addFields: {
-          latestUpcomingSession: {
-            $ifNull: [
-              { $arrayElemAt: ["$upcomingSessions", 0] },
-              null,
-            ],
-          },
-
-          latestOngoingSession: {
-            $ifNull: [
-              { $arrayElemAt: ["$ongoingSessions", 0] },
-              null,
-            ],
-          },
-
-          latestCompletedSession: {
-            $ifNull: [
-              { $arrayElemAt: ["$completedSessions", 0] },
-              null,
-            ],
-          },
-
-          // Older batches without a type are returned as "normal"
-          batchType: {
-            $cond: [
-              { $eq: ["$batchType", "special"] },
-              "special",
-              DEFAULT_BATCH_TYPE,
-            ],
+        {
+          $project: {
+            upcomingSessions: 0,
+            ongoingSessions: 0,
+            completedSessions: 0,
           },
         },
-      },
 
-      // =========================================
-      // REMOVE TEMPORARY ARRAYS
-      // =========================================
+        // =========================================
+        // SORT BATCHES
+        // =========================================
 
-      {
-        $project: {
-          upcomingSessions: 0,
-          ongoingSessions: 0,
-          completedSessions: 0,
+        {
+          $sort: {
+            createdAt: -1,
+          },
         },
-      },
-
-      // =========================================
-      // SORT BATCHES
-      // =========================================
-
-      {
-        $sort: {
-          createdAt: -1,
-        },
-      },
-    ]).toArray();
+      ])
+      .toArray();
 
     // =========================================
     // SINGLE BATCH RESPONSE

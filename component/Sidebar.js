@@ -176,6 +176,7 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   const isAdmin = session?.user?.role === "admin";
+  const isTrainer = session?.user?.role === "trainer";
   const isCounsellor = session?.user?.role === "counsellor" || session?.user?.role === "manager";
   const userId = session?.user?.id;
 
@@ -248,11 +249,11 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
         {/* Navigation */}
         <nav className="flex-1 py-6 space-y-1.5 overflow-y-auto overflow-x-hidden scrollbar-hide">
           <NavItem
-            href="/dashboard"
+            href={`${isTrainer? '/trainer': '/dashboard'}`}
             icon={LayoutDashboardIcon}
             label="Dashboard"
             collapsed={collapsed}
-            active={pathname === "/dashboard"}
+            active={pathname === `${isTrainer? '/trainer': '/dashboard'}`}
           />
 
           {/* Leads, now with a submenu */}
@@ -299,13 +300,13 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
     active={pathname.includes("whatsapp")}
   />
 )}
-         <NavItem
+        {!isTrainer && <NavItem
             href={'/offerings'}
             icon={Handshake}
             label="Our Offerings"
             collapsed={collapsed}
             active={pathname.includes('offerings')}
-          />
+          />}
       
              <NavGroup
             icon={Monitor}
@@ -314,7 +315,7 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             setCollapsed={setCollapsed}
             active={pathname.includes("/batch")}
            items={[
-  { href: "/batches", label: "Batch", active: pathname === "/batches" },
+  { href: `${isTrainer? '/trainer/batches' : '/batches'}`, label: "Batch", active: pathname === "/batches" },
 
   ...((isAdmin || isCounsellor) ? [
     { href: "/students", label: "Students", active: pathname === "/students" },

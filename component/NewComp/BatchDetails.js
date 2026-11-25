@@ -24,7 +24,7 @@ import {
   BookOpen,
 } from "lucide-react";
 
-const TABS = ["Overview", "Students", "Tools Planing", "Tools", "Trainers"];
+const TABS = ["Overview", "Students", "Tools Planing", "Trainers"];
 
 /* ---------- Notion palette ---------- */
 const ink = "text-[#37352f]";
@@ -246,7 +246,6 @@ function ConfirmDialog({ confirm, busy, onCancel, onConfirm }) {
 const EMPTY_SESSION = {
   date: "",
   endDate: "",
-  time: "10:00",
   toolId: "",
   notes: "",
   status: "upcoming",
@@ -261,6 +260,15 @@ export default function BatchDetails({ batchId, onBack, session }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  // Tool-wise daily attendance
+  const [attendanceSessionId, setAttendanceSessionId] = useState("");
+  const [attendanceDate, setAttendanceDate] = useState("");
+  const [attendanceRows, setAttendanceRows] = useState([]);
+  const [attendanceStats, setAttendanceStats] = useState(null);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceSaving, setAttendanceSaving] = useState(false);
+  const [attendanceError, setAttendanceError] = useState("");
+
   const [editBatch, setEditBatch] = useState(false);
   const [editStudent, setEditStudent] = useState(null);
   const [sessionModal, setSessionModal] = useState(null); // null | {id?}
@@ -274,6 +282,7 @@ export default function BatchDetails({ batchId, onBack, session }) {
 
   const endpoint = `/api/batches/${batchId}`;
   const sessionsEndpoint = `${endpoint}/sessions`;
+  const attendanceEndpoint = `${endpoint}/attendance`;
 
   const loadBatch = useCallback(async () => {
     if (!batchId) return;
@@ -296,6 +305,84 @@ export default function BatchDetails({ batchId, onBack, session }) {
   useEffect(() => {
     loadBatch();
   }, [loadBatch]);
+
+  // Select an ongoing session assigned to this trainer when today falls
+  // between the session start and end dates.
+  useEffect(() => {
+    if (session?.user?.role !== "trainer" || !data) return;
+
+    const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+    const trainerId = String(session?.user?.id || "");
+    const assignedIds = new Set(
+      (data.toolTrainerAssignments || [])
+        .filter((item) => String(item.trainerId) === trainerId)
+        .map((item) => String(item.toolId))
+    );
+
+    const eligible = sessions.filter((item) =>
+      item.status === "ongoing" &&
+      item.toolId &&
+      assignedIds.has(String(item.toolId)) &&
+      item.date && item.endDate &&
+      today >= item.date && today <= item.endDate
+    );
+
+    if (eligible.length) {
+      setAttendanceSessionId((current) =>
+        eligible.some((item) => String(item.id) === current)
+          ? current
+          : String(eligible[0].id)
+      );
+      setAttendanceDate((current) => current || today);
+    } else {
+      setAttendanceSessionId("");
+      setAttendanceRows([]);
+      setTab((current) => current === "Attendance" ? "Overview" : current);
+    }
+  }, [data, sessions, session?.user?.role, session?.user?.id]);
+
+  // Fetch saved attendance and the students assigned to the selected tool.
+  useEffect(() => {
+    if (!attendanceSessionId || !attendanceDate || session?.user?.role !== "trainer") {
+      setAttendanceRows([]);
+      setAttendanceStats(null);
+      return;
+    }
+
+    const selected = sessions.find(
+      (item) => String(item.id) === String(attendanceSessionId)
+    );
+    if (!selected?.toolId) return;
+
+    let cancelled = false;
+    (async () => {
+      setAttendanceLoading(true);
+      setAttendanceError("");
+      try {
+        const params = new URLSearchParams({
+          toolId: String(selected.toolId),
+          date: attendanceDate,
+          fromDate: selected.date,
+          toDate: selected.endDate,
+        });
+        const result = await request(`${attendanceEndpoint}?${params}`, "GET");
+        if (!cancelled) {
+          setAttendanceRows(result.data.students || []);
+          setAttendanceStats(result.data.stats || null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setAttendanceRows([]);
+          setAttendanceStats(null);
+          setAttendanceError(err.message || "Unable to load attendance");
+        }
+      } finally {
+        if (!cancelled) setAttendanceLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [attendanceEndpoint, attendanceSessionId, attendanceDate, sessions, session?.user?.role, session?.user?.id]);
 
   // One helper for every write: runs it, shows a notice, reloads the page data.
   const run = async (fn) => {
@@ -324,6 +411,8 @@ export default function BatchDetails({ batchId, onBack, session }) {
   const ask = (options) => setConfirm(options);
 
   const openBatchEditor = () => {
+    if (!canManage) return;
+
     setBatchForm({
       name: data.name || "",
       startingDate: data.startingDate || "",
@@ -335,6 +424,8 @@ export default function BatchDetails({ batchId, onBack, session }) {
   };
 
   const openStudentEditor = (student) => {
+    if (!canManage) return;
+
     setStudentForm({
       mode: student.mode || "full_course",
       totalFee: student.totalFee ?? 0,
@@ -346,12 +437,15 @@ export default function BatchDetails({ batchId, onBack, session }) {
   };
 
   const openSessionEditor = (session) => {
+    // Trainers can edit existing sessions, but cannot create new ones.
+    if (isTrainer && !session) return;
+    if (role === "placemenCell") return;
+
     setSessionForm(
       session
         ? {
             date: session.date || "",
             endDate: session.endDate || session.date || "",
-            time: session.time || "10:00",
             toolId: session.toolId || "",
             notes: session.notes || "",
             status: session.status || "pending",
@@ -420,8 +514,8 @@ export default function BatchDetails({ batchId, onBack, session }) {
   const submitSession = (e) => {
     e.preventDefault();
 
-    if (!sessionForm.date || !sessionForm.endDate || !sessionForm.time) {
-      window.alert("Please fill in starting date, ending date and time.");
+    if (!sessionForm.date || !sessionForm.endDate) {
+      window.alert("Please fill in starting date and ending date.");
       return;
     }
 
@@ -430,33 +524,136 @@ export default function BatchDetails({ batchId, onBack, session }) {
       return;
     }
 
+    if (sessionForm.status === "completed" && !sessionForm.toolId) {
+      window.alert("Select a tool before marking this planning entry completed.");
+      return;
+    }
+
     const editing = Boolean(sessionModal?.id);
+
+    // A trainer can only update an existing planning entry.
+    if (isTrainer && !editing) {
+      window.alert("You can edit existing tool planning only.");
+      return;
+    }
 
     const payload = {
       date: sessionForm.date,
       endDate: sessionForm.endDate,
-      time: sessionForm.time,
       toolId: sessionForm.toolId,
       notes: sessionForm.notes,
       status: sessionForm.status,
     };
 
-    run(() =>
-      request(
+    run(async () => {
+      const result = await request(
         sessionsEndpoint,
         editing ? "PATCH" : "POST",
         editing ? { sessionId: sessionModal.id, ...payload } : payload
+      );
+
+      // Keep batch tool completion synchronized with planning status.
+      if (sessionForm.toolId && sessionForm.status === "completed") {
+        await request(endpoint, "PATCH", {
+          action: "complete_batch_tool",
+          toolId: sessionForm.toolId,
+        });
+      } else if (sessionForm.toolId && sessionForm.status === "ongoing") {
+        await request(endpoint, "PATCH", {
+          action: "reopen_batch_tool",
+          toolId: sessionForm.toolId,
+        });
+      }
+
+      return result;
+    });
+  };
+
+  const toggleSession = (session) => {
+    if (role === "placemenCell") return;
+
+    const nextStatus = session.status === "completed" ? "ongoing" : "completed";
+
+    run(async () => {
+      const result = await request(sessionsEndpoint, "PATCH", {
+        sessionId: session.id,
+        status: nextStatus,
+      });
+
+      if (session.toolId) {
+        await request(endpoint, "PATCH", {
+          action: nextStatus === "completed"
+            ? "complete_batch_tool"
+            : "reopen_batch_tool",
+          toolId: session.toolId,
+        });
+      }
+
+      return result;
+    });
+  };
+
+  const updateAttendanceStatus = (studentId, status) => {
+    setAttendanceRows((current) =>
+      current.map((student) =>
+        String(student.studentId) === String(studentId)
+          ? { ...student, attendanceStatus: status }
+          : student
       )
     );
   };
 
-  const toggleSession = (session) =>
-    run(() =>
-      request(sessionsEndpoint, "PATCH", {
-        sessionId: session.id,
-        status: session.status === "completed" ? "pending" : "completed",
-      })
+  const saveAttendance = async () => {
+    if (!selectedAttendanceSession?.toolId || !attendanceDate) return;
+
+    const unmarked = attendanceRows.filter(
+      (student) => !["present", "absent"].includes(student.attendanceStatus)
     );
+
+    if (unmarked.length) {
+      window.alert(`Please mark attendance for all students. ${unmarked.length} student(s) are still unmarked.`);
+      return;
+    }
+
+    setAttendanceSaving(true);
+    setAttendanceError("");
+    try {
+      const result = await request(attendanceEndpoint, "POST", {
+        toolId: String(selectedAttendanceSession.toolId),
+        date: attendanceDate,
+        trainerId: String(session?.user?.id || ""),
+        records: attendanceRows.map((student) => ({
+          studentId: String(student.studentId),
+          status: student.attendanceStatus,
+        })),
+      });
+      setNotice(result.message || "Attendance saved successfully");
+      // Reload from the database so the UI reflects persisted values.
+      const params = new URLSearchParams({
+        toolId: String(selectedAttendanceSession.toolId),
+        date: attendanceDate,
+        fromDate: selectedAttendanceSession.date,
+        toDate: selectedAttendanceSession.endDate,
+      });
+      const refreshed = await request(`${attendanceEndpoint}?${params}`, "GET");
+      setAttendanceRows(refreshed.data.students || []);
+      setAttendanceStats(refreshed.data.stats || null);
+    } catch (err) {
+      setAttendanceError(err.message || "Unable to save attendance");
+    } finally {
+      setAttendanceSaving(false);
+    }
+  };
+
+  const dailyAttendanceStats = {
+    total: attendanceRows.length,
+    present: attendanceRows.filter((student) => student.attendanceStatus === "present").length,
+    absent: attendanceRows.filter((student) => student.attendanceStatus === "absent").length,
+    unmarked: attendanceRows.filter((student) => !["present", "absent"].includes(student.attendanceStatus)).length,
+  };
+  dailyAttendanceStats.percentage = dailyAttendanceStats.total
+    ? Math.round((dailyAttendanceStats.present / dailyAttendanceStats.total) * 100)
+    : 0;
 
   const removeStudent = (student) =>
     ask({
@@ -525,12 +722,53 @@ export default function BatchDetails({ batchId, onBack, session }) {
   const completedDemos = demoRequests.filter(
     (item) => item.status?.toLowerCase() === "completed"
   ).length;
-  const tools = data.tools || [];
+  const isTrainer = session?.user?.role === "trainer";
+  const role = session?.user?.role;
+  const trainerId = String(session?.user?.id || "");
+
+  const allTools = data.tools || [];
   const trainers = data.trainers || [];
   const financials = data.financials || {};
-  const sessionsDone = sessions.filter((s) => s.status === "completed").length;
-  const toolName = (id) => tools.find((t) => t.id === id)?.name;
-  const canEdit = session?.user?.role !== "placemenCell";
+
+  const assignedToolIds = new Set(
+    (data.toolTrainerAssignments || [])
+      .filter((item) => String(item.trainerId) === trainerId)
+      .map((item) => String(item.toolId))
+  );
+
+  // Trainers only see tools assigned to their own trainer account.
+  const tools = isTrainer
+    ? allTools.filter((tool) => assignedToolIds.has(String(tool.id)))
+    : allTools;
+
+  // Keep the schedule scoped to the trainer's assigned tools.
+  const visibleSessions = isTrainer
+    ? sessions.filter((item) => assignedToolIds.has(String(item.toolId)))
+    : sessions;
+
+  const todayForAttendance = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  const eligibleAttendanceSessions = isTrainer
+    ? visibleSessions.filter((item) =>
+        item.status === "ongoing" &&
+        item.toolId &&
+        item.date && item.endDate &&
+        todayForAttendance >= item.date &&
+        todayForAttendance <= item.endDate
+      )
+    : [];
+
+  const selectedAttendanceSession = eligibleAttendanceSessions.find(
+    (item) => String(item.id) === String(attendanceSessionId)
+  ) || eligibleAttendanceSessions[0] || null;
+
+  const sessionsDone = visibleSessions.filter((s) => s.status === "completed").length;
+  const toolName = (id) => tools.find((t) => String(t.id) === String(id))?.name;
+
+  // Trainers may edit existing tool-planning entries, but cannot add/delete
+  // batches, students, tools, or sessions.
+  const canManage = !isTrainer && role !== "placemenCell";
+  const canEdit = role !== "placemenCell";
+  const canAddSession = canManage;
 
   const studentActions = {
     onEdit: openStudentEditor,
@@ -552,9 +790,11 @@ export default function BatchDetails({ batchId, onBack, session }) {
           <span className={ink}>{data.name}</span>
         </div>
         <div className="flex gap-1">
-          <Btn onClick={openBatchEditor}>
-            <Pencil size={14} /> Edit
-          </Btn>
+          {canManage && (
+            <Btn onClick={openBatchEditor}>
+              <Pencil size={14} /> Edit
+            </Btn>
+          )}
           <Btn onClick={loadBatch}>
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
           </Btn>
@@ -575,11 +815,13 @@ export default function BatchDetails({ batchId, onBack, session }) {
 
         {/* Tabs */}
         <div className={`mt-8 flex gap-1 overflow-x-auto border-b ${line}`}>
-          {TABS.map((item) => {
+          {[
+            ...TABS.filter((item) => !(isTrainer && item === "Trainers")),
+            ...(isTrainer && eligibleAttendanceSessions.length ? ["Attendance"] : []),
+          ].map((item) => {
             const count =
               item === "Students" ? students.length
-              : item === "Tools Planing" ? sessions.length
-              : item === "Tools" ? tools.length
+              : item === "Tools Planing" ? visibleSessions.length
               : item === "Trainers" ? trainers.length
               : null;
             return (
@@ -619,10 +861,14 @@ export default function BatchDetails({ batchId, onBack, session }) {
             <>
               <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 <Callout icon={Users} label="Students" value={students.length} />
-                <Callout icon={IndianRupee} label="Total fees" value={money(financials.totalFees)} />
-                <Callout icon={Wallet} label="Collected" value={money(financials.totalPaid)} />
-                <Callout icon={IndianRupee} label="Balance due" value={money(financials.totalBalance)} />
-                <Callout icon={CalendarCheck} label="Sessions done" value={`${sessionsDone} / ${sessions.length}`} />
+                {!isTrainer && (
+                  <>
+                    <Callout icon={IndianRupee} label="Total fees" value={money(financials.totalFees)} />
+                    <Callout icon={Wallet} label="Collected" value={money(financials.totalPaid)} />
+                    <Callout icon={IndianRupee} label="Balance due" value={money(financials.totalBalance)} />
+                  </>
+                )}
+                <Callout icon={CalendarCheck} label="Sessions done" value={`${sessionsDone} / ${visibleSessions.length}`} />
               </section>
 
               <section className="grid gap-8 lg:grid-cols-2">
@@ -640,17 +886,19 @@ export default function BatchDetails({ batchId, onBack, session }) {
                   )) : <Empty text="No tools assigned" />}
                 </div>
 
-                <div>
-                  <SectionTitle title="Trainers" />
-                  {trainers.length ? trainers.map((trainer) => (
-                    <div key={trainer.id} className={`flex items-center gap-2.5 rounded px-2 py-2 text-sm ${hoverBg}`}>
-                      <span className="flex h-6 w-6 items-center justify-center rounded bg-[#efeeec] text-xs font-semibold">
-                        {trainer.name?.charAt(0)?.toUpperCase() || "T"}
-                      </span>
-                      {trainer.name}
-                    </div>
-                  )) : <Empty text="No trainers assigned" />}
-                </div>
+                {!isTrainer && (
+                  <div>
+                    <SectionTitle title="Trainers" />
+                    {trainers.length ? trainers.map((trainer) => (
+                      <div key={trainer.id} className={`flex items-center gap-2.5 rounded px-2 py-2 text-sm ${hoverBg}`}>
+                        <span className="flex h-6 w-6 items-center justify-center rounded bg-[#efeeec] text-xs font-semibold">
+                          {trainer.name?.charAt(0)?.toUpperCase() || "T"}
+                        </span>
+                        {trainer.name}
+                      </div>
+                    )) : <Empty text="No trainers assigned" />}
+                  </div>
+                )}
               </section>
 
               <section>
@@ -658,7 +906,12 @@ export default function BatchDetails({ batchId, onBack, session }) {
                   title="Recently assigned students"
                   action={<Btn onClick={() => setTab("Students")}>View all</Btn>}
                 />
-                <StudentTable students={students.slice(0, 5)} {...studentActions} />
+                <StudentTable
+                  students={students.slice(0, 5)}
+                  {...studentActions}
+                  readOnly={isTrainer}
+                  hideFinancials={isTrainer}
+                />
               </section>
             </>
           )}
@@ -670,9 +923,9 @@ export default function BatchDetails({ batchId, onBack, session }) {
               <section>
                 <SectionTitle
                   title="Students"
-                  hint={`${students.length} assigned · ${money(financials.totalPaid)} collected`}
+                  hint={isTrainer ? `${students.length} assigned` : `${students.length} assigned · ${money(financials.totalPaid)} collected`}
                   action={
-                    canEdit && (
+                    canManage && (
                       <Btn variant="primary" onClick={openAssignModal}>
                         <Plus size={14} /> Assign student
                       </Btn>
@@ -680,7 +933,12 @@ export default function BatchDetails({ batchId, onBack, session }) {
                   }
                 />
 
-                <StudentTable students={students} {...studentActions} />
+                <StudentTable
+                  students={students}
+                  {...studentActions}
+                  readOnly={isTrainer}
+                  hideFinancials={isTrainer}
+                />
               </section>
 
               {/* Demo Requests */}
@@ -776,9 +1034,9 @@ export default function BatchDetails({ batchId, onBack, session }) {
             <section>
               <SectionTitle
                 title="Tools Planing "
-                hint={`${sessionsDone} of ${sessions.length} completed`}
+                hint={`${sessionsDone} of ${visibleSessions.length} completed`}
                 action={
-                  canEdit && (
+                  canAddSession && (
                     <Btn variant="primary" onClick={() => openSessionEditor(null)}>
                       <Plus size={14} />
                       Add New Tool
@@ -787,7 +1045,7 @@ export default function BatchDetails({ batchId, onBack, session }) {
                 }
               />
 
-              {sessions.length ? (
+              {visibleSessions.length ? (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[800px] text-left text-sm">
                     <thead className={`border-y ${line} text-xs ${muted}`}>
@@ -802,7 +1060,7 @@ export default function BatchDetails({ batchId, onBack, session }) {
                     </thead>
 
                     <tbody>
-                      {sessions.map((row) => (
+                      {visibleSessions.map((row) => (
                         <tr key={row.id} className={`border-b ${line} ${hoverBg}`}>
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-2">
@@ -847,33 +1105,37 @@ export default function BatchDetails({ batchId, onBack, session }) {
 
                           <td className="px-3 py-2.5">
                             <div className="flex justify-end gap-0.5">
-                              <IconBtn onClick={() => openSessionEditor(row)} title="Edit session">
-                                <Pencil size={14} />
-                              </IconBtn>
+                              {canEdit && (
+                                <IconBtn onClick={() => openSessionEditor(row)} title="Edit session">
+                                  <Pencil size={14} />
+                                </IconBtn>
+                              )}
 
-                              <IconBtn
-                                danger
-                                title="Delete session"
-                                onClick={() =>
-                                  ask({
-                                    title: "Delete session?",
-                                    message: `Delete session from ${formatDate(
-                                      row.date
-                                    )} to ${formatDate(row.endDate || row.date)}?`,
-                                    confirmLabel: "Delete",
-                                    danger: true,
-                                    onConfirm: () =>
-                                      run(() =>
-                                        request(
-                                          `${sessionsEndpoint}?sessionId=${row.id}`,
-                                          "DELETE"
-                                        )
-                                      ),
-                                  })
-                                }
-                              >
-                                <Trash2 size={14} />
-                              </IconBtn>
+                              {canManage && (
+                                <IconBtn
+                                  danger
+                                  title="Delete session"
+                                  onClick={() =>
+                                    ask({
+                                      title: "Delete session?",
+                                      message: `Delete session from ${formatDate(
+                                        row.date
+                                      )} to ${formatDate(row.endDate || row.date)}?`,
+                                      confirmLabel: "Delete",
+                                      danger: true,
+                                      onConfirm: () =>
+                                        run(() =>
+                                          request(
+                                            `${sessionsEndpoint}?sessionId=${row.id}`,
+                                            "DELETE"
+                                          )
+                                        ),
+                                    })
+                                  }
+                                >
+                                  <Trash2 size={14} />
+                                </IconBtn>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -882,71 +1144,176 @@ export default function BatchDetails({ batchId, onBack, session }) {
                   </table>
                 </div>
               ) : (
-                <Empty text="No sessions yet. Add the first one with Add New Tool." />
+                <Empty text={isTrainer ? "No tool planning entries assigned to you." : "No sessions yet. Add the first one with Add New Tool."} />
               )}
             </section>
           )}
 
-          {/* ---------- Tools ---------- */}
-          {tab === "Tools" && (
-            <section>
-              <SectionTitle title="Tools" hint="Mark a tool completed once and it applies to every student enrolled in it" />
-              {tools.length ? tools.map((tool) => (
-                <div key={tool.id} className={`flex items-center justify-between gap-3 border-b ${line} px-2 py-3 ${hoverBg}`}>
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-8 w-8 items-center justify-center rounded bg-[#efeeec]">
-                      <Wrench size={15} />
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium">{tool.name}</p>
-                      <p className={`text-xs ${muted}`}>
-                        {tool.trainers?.map((t) => t.trainerName).join(", ") || "No trainer assigned"}
-                      </p>
+          {/* ---------- Trainer attendance ---------- */}
+          {isTrainer && tab === "Attendance" && (
+            <section className="space-y-4">
+              <SectionTitle
+                title="Tool Attendance"
+                hint="Mark each assigned student's attendance for the selected date."
+              />
+
+              {eligibleAttendanceSessions.length ? (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <Field label="Ongoing tool session">
+                      <select
+                        className={inputClass}
+                        value={selectedAttendanceSession?.id || ""}
+                        onChange={(e) => { setAttendanceSessionId(e.target.value); setAttendanceDate(todayForAttendance); }}
+                      >
+                        {eligibleAttendanceSessions.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {toolName(item.toolId) || "Tool"} ({formatDate(item.date)} – {formatDate(item.endDate)})
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+
+                    <Field label="Attendance date">
+                      <input
+                        type="date"
+                        className={inputClass}
+                        min={selectedAttendanceSession?.date || undefined}
+                        max={selectedAttendanceSession?.endDate || undefined}
+                        value={attendanceDate}
+                        onChange={(e) => setAttendanceDate(e.target.value)}
+                      />
+                    </Field>
+
+                    <div className="flex items-end gap-2 text-xs">
+                      <Tag color="blue">{attendanceRows.length} students</Tag>
+                      <Tag color="green">{dailyAttendanceStats.present} present</Tag>
+                      <Tag color="red">{dailyAttendanceStats.absent} absent</Tag>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {tool.completed ? (
-                      <>
-                        <Tag color="green">
-                          <Check size={12} /> Completed {formatDate(tool.completedAt)}
-                        </Tag>
-                        <Btn onClick={() => reopenBatchTool(tool)} disabled={saving}>
-                          Undo
+
+                  {/* Attendance statistics */}
+                  {!attendanceLoading && (
+                    <div className="space-y-3">
+                      <div>
+                        <h3 className="text-sm font-semibold">Selected day statistics</h3>
+                        <p className={`text-xs ${muted}`}>{formatDate(attendanceDate)}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                        <div className={`rounded-lg border ${line} p-3`}>
+                          <p className={`text-xs ${muted}`}>Total students</p>
+                          <p className="mt-1 text-2xl font-semibold">{dailyAttendanceStats.total}</p>
+                        </div>
+                        <div className={`rounded-lg border ${line} p-3`}>
+                          <p className="text-xs text-green-700">Present</p>
+                          <p className="mt-1 text-2xl font-semibold text-green-700">{dailyAttendanceStats.present}</p>
+                        </div>
+                        <div className={`rounded-lg border ${line} p-3`}>
+                          <p className="text-xs text-red-600">Absent</p>
+                          <p className="mt-1 text-2xl font-semibold text-red-600">{dailyAttendanceStats.absent}</p>
+                        </div>
+                        <div className={`rounded-lg border ${line} p-3`}>
+                          <p className={`text-xs ${muted}`}>Not marked</p>
+                          <p className="mt-1 text-2xl font-semibold">{dailyAttendanceStats.unmarked}</p>
+                        </div>
+                        <div className={`rounded-lg border ${line} p-3`}>
+                          <p className={`text-xs ${muted}`}>Attendance rate</p>
+                          <p className="mt-1 text-2xl font-semibold">{dailyAttendanceStats.percentage}%</p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <h3 className="text-sm font-semibold">Session overall statistics</h3>
+                        <p className={`text-xs ${muted}`}>Across saved attendance dates for this tool</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <div className={`rounded-lg border ${line} p-3`}>
+                          <p className={`text-xs ${muted}`}>Days marked</p>
+                          <p className="mt-1 text-2xl font-semibold">{attendanceStats?.daysMarked ?? 0}</p>
+                        </div>
+                        <div className={`rounded-lg border ${line} p-3`}>
+                          <p className="text-xs text-green-700">Total present</p>
+                          <p className="mt-1 text-2xl font-semibold text-green-700">{attendanceStats?.present ?? 0}</p>
+                        </div>
+                        <div className={`rounded-lg border ${line} p-3`}>
+                          <p className="text-xs text-red-600">Total absent</p>
+                          <p className="mt-1 text-2xl font-semibold text-red-600">{attendanceStats?.absent ?? 0}</p>
+                        </div>
+                        <div className={`rounded-lg border ${line} p-3`}>
+                          <p className={`text-xs ${muted}`}>Overall attendance</p>
+                          <p className="mt-1 text-2xl font-semibold">{attendanceStats?.percentage ?? 0}%</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {attendanceError && (
+                    <div className="rounded-md bg-[#ffe2dd] px-3 py-2 text-sm text-[#5d1715]">
+                      {attendanceError}
+                    </div>
+                  )}
+
+                  {attendanceLoading ? (
+                    <div className={`flex items-center justify-center gap-2 py-10 text-sm ${muted}`}>
+                      <RefreshCw size={15} className="animate-spin" /> Loading attendance...
+                    </div>
+                  ) : attendanceRows.length ? (
+                    <div className={`overflow-hidden rounded-lg border ${line}`}>
+                      <div className={`flex items-center justify-between border-b ${line} px-3 py-2`}>
+                        <div>
+                          <p className="text-sm font-medium">{toolName(selectedAttendanceSession?.toolId) || "Selected tool"}</p>
+                          <p className={`text-xs ${muted}`}>{formatDate(attendanceDate)}</p>
+                        </div>
+                        <Btn variant="primary" disabled={attendanceSaving} onClick={saveAttendance}>
+                          {attendanceSaving ? "Saving..." : "Save attendance"}
                         </Btn>
-                      </>
-                    ) : (
-                      canEdit && (
-                        <Btn variant="outline" disabled={saving} onClick={() => completeBatchTool(tool)}>
-                          <Square size={14} /> Mark completed
-                        </Btn>
-                      )
-                    )}
-                    <Status value={tool.status} />
-                    {canEdit && (
-                      <IconBtn
-                        danger
-                        title="Remove tool"
-                        onClick={() =>
-                          ask({
-                            title: "Remove tool?",
-                            message: `Remove ${tool.name} from this batch and all student assignments? Completion records for it will also be removed.`,
-                            confirmLabel: "Remove",
-                            danger: true,
-                            onConfirm: () => saveAction({ action: "remove_tool", toolId: tool.id }),
-                          })
-                        }
-                      >
-                        <Trash2 size={15} />
-                      </IconBtn>
-                    )}
-                  </div>
-                </div>
-              )) : <Empty text="No tools assigned to this batch" />}
+                      </div>
+
+                      <div className="divide-y divide-[#e9e9e7]">
+                        {attendanceRows.map((student, index) => (
+                          <div key={student.studentId} className={`flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between ${hoverBg}`}>
+                            <div className="flex min-w-0 items-center gap-3">
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#efeeec] text-xs font-semibold">
+                                {index + 1}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium">{student.name || "Unnamed student"}</p>
+                                <p className={`text-xs ${muted}`}>{student.phone || student.email || ""}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => updateAttendanceStatus(student.studentId, "present")}
+                                className={`rounded-md border px-4 py-1.5 text-sm font-medium transition ${student.attendanceStatus === "present" ? "border-green-600 bg-green-600 text-white" : "border-[#d8d8d5] text-[#37352f] hover:bg-[#dbeddb]"}`}
+                              >
+                                Present
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateAttendanceStatus(student.studentId, "absent")}
+                                className={`rounded-md border px-4 py-1.5 text-sm font-medium transition ${student.attendanceStatus === "absent" ? "border-red-600 bg-red-600 text-white" : "border-[#d8d8d5] text-[#37352f] hover:bg-[#ffe2dd]"}`}
+                              >
+                                Absent
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <Empty text="No students are assigned to this tool." />
+                  )}
+                </>
+              ) : (
+                <Empty text="Attendance is available only when an assigned tool has an ongoing session covering today." />
+              )}
             </section>
           )}
 
           {/* ---------- Trainers ---------- */}
-          {tab === "Trainers" && (
+          {!isTrainer && tab === "Trainers" && (
             <section>
               <SectionTitle title="Trainers" hint="Assigned to this batch" />
               {trainers.length ? trainers.map((trainer) => {
@@ -993,7 +1360,7 @@ export default function BatchDetails({ batchId, onBack, session }) {
       </div>
 
       {/* ---------- Edit batch ---------- */}
-      {editBatch && (
+      {canManage && editBatch && (
         <Modal title="Edit batch" onClose={() => setEditBatch(false)}>
           <form onSubmit={submitBatch} className="space-y-4">
             <Field label="Batch name">
@@ -1032,7 +1399,7 @@ export default function BatchDetails({ batchId, onBack, session }) {
       )}
 
       {/* ---------- Edit student ---------- */}
-      {editStudent && (
+      {canManage && editStudent && (
         <Modal title={`Edit ${editStudent.name}`} onClose={() => setEditStudent(null)}>
           <form onSubmit={submitStudent} className="space-y-4">
             <Field label="Assignment mode">
@@ -1150,7 +1517,7 @@ export default function BatchDetails({ batchId, onBack, session }) {
       )}
 
       {/* ---------- Add / edit session ---------- */}
-      {sessionModal && (
+      {sessionModal && (canEdit && (!isTrainer || Boolean(sessionModal.id))) && (
         <Modal
           title={sessionModal.id ? "Edit Tool Learning" : "Tool Learning"}
           onClose={() => setSessionModal(null)}
@@ -1189,16 +1556,6 @@ export default function BatchDetails({ batchId, onBack, session }) {
                       endDate: e.target.value,
                     }))
                   }
-                />
-              </Field>
-
-              <Field label="Time">
-                <input
-                  type="time"
-                  required
-                  className={inputClass}
-                  value={sessionForm.time}
-                  onChange={(e) => setSessionForm({ ...sessionForm, time: e.target.value })}
                 />
               </Field>
 
@@ -1254,7 +1611,7 @@ export default function BatchDetails({ batchId, onBack, session }) {
       )}
 
       {/* ---------- Assign student ---------- */}
-      {assignModal && (
+      {canManage && assignModal && (
         <AssignStudentModal
           endpoint={endpoint}
           busy={saving}
@@ -1572,7 +1929,7 @@ function AssignStudentModal({ endpoint, busy, onClose, onSubmit }) {
 }
 
 /* ---------- Students table ---------- */
-function StudentTable({ students, onEdit, onRemove }) {
+function StudentTable({ students, onEdit, onRemove, readOnly = false, hideFinancials = false }) {
   if (!students.length) return <Empty text="No students assigned to this batch" />;
 
   return (
@@ -1583,11 +1940,15 @@ function StudentTable({ students, onEdit, onRemove }) {
             <th className="px-3 py-2 font-normal">Student</th>
             <th className="px-3 py-2 font-normal">Learning</th>
             <th className="px-3 py-2 font-normal">Tools</th>
-            <th className="px-3 py-2 font-normal">Total</th>
-            <th className="px-3 py-2 font-normal">Paid</th>
-            <th className="px-3 py-2 font-normal">Balance</th>
-            <th className="px-3 py-2 font-normal">Payment</th>
-            <th className="px-3 py-2 text-right font-normal" />
+            {!hideFinancials && (
+              <>
+                <th className="px-3 py-2 font-normal">Total</th>
+                <th className="px-3 py-2 font-normal">Paid</th>
+                <th className="px-3 py-2 font-normal">Balance</th>
+                <th className="px-3 py-2 font-normal">Payment</th>
+              </>
+            )}
+            {!readOnly && <th className="px-3 py-2 text-right font-normal" />}
           </tr>
         </thead>
         <tbody>
@@ -1625,20 +1986,26 @@ function StudentTable({ students, onEdit, onRemove }) {
                   )) : "—"}
                 </div>
               </td>
-              <td className="px-3 py-2.5 font-medium">{money(student.totalFee)}</td>
-              <td className="px-3 py-2.5 text-[#2f7d5b]">{money(student.paidFee)}</td>
-              <td className="px-3 py-2.5 text-[#c4554d]">{money(student.balanceDue)}</td>
-              <td className="px-3 py-2.5"><Status value={student.paymentStatus} /></td>
-              <td className="px-3 py-2.5">
-                <div className="flex justify-end gap-0.5">
-                  <IconBtn onClick={() => onEdit(student)} title="Edit assignment">
-                    <Pencil size={14} />
-                  </IconBtn>
-                  <IconBtn danger onClick={() => onRemove(student)} title="Remove student">
-                    <Trash2 size={14} />
-                  </IconBtn>
-                </div>
-              </td>
+              {!hideFinancials && (
+                <>
+                  <td className="px-3 py-2.5 font-medium">{money(student.totalFee)}</td>
+                  <td className="px-3 py-2.5 text-[#2f7d5b]">{money(student.paidFee)}</td>
+                  <td className="px-3 py-2.5 text-[#c4554d]">{money(student.balanceDue)}</td>
+                  <td className="px-3 py-2.5"><Status value={student.paymentStatus} /></td>
+                </>
+              )}
+              {!readOnly && (
+                <td className="px-3 py-2.5">
+                  <div className="flex justify-end gap-0.5">
+                    <IconBtn onClick={() => onEdit(student)} title="Edit assignment">
+                      <Pencil size={14} />
+                    </IconBtn>
+                    <IconBtn danger onClick={() => onRemove(student)} title="Remove student">
+                      <Trash2 size={14} />
+                    </IconBtn>
+                  </div>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

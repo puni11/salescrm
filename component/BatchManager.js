@@ -278,6 +278,11 @@ function TabButton({ label, count, selected, onClick }) {
 /* ---------- main component ---------- */
 
 export default function BatchManager({ session }) {
+  const isTrainer = session?.user?.role === "trainer";
+  const trainerId = String(session?.user?.id || "");
+  const canManageBatches =
+    !isTrainer && session?.user?.role !== "placemenCell";
+
   const [batches, setBatches] = useState([]);
   const [courses, setCourses] = useState([]);
   const [tools, setTools] = useState([]);
@@ -299,20 +304,23 @@ export default function BatchManager({ session }) {
     try {
       setLoading(true);
 
-      const [batchRes, courseRes, toolRes, trainerRes] = await Promise.all([
+      const requests = [
         fetch("/api/batches"),
         fetch("/api/course/details"),
         fetch("/api/tools"),
-        fetch("/api/trainers"),
-      ]);
+      ];
 
-      const [batchData, courseData, toolData, trainerData] =
-        await Promise.all([
-          batchRes.json(),
-          courseRes.json(),
-          toolRes.json(),
-          trainerRes.json(),
-        ]);
+      if (canManageBatches) requests.push(fetch("/api/trainers"));
+
+      const responses = await Promise.all(requests);
+      const [batchRes, courseRes, toolRes, trainerRes] = responses;
+
+      const [batchData, courseData, toolData, trainerData] = await Promise.all([
+        batchRes.json(),
+        courseRes.json(),
+        toolRes.json(),
+        trainerRes ? trainerRes.json() : Promise.resolve({ success: true, data: [] }),
+      ]);
 
       if (!batchRes.ok || !batchData.success)
         throw new Error(batchData.message || "Failed to load batches");
@@ -320,12 +328,26 @@ export default function BatchManager({ session }) {
         throw new Error(courseData.message || "Failed to load courses");
       if (!toolRes.ok || !toolData.success)
         throw new Error(toolData.message || "Failed to load tools");
-      if (!trainerRes.ok || !trainerData.success)
+      if (trainerRes && (!trainerRes.ok || !trainerData.success))
         throw new Error(trainerData.message || "Failed to load trainers");
 
-      setBatches(batchData.data || []);
+      const batchList = batchData.data || [];
+      setBatches(batchList);
       setCourses(courseData.data || []);
-      setTools(toolData.data || []);
+
+      if (isTrainer) {
+        const assignedToolIds = new Set(
+          batchList.flatMap((batch) =>
+            (batch.toolTrainerAssignments || [])
+              .filter((assignment) => String(assignment.trainerId) === trainerId)
+              .map((assignment) => String(assignment.toolId))
+          )
+        );
+        setTools((toolData.data || []).filter((tool) => assignedToolIds.has(String(tool._id))));
+      } else {
+        setTools(toolData.data || []);
+      }
+
       setTrainers(trainerData.data || []);
     } catch (error) {
       toast.error(error.message || "Failed to load batch data");
@@ -403,6 +425,7 @@ export default function BatchManager({ session }) {
   };
 
   const openCreate = () => {
+    if (!canManageBatches) return;
     setEditingId(null);
     setForm({
       ...EMPTY_FORM,
@@ -417,6 +440,7 @@ export default function BatchManager({ session }) {
   };
 
   const openEdit = (batch) => {
+    if (!canManageBatches) return;
     setEditingId(batch._id);
     setForm({
       name: batch.name || "",
@@ -502,6 +526,7 @@ export default function BatchManager({ session }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!canManageBatches) return toast.error("You do not have permission to manage batches");
 
     if (!form.name.trim()) return toast.error("Enter a batch name");
     if (!form.courseId) return toast.error("Select a course");
@@ -580,6 +605,7 @@ export default function BatchManager({ session }) {
   };
 
   const changeStatus = async (batch, status) => {
+    if (!canManageBatches) return;
     try {
       const res = await fetch(`/api/batches?id=${batch._id}`, {
         method: "PATCH",
@@ -604,6 +630,7 @@ export default function BatchManager({ session }) {
   };
 
   const deleteBatch = async (batch) => {
+    if (!canManageBatches) return;
     if (!window.confirm(`Permanently delete "${batch.name}"?`)) return;
 
     try {
@@ -650,7 +677,9 @@ export default function BatchManager({ session }) {
           Batches
         </h2>
         <p className="mt-1 text-[15px] text-[#787774]">
-          Organize course schedules, tools, and trainer assignments.
+          {isTrainer
+            ? "View your assigned tools and session schedules."
+            : "Organize course schedules, tools, and trainer assignments."}
         </p>
       </div>
 
@@ -702,7 +731,7 @@ export default function BatchManager({ session }) {
               className="h-7 w-32 rounded-[4px] bg-transparent pl-7 pr-2 text-sm outline-none transition-all placeholder:text-[#9B9A97] hover:bg-[rgba(55,53,47,0.06)] focus:w-52 focus:bg-white focus:ring-2 focus:ring-[#2383E2]/40"
             />
           </div>
-          {session.user.role !== "placemenCell" && (
+          {canManageBatches && (
             <button
               onClick={openCreate}
               className="ml-1 inline-flex h-7 items-center gap-1 rounded-[4px] bg-[#2383E2] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0077D4]"
@@ -724,12 +753,16 @@ export default function BatchManager({ session }) {
             <p className="text-sm text-[#787774]">
               {isFiltered
                 ? "No matching batches found."
+                : isTrainer
+                ? "No batches or tools are currently assigned to you."
                 : "No batches created yet."}
             </p>
-            <p className="mt-1 text-xs text-[#9B9A97]">
-              Create a batch to organize a course and its trainers.
-            </p>
-            {!isFiltered && (
+            {!isTrainer && (
+              <p className="mt-1 text-xs text-[#9B9A97]">
+                Create a batch to organize a course and its trainers.
+              </p>
+            )}
+            {!isFiltered && canManageBatches && (
               <button
                 onClick={openCreate}
                 className="mt-2 text-sm text-[#2383E2] hover:underline"
@@ -741,10 +774,56 @@ export default function BatchManager({ session }) {
         ) : (
           filteredBatches.map((batch) => {
             const course = getCourse(batch.courseId);
+
+            // Tool-level assignments are the source of truth for trainer access.
+            const trainerAssignments = (batch.toolTrainerAssignments || []).filter(
+              (assignment) => String(assignment?.trainerId) === trainerId
+            );
+            const assignedToolIds = new Set(
+              trainerAssignments.map((assignment) => String(assignment.toolId))
+            );
+
+            const visibleToolIds = isTrainer
+              ? assignedToolIds
+              : new Set((batch.tools || []).map(String));
+
             const batchTools = (batch.tools || [])
-              .map((id) => getTool(id))
+              .filter((toolId) => visibleToolIds.has(String(toolId)))
+              .map((toolId) => getTool(toolId))
               .filter(Boolean);
-            const toolStates = getToolStates(batch, batchTools);
+
+            const trainerBatch = isTrainer
+              ? {
+                  ...batch,
+                  latestOngoingSession:
+                    batch.latestOngoingSession &&
+                    assignedToolIds.has(String(batch.latestOngoingSession.toolId))
+                      ? batch.latestOngoingSession
+                      : null,
+                  latestUpcomingSession:
+                    batch.latestUpcomingSession &&
+                    assignedToolIds.has(String(batch.latestUpcomingSession.toolId))
+                      ? batch.latestUpcomingSession
+                      : null,
+                  latestCompletedSession:
+                    batch.latestCompletedSession &&
+                    assignedToolIds.has(String(batch.latestCompletedSession.toolId))
+                      ? batch.latestCompletedSession
+                      : null,
+                }
+              : batch;
+
+            const toolStates = getToolStates(trainerBatch, batchTools);
+
+            // The GET API should return batch.sessions containing all sessions
+            // for this batch. Filter them again in the UI for trainer visibility.
+            const visibleSchedule = (batch.sessions || [])
+              .filter((item) =>
+                !isTrainer || assignedToolIds.has(String(item.toolId))
+              )
+              .sort((a, b) =>
+                String(a.date || "").localeCompare(String(b.date || ""))
+              );
 
             const statusKey = batch.status || "inactive";
             const typeKey = normalizeBatchType(batch.batchType);
@@ -762,12 +841,19 @@ export default function BatchManager({ session }) {
                   {/* Identity */}
                   <div className="min-w-0 sm:col-span-2 lg:col-span-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Link
-                        href={`/batches/${batch._id}`}
-                        className="block truncate text-[15px] font-semibold text-[#37352F] hover:underline hover:decoration-[#9B9A97] hover:underline-offset-[3px]"
-                      >
-                        {batch.name}
-                      </Link>
+                      {isTrainer ? (
+                        <Link
+                          href={`/trainer/batches/${batch._id}`} className="block truncate text-[15px] font-semibold text-[#37352F]">
+                          {batch.name}
+                        </Link>
+                      ) : (
+                        <Link
+                          href={`/batches/${batch._id}`}
+                          className="block truncate text-[15px] font-semibold text-[#37352F] hover:underline hover:decoration-[#9B9A97] hover:underline-offset-[3px]"
+                        >
+                          {batch.name}
+                        </Link>
+                      )}
                       <div className="flex flex-wrap items-center gap-1.5">
                         {course ? (
                           <Pill className={tagColor(course._id)}>
@@ -800,44 +886,50 @@ export default function BatchManager({ session }) {
                   <SessionBlock
                     label="Ongoing"
                     dotClass="bg-[#2F9E5B]"
-                    session={batch.latestOngoingSession}
-                    toolName={getSessionToolName(batch.latestOngoingSession)}
+                    session={trainerBatch.latestOngoingSession}
+                    toolName={getSessionToolName(trainerBatch.latestOngoingSession)}
                     dateLabel="Ends"
-                    date={batch.latestOngoingSession?.endDate}
+                    date={trainerBatch.latestOngoingSession?.endDate}
                   />
 
                   {/* Upcoming */}
                   <SessionBlock
                     label="Upcoming"
                     dotClass="bg-[#37352F]"
-                    session={batch.latestUpcomingSession}
-                    toolName={getSessionToolName(batch.latestUpcomingSession)}
+                    session={trainerBatch.latestUpcomingSession}
+                    toolName={getSessionToolName(trainerBatch.latestUpcomingSession)}
                     dateLabel="Starts"
                     date={
-                      batch.latestUpcomingSession?.startDate ||
-                      batch.latestUpcomingSession?.date ||
-                      batch.latestUpcomingSession?.endDate
+                      trainerBatch.latestUpcomingSession?.startDate ||
+                      trainerBatch.latestUpcomingSession?.date ||
+                      trainerBatch.latestUpcomingSession?.endDate
                     }
                   />
 
                   {/* Status + actions */}
                   <div className="flex items-start justify-between gap-2 sm:col-span-2 lg:col-span-1 lg:flex-col lg:items-end lg:justify-start">
-                    <select
-                      aria-label={`Change status for ${batch.name}`}
-                      value={statusKey}
-                      onChange={(e) => changeStatus(batch, e.target.value)}
-                      className={`cursor-pointer appearance-none rounded-[3px] border-0 px-2 py-0.5 text-[13px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-[#2383E2]/40 ${
-                        statusStyles[statusKey] || statusStyles.inactive
-                      }`}
-                    >
-                      {STATUS_OPTIONS.map((status) => (
-                        <option key={status.value} value={status.value}>
-                          {status.label}
-                        </option>
-                      ))}
-                    </select>
+                    {isTrainer ? (
+                      <Pill className={statusStyles[statusKey] || statusStyles.inactive}>
+                        {STATUS_OPTIONS.find((item) => item.value === statusKey)?.label || statusKey}
+                      </Pill>
+                    ) : (
+                      <select
+                        aria-label={`Change status for ${batch.name}`}
+                        value={statusKey}
+                        onChange={(e) => changeStatus(batch, e.target.value)}
+                        className={`cursor-pointer appearance-none rounded-[3px] border-0 px-2 py-0.5 text-[13px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-[#2383E2]/40 ${
+                          statusStyles[statusKey] || statusStyles.inactive
+                        }`}
+                      >
+                        {STATUS_OPTIONS.map((status) => (
+                          <option key={status.value} value={status.value}>
+                            {status.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
 
-                    {session.user.role !== "placemenCell" && (
+                    {canManageBatches && (
                       <div className="flex items-center gap-0.5 lg:opacity-0 lg:transition-opacity lg:focus-within:opacity-100 lg:group-hover:opacity-100">
                         <button
                           onClick={() => openEdit(batch)}
@@ -884,12 +976,59 @@ export default function BatchManager({ session }) {
                     <span className="text-xs text-[#C7C6C3]">No tools</span>
                   )}
                 </div>
+
+                {/* Complete tool-specific schedule (provided by the GET API) */}
+                {visibleSchedule.length > 0 && (
+                  <div className="mt-3.5 border-t border-[#F0F0EE] pt-2.5">
+                    <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-[#9B9A97]">
+                      <CalendarDays size={12} />
+                      {isTrainer ? "My tool schedule" : "Session schedule"}
+                    </div>
+                    <div className="space-y-2">
+                      {visibleSchedule.map((item) => {
+                        const scheduledTool = getTool(item.toolId);
+                        return (
+                          <div
+                            key={item._id}
+                            className="flex flex-col gap-1 rounded-[4px] bg-[rgba(55,53,47,0.035)] px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-[#37352F]">
+                                {scheduledTool
+                                  ? getToolDisplayName(scheduledTool)
+                                  : item.toolName || "Tool"}
+                              </p>
+                              <p className="text-xs text-[#9B9A97]">
+                                {formatDate(item.date)}
+                                {item.endDate && item.endDate !== item.date
+                                  ? ` – ${formatDate(item.endDate)}`
+                                  : ""}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2 text-xs text-[#787774]">
+                              <span>{timing}</span>
+                              <Pill className={
+                                item.status === "ongoing"
+                                  ? "bg-[#DBEDDB] text-[#1C3829]"
+                                  : item.status === "completed"
+                                  ? "bg-[#E8DEEE] text-[#412454]"
+                                  : "bg-[#D3E5EF] text-[#183347]"
+                              }>
+                                {item.status || "scheduled"}
+                              </Pill>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })
         )}
 
-        {!loading && (
+        {!loading && canManageBatches && (
           <button
             onClick={openCreate}
             className={`flex w-full items-center gap-2 px-2 py-2.5 text-left text-sm text-[#9B9A97] transition-colors ${hoverBg}`}
@@ -906,7 +1045,7 @@ export default function BatchManager({ session }) {
       )}
 
       {/* Modal */}
-      {showModal && (
+      {showModal && canManageBatches && (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgba(15,15,15,0.6)] p-4 sm:py-12"
           onMouseDown={(e) => {

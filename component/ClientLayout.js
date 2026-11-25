@@ -10,7 +10,6 @@ import WhatsAppGlobalListener from "./whatsApp/WhatsAppGlobalListener";
 import WhatsAppNotification from "./whatsApp/WhatsAppNotification";
 import PageLoader from "./NewComp/PageLoader";
 export default function ClientLayout({ session, children }) { 
-  console.log("ClientLayout session:", session);
   const [collapsed, setCollapsed] = useState(false);
   const [showNotificationPopup, setShowNotificationPopup] = useState(false);
     const {
@@ -68,6 +67,7 @@ const { enableNotifications } = usePushNotifications();
         <DailyFollowupScreen
           followups={followups}
           onClose={closeFollowups}
+          session={session}
         />
       )}
     </div>

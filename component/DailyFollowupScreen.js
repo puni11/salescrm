@@ -3,9 +3,14 @@
 import { X, Clock, Mail, BookOpen, MessageSquare, ArrowRight } from "lucide-react";
 
 export default function DailyFollowupScreen({
+  session,
   followups,
   onClose,
 }) {
+
+  if(session.user.role==='trainer'){
+    return
+  }
   return (
     <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="w-full max-w-5xl max-h-[90vh] bg-white rounded-sm shadow-2xl overflow-hidden">
