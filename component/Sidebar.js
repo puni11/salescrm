@@ -290,16 +290,7 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
               active={pathname.includes("/facebook-ads")}
             />
           )}
-            {/* Leads, now with a submenu */}
-        {(isAdmin || isCounsellor) && (
-  <NavItem
-    href="/whatsapp"
-    icon={WhatsAppIcon}
-    label="WhatsApp"
-    collapsed={collapsed}
-    active={pathname.includes("whatsapp")}
-  />
-)}
+   
         {!isTrainer && <NavItem
             href={'/offerings'}
             icon={Handshake}
@@ -307,7 +298,20 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             collapsed={collapsed}
             active={pathname.includes('offerings')}
           />}
-      
+       <NavGroup
+            icon={WhatsAppIcon}
+            label="WhatsApp"
+            collapsed={collapsed}
+            setCollapsed={setCollapsed}
+            active={pathname.includes("/whatsapp")}
+           items={[
+  ...((isAdmin || isCounsellor) ? [
+    { href: "/whatsapp", label: "Message", active: pathname === "/whatsapp" },
+    { href: "/whatapp-campaign", label: "Campaign", active: pathname === "/whatapp-campaign" },
+    { href: "/template", label: "Template", active: pathname === "/template" }
+  ] : []),
+]}
+          />
              <NavGroup
             icon={Monitor}
             label="Learning"

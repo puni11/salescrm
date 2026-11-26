@@ -21,9 +21,16 @@ import {
   UserRound,
   CalendarDays,
   MessageSquare,
+  MessageCircle,
   Tag,
   X,
   Loader2,
+  Megaphone,
+  AlertCircle,
+  Check,
+  ChevronLeft,
+  Video,
+  SendIcon,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import DashboardStats from "@/component/DashboardStats";
@@ -34,7 +41,6 @@ import UnAuthorised from "@/component/Unauthorised";
 import LeadDetails from "@/component/LeadDetails";
 import LeadDelete from "@/component/DeleteLead";
 import LeadAdd from "@/component/LeadAdd";
-import WhatsAppModel from "@/component/WhatsApp";
 import MobileFilter from "@/component/MobileFilters";
 import FolloUpModal from "@/component/FolloUpModal";
 import OtherCourseModal from "@/component/OtherCourseModal";
@@ -94,6 +100,7 @@ const SOURCE_TYPES = [
 
 const DEFAULT_LIMIT = 10;
 const DEFAULT_SORT = "newest";
+const WHATSAPP_TEMPLATE_STORAGE_KEY = "whatsapp-approved-templates-v1";
 
 // --- NOTION STYLE TOKENS ---
 const TAG_COLORS = [
@@ -198,6 +205,16 @@ export default function App({ session }) {
   const [selectedCounsellor, setSelectedCounsellor] = useState(() => fromUrl("counsellorId", ""));
   const [stats, setStats] = useState(null);
   const [selectedLeadIds, setSelectedLeadIds] = useState([]);
+  const [selectedLeadRecords, setSelectedLeadRecords] = useState({});
+  const [isBulkWhatsAppOpen, setIsBulkWhatsAppOpen] = useState(false);
+  const [waTemplates, setWaTemplates] = useState([]);
+  const [waTemplateId, setWaTemplateId] = useState("");
+  const [waCampaignName, setWaCampaignName] = useState("");
+  const [waVariableMappings, setWaVariableMappings] = useState({});
+  const [waSending, setWaSending] = useState(false);
+  const [waPreviewLeadId, setWaPreviewLeadId] = useState("");
+  const [waSendResults, setWaSendResults] = useState(null);
+  const [waError, setWaError] = useState("");
 const [bulkAction, setBulkAction] = useState("");
 const [bulkLoading, setBulkLoading] = useState(false);
 const [bulkCounsellor, setBulkCounsellor] = useState("");
@@ -289,6 +306,22 @@ const [bulkCourse, setBulkCourse] = useState("");
   useEffect(() => {
     if (searchOpen) searchRef.current?.focus();
   }, [searchOpen]);
+
+  // Load approved WhatsApp templates saved by the existing WhatsApp template flow.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(WHATSAPP_TEMPLATE_STORAGE_KEY);
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      const templates = Array.isArray(parsed) ? parsed : parsed.templates || [];
+      setWaTemplates(
+        templates.filter((item) => String(item.status || "").toUpperCase() === "APPROVED")
+      );
+    } catch (error) {
+      console.error("Unable to load WhatsApp templates:", error);
+      setWaTemplates([]);
+    }
+  }, []);
 
   // --- API INTEGRATIONS ---
 
@@ -447,39 +480,170 @@ const [bulkCourse, setBulkCourse] = useState("");
     // ISO date or timestamp
     return new Date(value).toLocaleDateString("en-IN");
   };
-const toggleLeadSelection = (id) => {
+const toggleLeadSelection = (lead) => {
+  const id = String(getLeadId(lead));
   setSelectedLeadIds((prev) =>
-    prev.includes(id)
-      ? prev.filter((item) => item !== id)
-      : [...prev, id]
+    prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
   );
+  setSelectedLeadRecords((prev) => {
+    const updated = { ...prev };
+    if (updated[id]) delete updated[id];
+    else updated[id] = lead;
+    return updated;
+  });
 };
 
 const toggleSelectAll = () => {
-  const currentIds = leads.map(getLeadId);
-
-  const allSelected = currentIds.every((id) =>
-    selectedLeadIds.includes(id)
-  );
-
+  const currentIds = leads.map((lead) => String(getLeadId(lead)));
+  const allSelected = currentIds.length > 0 && currentIds.every((id) => selectedLeadIds.includes(id));
   if (allSelected) {
-    setSelectedLeadIds((prev) =>
-      prev.filter((id) => !currentIds.includes(id))
-    );
+    setSelectedLeadIds((prev) => prev.filter((id) => !currentIds.includes(id)));
+    setSelectedLeadRecords((prev) => {
+      const updated = { ...prev };
+      currentIds.forEach((id) => delete updated[id]);
+      return updated;
+    });
   } else {
-    setSelectedLeadIds((prev) =>
-      [...new Set([...prev, ...currentIds])]
-    );
+    setSelectedLeadIds((prev) => [...new Set([...prev, ...currentIds])]);
+    setSelectedLeadRecords((prev) => {
+      const updated = { ...prev };
+      leads.forEach((lead) => { updated[String(getLeadId(lead))] = lead; });
+      return updated;
+    });
   }
 };
 
 const clearSelection = () => {
   setSelectedLeadIds([]);
+  setSelectedLeadRecords({});
   setBulkAction("");
   setBulkError("");
   setBulkCounsellor("");
   setBulkCourse("");
+  setIsBulkWhatsAppOpen(false);
+  setWaError("");
+  setWaSendResults(null);
 };
+
+const selectedLeads = selectedLeadIds.map((id) => selectedLeadRecords[id]).filter(Boolean);
+const selectedTemplate = waTemplates.find((template) => String(template.id) === String(waTemplateId));
+
+const getTemplateBody = (template) =>
+  template?.components?.find((component) => String(component.type).toUpperCase() === "BODY")?.text || "";
+
+const getTemplateVariables = (template) => {
+  const matches = [...getTemplateBody(template).matchAll(/\{\{\s*(\d+)\s*\}\}/g)];
+  return [...new Set(matches.map((match) => match[1]))].sort((a, b) => Number(a) - Number(b));
+};
+
+const getLeadFieldValue = (lead, field) => {
+  const values = {
+    name: lead?.name,
+    course: lead?.course,
+    phone: lead?.phone,
+    status: lead?.status,
+    source: lead?.source,
+    email: lead?.email,
+    counsellor: lead?.assignedTo?.name,
+    tag: lead?.tags?.[0],
+  };
+  return String(values[field] ?? "");
+};
+
+const getRecipientVariables = (lead) => {
+  const variables = {};
+  Object.entries(waVariableMappings).forEach(([number, mapping]) => {
+    variables[number] = mapping?.type === "fixed"
+      ? (mapping.value || "")
+      : getLeadFieldValue(lead, mapping?.value || "name");
+  });
+  return variables;
+};
+
+const getRenderedPreview = (lead) => {
+  if (!selectedTemplate) return "";
+  const variables = getRecipientVariables(lead);
+  return getTemplateBody(selectedTemplate).replace(/\{\{\s*(\d+)\s*\}\}/g, (_, number) =>
+    variables[number] || `{{${number}}}`
+  );
+};
+
+const handleWaTemplateChange = (id) => {
+  setWaTemplateId(id);
+  setWaSendResults(null);
+  setWaError("");
+  const template = waTemplates.find((item) => String(item.id) === String(id));
+  const mappings = {};
+  getTemplateVariables(template).forEach((number) => {
+    mappings[number] = { type: "field", value: "name" };
+  });
+  setWaVariableMappings(mappings);
+  if (selectedLeads[0]) setWaPreviewLeadId(String(getLeadId(selectedLeads[0])));
+};
+
+const sendBulkWhatsApp = async () => {
+  if (!selectedTemplate) return setWaError("Please select an approved template.");
+  if (!selectedLeads.length) return setWaError("Please select at least one lead.");
+
+  const recipients = selectedLeads.map((lead) => ({
+    name: lead.name || "",
+    mobile: lead.phone || "",
+    variables: getRecipientVariables(lead),
+  }));
+
+  const invalid = recipients.filter((recipient) => {
+    const phone = String(recipient.mobile).replace(/\D/g, "");
+    return phone.length < 10;
+  });
+  if (invalid.length) {
+    return setWaError(`${invalid.length} selected lead(s) have invalid phone numbers. Please correct or deselect them.`);
+  }
+
+  for (const number of getTemplateVariables(selectedTemplate)) {
+    const mapping = waVariableMappings[number];
+    if (!mapping || (mapping.type === "fixed" && !String(mapping.value || "").trim())) {
+      return setWaError(`Please configure variable {{${number}}}.`);
+    }
+  }
+
+  setWaSending(true);
+  setWaError("");
+  setWaSendResults(null);
+  try {
+    const header = selectedTemplate.components?.find(
+      (component) => String(component.type).toUpperCase() === "HEADER"
+    );
+    const mediaUrl = header?.image_url || header?.example?.header_handle?.[0] || "";
+    const response = await fetch("/api/whatsapp/bulk-broadcast", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        templateId: selectedTemplate.id,
+        templateName: selectedTemplate.name,
+        campName: waCampaignName || `CRM Bulk - ${selectedTemplate.name}`,
+        recipients,
+        mediaUrl,
+        mediaType: header?.format?.toLowerCase() || "",
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Broadcast failed");
+    setWaSendResults(data);
+    if (data.successCount > 0) toast.success(`${data.successCount} WhatsApp message(s) accepted`);
+    if (data.failedCount > 0) {
+      setWaError(`${data.failedCount} message(s) failed. Review the results below.`);
+    } else {
+      setIsBulkWhatsAppOpen(false);
+      setSelectedLeadIds([]);
+      setSelectedLeadRecords({});
+    }
+  } catch (error) {
+    setWaError(error.message || "Unable to send WhatsApp messages.");
+  } finally {
+    setWaSending(false);
+  }
+};
+
 const handleBulkAction = async () => {
   if (!selectedLeadIds.length) return;
 
@@ -558,6 +722,11 @@ const handleBulkAction = async () => {
 
     if (failedIds.length > 0) {
       setSelectedLeadIds(failedIds);
+      setSelectedLeadRecords((prev) => {
+        const updated = {};
+        failedIds.forEach((id) => { if (prev[id]) updated[id] = prev[id]; });
+        return updated;
+      });
 
       setBulkError(
         `${successCount} leads updated successfully. ${failedIds.length} failed. You can retry the failed leads.`
@@ -576,6 +745,7 @@ const handleBulkAction = async () => {
 
     setBulkAction("");
     setSelectedLeadIds([]);
+    setSelectedLeadRecords({});
 
     setBulkCounsellor("");
     setBulkCourse("");
@@ -1056,6 +1226,20 @@ const handleBulkAction = async () => {
         Change Course
       </button>
 
+      <button
+        type="button"
+        onClick={() => {
+          setIsBulkWhatsAppOpen(true);
+          setWaError("");
+          setWaSendResults(null);
+          if (selectedLeads[0]) setWaPreviewLeadId(String(getLeadId(selectedLeads[0])));
+        }}
+        className="flex h-8 items-center gap-1.5 rounded-md border border-green-200 px-3 text-sm font-medium text-green-700 hover:bg-green-50"
+      >
+        <MessageCircle size={14} />
+        Bulk WhatsApp
+      </button>
+
     </div>
   </div>
 )}
@@ -1069,7 +1253,7 @@ const handleBulkAction = async () => {
     checked={
       leads.length > 0 &&
       leads.every((lead) =>
-        selectedLeadIds.includes(getLeadId(lead))
+        selectedLeadIds.includes(String(getLeadId(lead)))
       )
     }
     onChange={toggleSelectAll}
@@ -1147,8 +1331,8 @@ const formattedDate = validDate
                     <Cell>
   <input
     type="checkbox"
-    checked={selectedLeadIds.includes(leadId)}
-    onChange={() => toggleLeadSelection(leadId)}
+    checked={selectedLeadIds.includes(String(leadId))}
+    onChange={() => toggleLeadSelection(lead)}
     onClick={(e) => e.stopPropagation()}
     className="h-4 w-4 cursor-pointer accent-[#2383E2]"
     aria-label={`Select ${lead.name}`}
@@ -1366,18 +1550,6 @@ const formattedDate = validDate
         />
       )}
 
-      {/* --- WHATSAPP MODAL --- */}
-      {isWhatsAppModalOpen && selectedLead && (
-        <WhatsAppModel
-          selectedLead={selectedLead}
-          setIsWhatsAppModalOpen={setIsWhatsAppModalOpen}
-          whatsappMessage={whatsappMessage}
-          setWhatsappMessage={setWhatsappMessage}
-          session={session}
-          course={selectedLead.course}
-          toast={toast}
-        />
-      )}
       {followUpOpen && <FolloUpModal selectedLead={selectedLeadId} setFollowUpOpen={setFollowUpOpen} fetchLeads={fetchLeads} />}
       {otherCourse && <OtherCourseModal selectedLead={selectedLeadId} setOtherCourse={setOtherCourse} course={course} />}
       {changeCounsellorModal && <ChangeCounsellor selectedLead={selectedLeadId} counsellor={counsellors} setChangeCounsellorModal={setChangeCounsellorModal} />}
@@ -1506,6 +1678,272 @@ const formattedDate = validDate
     </div>
   </div>
 )}
+   {/*
+  Drop-in replacement for your {isBulkWhatsAppOpen && (...)} block.
+  Same state, handlers and helpers as before. Only the UI changed.
+  Extra icons used: import { X, Loader2, Megaphone, Users, Check, AlertCircle, ChevronLeft, Video, Phone } from "lucide-react";
+  (Megaphone, Users, Check, AlertCircle, ChevronLeft, Video, Phone are new; remove any you don't want.)
+  Notion palette: text #37352F · muted #787774 · hover #F7F6F3 · border rgba(55,53,47,.09)
+*/}
+{isBulkWhatsAppOpen && (
+  <div className="fixed inset-0 z-[130] flex items-end justify-center bg-[#37352F]/40 sm:items-center sm:p-4">
+    <div className="flex max-h-[94vh] w-full max-w-[980px] flex-col overflow-hidden rounded-t-2xl bg-white text-[#37352F] shadow-[0_0_0_1px_rgba(55,53,47,.09),0_16px_48px_rgba(15,15,15,.2)] sm:rounded-xl">
+      {/* ---------- Header ---------- */}
+      <div className="flex items-start justify-between gap-4 border-b border-[rgba(55,53,47,.09)] px-5 py-4 sm:px-6">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#F7F6F3]">
+            <Megaphone size={16} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-[17px] font-semibold leading-6">Bulk WhatsApp broadcast</h2>
+            <p className="text-[13px] text-[#787774]">Send an approved template, personalised for each lead.</p>
+          </div>
+        </div>
+        <button type="button" disabled={waSending} onClick={() => setIsBulkWhatsAppOpen(false)} aria-label="Close" className="rounded p-1.5 text-[#787774] hover:bg-[#F7F6F3] disabled:opacity-40">
+          <X size={18} />
+        </button>
+      </div>
+
+      {/* ---------- Body ---------- */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_360px]">
+          {/* ===== Left: setup ===== */}
+          <div className="space-y-7 px-5 py-6 sm:px-6">
+            {/* Properties */}
+            <section>
+              <h3 className="mb-2 text-xs font-medium text-[#787774]">Setup</h3>
+              <div className="divide-y divide-[rgba(55,53,47,.09)] rounded-lg border border-[rgba(55,53,47,.09)]">
+                <div className="grid items-center gap-1 px-3 py-2.5 sm:grid-cols-[130px_1fr] sm:gap-3">
+                  <span className="flex items-center gap-2 text-[13px] text-[#787774]"><Users size={14} /> Recipients</span>
+                  <span className="text-sm">
+                    <span className="rounded bg-[#F7F6F3] px-2 py-0.5 font-medium">{selectedLeads.length} leads</span>
+                    <span className="ml-2 text-xs text-[#787774]">each gets their own message</span>
+                  </span>
+                </div>
+
+                <label className="grid items-center gap-1 px-3 py-2.5 sm:grid-cols-[130px_1fr] sm:gap-3">
+                  <span className="text-[13px] text-[#787774]">Campaign name</span>
+                  <input
+                    value={waCampaignName}
+                    onChange={(e) => setWaCampaignName(e.target.value)}
+                    placeholder="e.g. November course follow-up"
+                    className="w-full rounded bg-transparent px-2 py-1 text-sm outline-none placeholder:text-[#B4B2AD] hover:bg-[#F7F6F3] focus:bg-white focus:ring-2 focus:ring-[#2383E2]/40"
+                  />
+                </label>
+
+                <label className="grid items-center gap-1 px-3 py-2.5 sm:grid-cols-[130px_1fr] sm:gap-3">
+                  <span className="text-[13px] text-[#787774]">Template</span>
+                  <select
+                    value={waTemplateId}
+                    onChange={(e) => handleWaTemplateChange(e.target.value)}
+                    className="w-full rounded bg-transparent px-2 py-1.5 text-sm outline-none hover:bg-[#F7F6F3] focus:bg-white focus:ring-2 focus:ring-[#2383E2]/40"
+                  >
+                    <option value="">Choose an approved template</option>
+                    {waTemplates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.name} ({template.category || "UTILITY"})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {!waTemplates.length && (
+                <p className="mt-2 flex items-start gap-1.5 text-xs text-[#E03E3E]">
+                  <AlertCircle size={13} className="mt-0.5 shrink-0" />
+                  No approved templates found in localStorage key: {WHATSAPP_TEMPLATE_STORAGE_KEY}
+                </p>
+              )}
+            </section>
+
+            {/* Variables */}
+            {selectedTemplate && (
+              <section>
+                <h3 className="mb-2 text-xs font-medium text-[#787774]">Variables</h3>
+                {getTemplateVariables(selectedTemplate).length === 0 ? (
+                  <div className="rounded-lg bg-[#F7F6F3] px-3 py-3 text-[13px] text-[#787774]">
+                    This template has no body variables. Nothing to map.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {getTemplateVariables(selectedTemplate).map((number) => {
+                      const mapping = waVariableMappings[number] || { type: "field", value: "name" };
+                      const seg = (active) =>
+                        `rounded px-2.5 py-1 text-xs transition ${active ? "bg-white font-medium shadow-sm" : "text-[#787774] hover:text-[#37352F]"}`;
+                      return (
+                        <div key={number} className="rounded-lg border border-[rgba(55,53,47,.09)] p-3">
+                          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                            <code className="rounded bg-[#F7F6F3] px-1.5 py-0.5 text-[13px] text-[#EB5757]">{`{{${number}}}`}</code>
+                            <div className="flex rounded-md bg-[#F1F0EE] p-0.5">
+                              <button type="button" onClick={() => setWaVariableMappings((prev) => ({ ...prev, [number]: { type: "field", value: "name" } }))} className={seg(mapping.type === "field")}>Lead field</button>
+                              <button type="button" onClick={() => setWaVariableMappings((prev) => ({ ...prev, [number]: { type: "fixed", value: "" } }))} className={seg(mapping.type === "fixed")}>Fixed value</button>
+                            </div>
+                          </div>
+                          {mapping.type === "field" ? (
+                            <select
+                              value={mapping.value}
+                              onChange={(e) => setWaVariableMappings((prev) => ({ ...prev, [number]: { type: "field", value: e.target.value } }))}
+                              className="w-full rounded-md border border-[rgba(55,53,47,.16)] bg-white px-2.5 py-2 text-sm outline-none focus:ring-2 focus:ring-[#2383E2]/40"
+                            >
+                              <option value="name">Lead Name</option><option value="course">Course</option><option value="phone">Phone</option><option value="status">Status</option><option value="source">Source</option><option value="email">Email</option><option value="counsellor">Counsellor</option><option value="tag">Tag</option>
+                            </select>
+                          ) : (
+                            <input
+                              value={mapping.value}
+                              onChange={(e) => setWaVariableMappings((prev) => ({ ...prev, [number]: { type: "fixed", value: e.target.value } }))}
+                              placeholder="Enter a fixed value"
+                              className="w-full rounded-md border border-[rgba(55,53,47,.16)] bg-white px-2.5 py-2 text-sm outline-none placeholder:text-[#B4B2AD] focus:ring-2 focus:ring-[#2383E2]/40"
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Error */}
+            {waError && (
+              <div className="flex items-start gap-2 rounded-lg bg-[#FDEBEC] px-3 py-2.5 text-[13px] text-[#9F2F2D]">
+                <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                {waError}
+              </div>
+            )}
+
+            {/* Results */}
+            {waSendResults && (
+              <section>
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-xs font-medium text-[#787774]">Results</h3>
+                  <div className="flex gap-2 text-xs">
+                    <span className="rounded bg-[#EDF3EC] px-2 py-0.5 text-[#1C3829]">{waSendResults.successCount} accepted</span>
+                    <span className="rounded bg-[#FDEBEC] px-2 py-0.5 text-[#5D1715]">{waSendResults.failedCount} failed</span>
+                  </div>
+                </div>
+                <div className="max-h-44 divide-y divide-[rgba(55,53,47,.09)] overflow-y-auto rounded-lg border border-[rgba(55,53,47,.09)]">
+                  {waSendResults.results?.map((item, index) => (
+                    <div key={`${item.mobile}-${index}`} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]">
+                      <span className="min-w-0 truncate">
+                        {item.name} <span className="text-[#787774]">{item.mobile}</span>
+                      </span>
+                      <span className={`flex shrink-0 items-center gap-1 text-xs ${item.success ? "text-[#448361]" : "text-[#E03E3E]"}`}>
+                        {item.success && <Check size={12} />}
+                        {item.success ? "Accepted" : item.message}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+
+          {/* ===== Right: mobile preview ===== */}
+          <aside className="border-t border-[rgba(55,53,47,.09)] bg-[#F7F6F3] px-5 py-6 lg:border-l lg:border-t-0">
+            <div className="lg:sticky lg:top-6">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-medium text-[#787774]">Preview</h3>
+              </div>
+
+              {/* Phone frame */}
+              <div className="mx-auto w-full max-w-[280px] rounded-[34px] bg-[#1F1F1F] p-2 shadow-[0_12px_32px_rgba(15,15,15,.18)]">
+                <div className="flex h-[510px] flex-col overflow-hidden rounded-[27px] bg-[#EFEAE2]">
+                  {/* status + chat header */}
+                  <div className="bg-[#F0F2F5]">
+                    <div className="flex items-center justify-between px-5 pt-2.5 text-[10px] font-semibold">
+                      <span>9:41</span>
+                      <span className="h-4 w-16 rounded-full bg-[#1F1F1F]" aria-hidden="true" />
+                      <span>100%</span>
+                    </div>
+                    <div className="flex items-center gap-2 px-2.5 pb-2.5 pt-2">
+                      <ChevronLeft size={18} className="text-[#54656F]" />
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#DFE5E7] text-[11px] font-semibold text-[#54656F]">
+                        {(() => {
+                          const l = selectedLeads.find((x) => String(getLeadId(x)) === waPreviewLeadId) || selectedLeads[0];
+                          return String(l?.name || l?.phone || "?").trim().charAt(0).toUpperCase();
+                        })()}
+                      </span>
+                      <div className="min-w-0 flex-1 leading-tight">
+                        <p className="truncate text-xs font-semibold">
+                          {(selectedLeads.find((x) => String(getLeadId(x)) === waPreviewLeadId) || selectedLeads[0])?.name || "Lead"}
+                        </p>
+                        <p className="text-[10px] text-[#667781]">online</p>
+                      </div>
+                      <Video size={15} className="text-[#54656F]" />
+                      <Phone size={14} className="text-[#54656F]" />
+                    </div>
+                  </div>
+
+                  {/* messages */}
+                  <div className="flex-1 overflow-y-auto px-3 py-3">
+                    {selectedTemplate ? (
+                      (() => {
+                        const previewLead = selectedLeads.find((lead) => String(getLeadId(lead)) === waPreviewLeadId) || selectedLeads[0];
+                        const header = selectedTemplate.components?.find((c) => String(c.type).toUpperCase() === "HEADER");
+                        const footer = selectedTemplate.components?.find((c) => String(c.type).toUpperCase() === "FOOTER");
+                        const buttons = selectedTemplate.components?.find((c) => String(c.type).toUpperCase() === "BUTTONS");
+                        return (
+                          <div className="max-w-[92%]">
+                            <div className="rounded-lg rounded-tl-none bg-white px-2.5 py-2 text-[12.5px] leading-[1.45] shadow-[0_1px_0.5px_rgba(11,20,26,.13)]">
+                              {header?.format && String(header.format).toUpperCase() === "TEXT" && (
+                                <p className="mb-1 font-semibold">{header.text}</p>
+                              )}
+                              <p className="whitespace-pre-wrap text-[#111B21]">{getRenderedPreview(previewLead)}</p>
+                              {footer?.text && <p className="mt-1.5 text-[11px] text-[#667781]">{footer.text}</p>}
+                              <p className="mt-1 text-right text-[10px] text-[#667781]">9:41</p>
+                            </div>
+                            {buttons?.buttons?.map((button, i) => (
+                              <div key={i} className="mt-1 rounded-lg bg-white py-2 text-center text-[12px] font-medium text-[#027EB5] shadow-[0_1px_0.5px_rgba(11,20,26,.13)]">
+                                {button.text}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="flex h-full items-center justify-center px-6 text-center text-xs text-[#667781]">
+                        Choose a template to see how it looks on your lead's phone.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* fake input bar */}
+                  <div className="flex items-center gap-2 bg-[#F0F2F5] px-3 py-2">
+                    <div className="h-7 flex-1 rounded-full bg-white" />
+                    <div className="h-7 w-7 rounded-full flex items-center justify-center bg-[#00A884]" >
+                      <SendIcon className="h-3 w-3 text-white" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+
+      {/* ---------- Footer ---------- */}
+      <div className="flex items-center justify-between gap-3 border-t border-[rgba(55,53,47,.09)] bg-white px-5 py-3 sm:px-6">
+        <p className="hidden text-xs text-[#787774] sm:block">
+          {selectedLeads.length} {selectedLeads.length === 1 ? "lead" : "leads"} selected
+        </p>
+        <div className="flex w-full justify-end gap-2 sm:w-auto">
+          <button type="button" disabled={waSending} onClick={() => setIsBulkWhatsAppOpen(false)} className="rounded-md px-3.5 py-2 text-sm text-[#37352F] hover:bg-[#F7F6F3] disabled:opacity-40">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={waSending || !selectedTemplate || !selectedLeads.length}
+            onClick={sendBulkWhatsApp}
+            className="flex flex-1 items-center justify-center gap-2 rounded-md bg-[#37352F] px-4 py-2 text-sm font-medium text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"
+          >
+            {waSending && <Loader2 size={15} className="animate-spin" />}
+            {waSending ? "Sending..." : `Send to ${selectedLeads.length} leads`}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
       <MobileFilter
         isMobileFiltersOpen={isMobileFiltersOpen}
         setIsMobileFiltersOpen={setIsMobileFiltersOpen}
