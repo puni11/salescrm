@@ -280,6 +280,17 @@ export default function BatchDetails({ batchId, onBack, session }) {
   // Assign student modal
   const [assignModal, setAssignModal] = useState(false);
 
+  // Add fee payment modal
+  const [feePaymentStudent, setFeePaymentStudent] = useState(null);
+  const [feePaymentAmount, setFeePaymentAmount] = useState("");
+  const [feePaymentDate, setFeePaymentDate] = useState(() => {
+    const date = new Date();
+    date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+    return date.toISOString().slice(0, 10);
+  });
+  const [feePaymentNote, setFeePaymentNote] = useState("");
+  const [feePaymentSaving, setFeePaymentSaving] = useState(false);
+
   const endpoint = `/api/batches/${batchId}`;
   const sessionsEndpoint = `${endpoint}/sessions`;
   const attendanceEndpoint = `${endpoint}/attendance`;
@@ -461,6 +472,80 @@ export default function BatchDetails({ batchId, onBack, session }) {
   // The batch is selected automatically: it is part of the URL
   const submitAssign = (payload) =>
     run(() => request(`${endpoint}/students`, "POST", payload));
+
+  const localDateValue = () => {
+    const date = new Date();
+    date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+    return date.toISOString().slice(0, 10);
+  };
+
+  const openFeePayment = (student) => {
+    if (!canManage) return;
+
+    setFeePaymentStudent(student);
+    setFeePaymentAmount("");
+    setFeePaymentDate(localDateValue());
+    setFeePaymentNote("");
+  };
+
+  const closeFeePayment = () => {
+    if (feePaymentSaving) return;
+    setFeePaymentStudent(null);
+    setFeePaymentAmount("");
+    setFeePaymentNote("");
+  };
+
+  const submitFeePayment = async (e) => {
+    e.preventDefault();
+    if (!feePaymentStudent || !canManage) return;
+
+    const amount = Number(feePaymentAmount);
+    const totalFee = Number(feePaymentStudent.totalFee) || 0;
+    const paidFee = Number(feePaymentStudent.paidFee) || 0;
+    const remaining = Math.max(
+      Number(feePaymentStudent.balanceDue ?? totalFee - paidFee) || 0,
+      0
+    );
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      window.alert("Enter a valid payment amount.");
+      return;
+    }
+
+    if (amount > remaining) {
+      window.alert(
+        `Payment cannot exceed the remaining balance of ${money(remaining)}.`
+      );
+      return;
+    }
+
+    if (!feePaymentDate) {
+      window.alert("Please select a payment date.");
+      return;
+    }
+
+    try {
+      setFeePaymentSaving(true);
+
+      const result = await request("/api/student-fee-payments", "POST", {
+        studentId: feePaymentStudent.studentId,
+        batchId: String(batchId),
+        amount,
+        paidAt: feePaymentDate,
+        note: feePaymentNote,
+      });
+
+      setFeePaymentStudent(null);
+      setFeePaymentAmount("");
+      setFeePaymentNote("");
+      setNotice(result.message || "Fee payment added successfully");
+      await loadBatch();
+    } catch (err) {
+      window.alert(err.message || "Could not save payment");
+    } finally {
+      setFeePaymentSaving(false);
+    }
+  };
 
   const submitBatch = (e) => {
     e.preventDefault();
@@ -911,6 +996,8 @@ export default function BatchDetails({ batchId, onBack, session }) {
                   {...studentActions}
                   readOnly={isTrainer}
                   hideFinancials={isTrainer}
+                  allowFeeActions={canManage}
+                  onAddPayment={openFeePayment}
                 />
               </section>
             </>
@@ -938,6 +1025,8 @@ export default function BatchDetails({ batchId, onBack, session }) {
                   {...studentActions}
                   readOnly={isTrainer}
                   hideFinancials={isTrainer}
+                  allowFeeActions={canManage}
+                  onAddPayment={openFeePayment}
                 />
               </section>
 
@@ -1610,6 +1699,104 @@ export default function BatchDetails({ batchId, onBack, session }) {
         </Modal>
       )}
 
+      {/* ---------- Add fee payment ---------- */}
+      {canManage && feePaymentStudent && (() => {
+        const totalFee = Number(feePaymentStudent.totalFee) || 0;
+        const paidFee = Number(feePaymentStudent.paidFee) || 0;
+        const remaining = Math.max(
+          Number(feePaymentStudent.balanceDue ?? totalFee - paidFee) || 0,
+          0
+        );
+
+        return (
+          <Modal
+            title="Add fee payment"
+            onClose={closeFeePayment}
+            width="max-w-md"
+          >
+            <form onSubmit={submitFeePayment} className="space-y-4">
+              <div>
+                <p className="text-sm font-semibold">{feePaymentStudent.name}</p>
+                <p className={`mt-0.5 text-xs ${muted}`}>{data.name}</p>
+              </div>
+
+              <div className="grid grid-cols-3 divide-x divide-[#e9e9e7] rounded-md border border-[#e9e9e7]">
+                <div className="px-3 py-2.5">
+                  <p className={`text-xs ${muted}`}>Total fee</p>
+                  <p className="mt-1 text-sm font-semibold">{money(totalFee)}</p>
+                </div>
+                <div className="px-3 py-2.5">
+                  <p className={`text-xs ${muted}`}>Already paid</p>
+                  <p className="mt-1 text-sm font-semibold text-green-700">{money(paidFee)}</p>
+                </div>
+                <div className="px-3 py-2.5">
+                  <p className={`text-xs ${muted}`}>Balance</p>
+                  <p className="mt-1 text-sm font-semibold text-red-600">{money(remaining)}</p>
+                </div>
+              </div>
+
+              <Field label="Payment amount">
+                <input
+                  required
+                  type="number"
+                  min="1"
+                  max={remaining}
+                  step="1"
+                  className={inputClass}
+                  placeholder="Enter amount"
+                  value={feePaymentAmount}
+                  onChange={(e) => setFeePaymentAmount(e.target.value)}
+                />
+              </Field>
+
+              <Field label="Payment date">
+                <input
+                  required
+                  type="date"
+                  max={localDateValue()}
+                  className={inputClass}
+                  value={feePaymentDate}
+                  onChange={(e) => setFeePaymentDate(e.target.value)}
+                />
+              </Field>
+
+              <Field label="Note / Transaction reference">
+                <input
+                  className={inputClass}
+                  placeholder="UPI, cash, transaction ID..."
+                  value={feePaymentNote}
+                  onChange={(e) => setFeePaymentNote(e.target.value)}
+                />
+              </Field>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Btn
+                  type="button"
+                  variant="outline"
+                  disabled={feePaymentSaving}
+                  onClick={closeFeePayment}
+                >
+                  Cancel
+                </Btn>
+                <Btn
+                  type="submit"
+                  variant="primary"
+                  disabled={
+                    feePaymentSaving ||
+                    !feePaymentAmount ||
+                    Number(feePaymentAmount) <= 0 ||
+                    Number(feePaymentAmount) > remaining
+                  }
+                >
+                  <Wallet size={14} />
+                  {feePaymentSaving ? "Saving..." : "Save payment"}
+                </Btn>
+              </div>
+            </form>
+          </Modal>
+        );
+      })()}
+
       {/* ---------- Assign student ---------- */}
       {canManage && assignModal && (
         <AssignStudentModal
@@ -1929,12 +2116,20 @@ function AssignStudentModal({ endpoint, busy, onClose, onSubmit }) {
 }
 
 /* ---------- Students table ---------- */
-function StudentTable({ students, onEdit, onRemove, readOnly = false, hideFinancials = false }) {
+function StudentTable({
+  students,
+  onEdit,
+  onRemove,
+  onAddPayment,
+  readOnly = false,
+  hideFinancials = false,
+  allowFeeActions = false,
+}) {
   if (!students.length) return <Empty text="No students assigned to this batch" />;
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[900px] text-left text-sm">
+      <table className="w-full min-w-[1000px] text-left text-sm">
         <thead className={`border-y ${line} text-xs ${muted}`}>
           <tr>
             <th className="px-3 py-2 font-normal">Student</th>
@@ -1948,66 +2143,92 @@ function StudentTable({ students, onEdit, onRemove, readOnly = false, hideFinanc
                 <th className="px-3 py-2 font-normal">Payment</th>
               </>
             )}
-            {!readOnly && <th className="px-3 py-2 text-right font-normal" />}
+            {(!readOnly || allowFeeActions) && (
+              <th className="px-3 py-2 text-right font-normal">Actions</th>
+            )}
           </tr>
         </thead>
         <tbody>
-          {students.map((student) => (
-            <tr key={student.studentId} className={`border-b ${line} ${hoverBg}`}>
-              <td className="px-3 py-2.5">
-                <div className="font-medium">{student.name}</div>
-                {student.phone && (
-                  <div className={`mt-0.5 flex items-center gap-1 text-xs ${muted}`}>
-                    <Phone size={11} /> {student.phone}
-                  </div>
-                )}
-                {student.email && (
-                  <div className={`mt-0.5 flex items-center gap-1 text-xs ${muted}`}>
-                    <Mail size={11} /> {student.email}
-                  </div>
-                )}
-              </td>
-              <td className="px-3 py-2.5">
-                <div className="flex flex-col items-start gap-1">
-                  <Tag color={student.mode === "selected_tools" ? "purple" : "blue"}>
-                    {student.mode === "selected_tools" ? "Selected tools" : "Full course"}
-                  </Tag>
-                  {student.batchCompleted && (
-                    <Tag color="green"><Check size={12} /> Batch completed</Tag>
-                  )}
-                  {student.isOldStudent && <Tag color="yellow">Old student</Tag>}
-                  {student.jobGuarantee && <Tag color="green">Job guarantee</Tag>}
-                </div>
-              </td>
-              <td className="max-w-56 px-3 py-2.5">
-                <div className="flex flex-wrap gap-1">
-                  {student.tools?.length ? student.tools.map((tool) => (
-                    <Tag key={tool.id} color="gray">{tool.name}</Tag>
-                  )) : "—"}
-                </div>
-              </td>
-              {!hideFinancials && (
-                <>
-                  <td className="px-3 py-2.5 font-medium">{money(student.totalFee)}</td>
-                  <td className="px-3 py-2.5 text-[#2f7d5b]">{money(student.paidFee)}</td>
-                  <td className="px-3 py-2.5 text-[#c4554d]">{money(student.balanceDue)}</td>
-                  <td className="px-3 py-2.5"><Status value={student.paymentStatus} /></td>
-                </>
-              )}
-              {!readOnly && (
+          {students.map((student) => {
+            const totalFee = Number(student.totalFee) || 0;
+            const paidFee = Number(student.paidFee) || 0;
+            const balance = Math.max(
+              Number(student.balanceDue ?? totalFee - paidFee) || 0,
+              0
+            );
+
+            return (
+              <tr key={student.studentId} className={`border-b ${line} ${hoverBg}`}>
                 <td className="px-3 py-2.5">
-                  <div className="flex justify-end gap-0.5">
-                    <IconBtn onClick={() => onEdit(student)} title="Edit assignment">
-                      <Pencil size={14} />
-                    </IconBtn>
-                    <IconBtn danger onClick={() => onRemove(student)} title="Remove student">
-                      <Trash2 size={14} />
-                    </IconBtn>
+                  <div className="font-medium">{student.name}</div>
+                  {student.phone && (
+                    <div className={`mt-0.5 flex items-center gap-1 text-xs ${muted}`}>
+                      <Phone size={11} /> {student.phone}
+                    </div>
+                  )}
+                  {student.email && (
+                    <div className={`mt-0.5 flex items-center gap-1 text-xs ${muted}`}>
+                      <Mail size={11} /> {student.email}
+                    </div>
+                  )}
+                </td>
+                <td className="px-3 py-2.5">
+                  <div className="flex flex-col items-start gap-1">
+                    <Tag color={student.mode === "selected_tools" ? "purple" : "blue"}>
+                      {student.mode === "selected_tools" ? "Selected tools" : "Full course"}
+                    </Tag>
+                    {student.batchCompleted && (
+                      <Tag color="green"><Check size={12} /> Batch completed</Tag>
+                    )}
+                    {student.isOldStudent && <Tag color="yellow">Old student</Tag>}
+                    {student.jobGuarantee && <Tag color="green">Job guarantee</Tag>}
                   </div>
                 </td>
-              )}
-            </tr>
-          ))}
+                <td className="max-w-56 px-3 py-2.5">
+                  <div className="flex flex-wrap gap-1">
+                    {student.tools?.length ? student.tools.map((tool) => (
+                      <Tag key={tool.id} color="gray">{tool.name}</Tag>
+                    )) : "—"}
+                  </div>
+                </td>
+                {!hideFinancials && (
+                  <>
+                    <td className="px-3 py-2.5 font-medium">{money(totalFee)}</td>
+                    <td className="px-3 py-2.5 text-[#2f7d5b]">{money(paidFee)}</td>
+                    <td className="px-3 py-2.5 text-[#c4554d]">{money(balance)}</td>
+                    <td className="px-3 py-2.5"><Status value={student.paymentStatus} /></td>
+                  </>
+                )}
+                {(!readOnly || allowFeeActions) && (
+                  <td className="px-3 py-2.5">
+                    <div className="flex justify-end gap-1">
+                      {allowFeeActions && balance > 0 && (
+                        <Btn
+                          type="button"
+                          variant="outline"
+                          className="whitespace-nowrap text-xs"
+                          onClick={() => onAddPayment?.(student)}
+                          title="Add fee payment"
+                        >
+                          <Wallet size={13} /> Add Fee
+                        </Btn>
+                      )}
+                      {!readOnly && (
+                        <>
+                          <IconBtn onClick={() => onEdit(student)} title="Edit assignment">
+                            <Pencil size={14} />
+                          </IconBtn>
+                          <IconBtn danger onClick={() => onRemove(student)} title="Remove student">
+                            <Trash2 size={14} />
+                          </IconBtn>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

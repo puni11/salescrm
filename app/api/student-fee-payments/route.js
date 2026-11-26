@@ -2,6 +2,8 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/authOptions";
 
 export const dynamic = "force-dynamic";
 
@@ -99,7 +101,16 @@ export async function GET(req) {
 }
 
 export async function POST(req) {
+  const session = await getServerSession(authOptions);
+
   try {
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { success: false, message: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
 
     const {
@@ -135,7 +146,9 @@ export async function POST(req) {
 
     const client = await clientPromise;
     const db = client.db("sales");
+
     const collection = db.collection(COLLECTION);
+    const paymentLogs = db.collection("paymentLogs");
 
     const assignment = await collection.findOne({
       studentId: new ObjectId(studentId),
@@ -175,21 +188,21 @@ export async function POST(req) {
       );
     }
 
+    const now = new Date();
+
     const payment = {
       _id: new ObjectId(),
       amount: paymentAmount,
-      paidAt: paidAt ? new Date(paidAt) : new Date(),
+      paidAt: paidAt ? new Date(paidAt) : now,
       note: String(note).trim(),
-      createdAt: new Date(),
+      createdAt: now,
     };
 
     const newPaidFee = alreadyPaid + paymentAmount;
     const newBalanceDue = Math.max(0, totalFee - newPaidFee);
 
     const paymentStatus =
-      newBalanceDue <= 0
-        ? "paid"
-        : "partial";
+      newBalanceDue <= 0 ? "paid" : "partial";
 
     await collection.updateOne(
       { _id: assignment._id },
@@ -199,10 +212,44 @@ export async function POST(req) {
           paidFee: newPaidFee,
           balanceDue: newBalanceDue,
           paymentStatus,
-          updatedAt: new Date(),
+          updatedAt: now,
         },
       }
     );
+
+    // Save payment activity log
+    await paymentLogs.insertOne({
+      paymentId: payment._id,
+      assignmentId: assignment._id,
+      studentId: new ObjectId(studentId),
+      batchId: new ObjectId(batchId),
+
+      action: "payment_added",
+
+      amount: paymentAmount,
+      paidAt: payment.paidAt,
+      note: payment.note,
+
+      addedBy: {
+        id: session.user.id,
+        name: session.user.name || "",
+      },
+
+      previousFee: {
+        totalFee,
+        paidFee: alreadyPaid,
+        balanceDue,
+      },
+
+      updatedFee: {
+        totalFee,
+        paidFee: newPaidFee,
+        balanceDue: newBalanceDue,
+        paymentStatus,
+      },
+
+      createdAt: now,
+    });
 
     return NextResponse.json({
       success: true,
