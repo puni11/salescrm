@@ -271,6 +271,7 @@ async function findDuplicateName(
   return collection.findOne(filter);
 }
 
+
 export async function GET(request) {
   try {
     // =========================================
@@ -415,10 +416,7 @@ export async function GET(request) {
         $limit: 1,
       },
 
-      // =========================================
       // TOOL LOOKUP
-      // =========================================
-
       {
         $lookup: {
           from: "tools",
@@ -447,10 +445,7 @@ export async function GET(request) {
         },
       },
 
-      // =========================================
       // TRAINER LOOKUP
-      // =========================================
-
       {
         $lookup: {
           from: "trainers",
@@ -504,10 +499,7 @@ export async function GET(request) {
         },
       },
 
-      // =========================================
       // FORMAT SESSION
-      // =========================================
-
       {
         $project: {
           _id: 1,
@@ -556,6 +548,38 @@ export async function GET(request) {
       .aggregate([
         {
           $match: filter,
+        },
+
+        // =========================================
+        // STUDENT ASSIGNMENTS + FINANCIAL SUMMARY
+        // =========================================
+
+        {
+          $lookup: {
+            from: "student_batch_assignments",
+            let: {
+              batchObjectId: "$_id",
+            },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $eq: ["$batchId", "$$batchObjectId"],
+                  },
+                },
+              },
+              {
+                $project: {
+                  isOldStudent: 1,
+                  totalFee: 1,
+                  paidFee: 1,
+                  legacyPaidFee: 1,
+                  payments: 1,
+                },
+              },
+            ],
+            as: "batchStudentAssignments",
+          },
         },
 
         // =========================================
@@ -660,18 +684,6 @@ export async function GET(request) {
         },
 
         // =========================================
-        // REMOVE TEMPORARY ARRAYS
-        // =========================================
-
-        {
-          $project: {
-            upcomingSessions: 0,
-            ongoingSessions: 0,
-            completedSessions: 0,
-          },
-        },
-
-        // =========================================
         // SORT BATCHES
         // =========================================
 
@@ -684,11 +696,83 @@ export async function GET(request) {
       .toArray();
 
     // =========================================
+    // CALCULATE STUDENT + FINANCIAL SUMMARY
+    // Same payment logic as Batch Details API
+    // =========================================
+
+    const enrichedBatches = batches.map((batch) => {
+      const assignments = batch.batchStudentAssignments || [];
+
+      let totalFees = 0;
+      let totalPaid = 0;
+      let totalBalance = 0;
+
+      let oldStudentCount = 0;
+      let newStudentCount = 0;
+
+      for (const assignment of assignments) {
+        const payments = Array.isArray(assignment.payments)
+          ? assignment.payments
+          : [];
+
+        const legacyPaid =
+          Number(
+            assignment.legacyPaidFee ??
+              (assignment.payments ? 0 : assignment.paidFee)
+          ) || 0;
+
+        const paymentTotal = payments.reduce(
+          (sum, payment) =>
+            sum + (Number(payment.amount) || 0),
+          0
+        );
+
+        const totalFee = Number(assignment.totalFee) || 0;
+        const paidFee = legacyPaid + paymentTotal;
+
+        const balanceDue = Math.max(totalFee - paidFee, 0);
+
+        totalFees += totalFee;
+        totalPaid += paidFee;
+        totalBalance += balanceDue;
+
+        if (assignment.isOldStudent === true) {
+          oldStudentCount++;
+        } else {
+          newStudentCount++;
+        }
+      }
+
+      const {
+        batchStudentAssignments,
+        ...batchData
+      } = batch;
+
+      return {
+        ...batchData,
+
+        // Student counts
+        studentCount: assignments.length,
+        newStudentCount,
+        oldStudentCount,
+
+        // Financial summary
+        financials: isTrainer
+          ? undefined
+          : {
+              totalFees,
+              totalPaid,
+              totalBalance,
+            },
+      };
+    });
+
+    // =========================================
     // SINGLE BATCH RESPONSE
     // =========================================
 
     if (id) {
-      if (!batches.length) {
+      if (!enrichedBatches.length) {
         return NextResponse.json(
           {
             success: false,
@@ -700,7 +784,7 @@ export async function GET(request) {
 
       return NextResponse.json({
         success: true,
-        data: batches[0],
+        data: enrichedBatches[0],
       });
     }
 
@@ -710,8 +794,8 @@ export async function GET(request) {
 
     return NextResponse.json({
       success: true,
-      count: batches.length,
-      data: batches,
+      count: enrichedBatches.length,
+      data: enrichedBatches,
     });
 
   } catch (error) {
@@ -730,6 +814,7 @@ export async function GET(request) {
     );
   }
 }
+
 
 // POST /api/batches
 

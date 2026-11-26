@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus, X, Loader2, Pencil, Trash2, Search, CalendarDays,
-  Users, Wrench, BookOpen, CircleDot, Check, Clock2, User, Tag, Table2, LayoutList,
+  Users, Wrench, BookOpen, CircleDot, Check, Clock2, User, Tag, Table2, LayoutList, Download,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import Link from "next/link";
 import BackButton from "@/lib/BackButton";
+import * as XLSX from "xlsx";
 
 /* ---------- helpers ---------- */
 
@@ -37,6 +38,13 @@ const formatDate = (value) => {
     year: "numeric",
   });
 };
+
+const formatMoney = (value) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(Number(value) || 0);
 
 const EMPTY_FORM = {
   name: "",
@@ -478,6 +486,77 @@ export default function BatchManager({ session }) {
   const getTrainer = (id) =>
     trainers.find((trainer) => String(trainer._id) === String(id));
 
+  // Export only the requested batch summary columns to Excel.
+  const handleExportExcel = () => {
+    try {
+      if (!filteredBatches.length) {
+        toast.error("No batches available to export");
+        return;
+      }
+
+      const rows = filteredBatches.map((batch) => ({
+        "Batch Name": batch.name || "",
+        "No. of Students": Number(batch.studentCount) || 0,
+        "New Students": Number(batch.newStudentCount) || 0,
+        "Old Students": Number(batch.oldStudentCount) || 0,
+        "Total Fee": isTrainer ? "" : Number(batch.financials?.totalFees) || 0,
+        "Collected Fee": isTrainer ? "" : Number(batch.financials?.totalPaid) || 0,
+        "Due Fee": isTrainer ? "" : Number(batch.financials?.totalBalance) || 0,
+        "Batch Start Date": batch.startingDate || "",
+        "Batch Timing": [
+          batch.startingTime ? formatTime(batch.startingTime) : "",
+          batch.endingTime ? formatTime(batch.endingTime) : "",
+        ].filter(Boolean).join(" - "),
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(rows, {
+        header: [
+          "Batch Name",
+          "No. of Students",
+          "New Students",
+          "Old Students",
+          "Total Fee",
+          "Collected Fee",
+          "Due Fee",
+          "Batch Start Date",
+          "Batch Timing",
+        ],
+      });
+
+      worksheet["!cols"] = [
+        { wch: 28 },
+        { wch: 16 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 16 },
+        { wch: 18 },
+        { wch: 16 },
+        { wch: 18 },
+        { wch: 24 },
+      ];
+
+      // Format fee columns as Indian rupee values in Excel.
+      if (!isTrainer) {
+        for (let row = 2; row <= rows.length + 1; row++) {
+          for (const col of ["E", "F", "G"]) {
+            const cell = worksheet[`${col}${row}`];
+            if (cell) cell.z = '₹#,##0.00';
+          }
+        }
+      }
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Batch Summary");
+
+      const fileDate = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(workbook, `Batch_Summary_${fileDate}.xlsx`);
+      toast.success("Excel exported successfully");
+    } catch (error) {
+      console.error("Batch Excel export failed:", error);
+      toast.error("Failed to export Excel");
+    }
+  };
+
   // Short name for a session's tool; falls back to the session's own toolName.
   const getSessionToolName = (session) => {
     const tool = session?.toolId ? getTool(session.toolId) : null;
@@ -791,6 +870,15 @@ export default function BatchManager({ session }) {
               className="h-7 w-32 rounded-[4px] bg-transparent pl-7 pr-2 text-sm outline-none transition-all placeholder:text-[#9B9A97] hover:bg-[rgba(55,53,47,0.06)] focus:w-52 focus:bg-white focus:ring-2 focus:ring-[#2383E2]/40"
             />
           </div>
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            disabled={loading || filteredBatches.length === 0}
+            className="inline-flex h-8 items-center gap-1.5 rounded-[4px] border border-[#E3E2E0] bg-white px-2.5 text-xs font-medium text-[#37352F] transition-colors hover:bg-[#F7F6F3] disabled:cursor-not-allowed disabled:opacity-40"
+            title="Export filtered batches to Excel"
+          >
+            <Download size={14} /> Export Excel
+          </button>
           <div className="ml-2 inline-flex h-8 items-center rounded-[5px] border border-[#E3E2E0] bg-white p-0.5">
             <button
               type="button"
@@ -856,10 +944,10 @@ export default function BatchManager({ session }) {
         ) : viewMode === "table" ? (
           <>
           <div ref={tableViewportRef} onScroll={() => syncTableScroll("table")} className="mt-2 overflow-x-auto rounded-[5px] border border-[#E9E9E7]">
-            <table className="w-full min-w-[1750px] border-collapse text-left">
+            <table className="w-full min-w-[1950px] border-collapse text-left">
               <thead className="bg-[#FAFAF9]">
                 <tr className="border-b border-[#E9E9E7]">
-                  {["Batch", "Course / Type", "Start date", "Schedule", "Trainers", "Ongoing tools", "Upcoming tools", "Remaining tools", "Completed tools", "Status", "Actions"].map((heading) => (
+                  {["Batch", "Course / Type", "Batch Summary", "Start date", "Schedule", "Trainers", "Ongoing tools", "Upcoming tools", "Remaining tools", "Completed tools", "Status", "Actions"].map((heading) => (
                     <th key={heading} className="whitespace-nowrap px-3 py-3 text-xs font-medium text-[#787774]">{heading}</th>
                   ))}
                 </tr>
@@ -926,6 +1014,22 @@ export default function BatchManager({ session }) {
                         <div className="flex flex-wrap items-center gap-1.5">
                           <Pill className={course ? tagColor(course._id) : "bg-[#F1F1EF] text-[#787774]"}>{course?.name || "Course unavailable"}</Pill>
                           <Pill className={batchTypeStyles[rowType]}>{rowType === "special" ? "Special" : "Regular"}</Pill>
+                        </div>
+                      </td>
+                      <td className="min-w-[220px] px-3 py-3">
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap gap-1">
+                            <Pill className="bg-[#E3E2E0] text-[#32302C]">Total: {batch.studentCount || 0}</Pill>
+                            <Pill className="bg-[#DBEDDB] text-[#1C3829]">New: {batch.newStudentCount || 0}</Pill>
+                            <Pill className="bg-[#FDECC8] text-[#402C1B]">Old: {batch.oldStudentCount || 0}</Pill>
+                          </div>
+                          {!isTrainer && (
+                            <div className="space-y-0.5 text-xs">
+                              <p className="text-[#787774]">Fees: {formatMoney(batch.financials?.totalFees)}</p>
+                              <p className="text-[#1C8B50]">Paid: {formatMoney(batch.financials?.totalPaid)}</p>
+                              <p className="text-[#C4554D]">Due: {formatMoney(batch.financials?.totalBalance)}</p>
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 text-sm text-[#787774]">{formatDate(batch.startingDate)}</td>
@@ -1166,6 +1270,23 @@ export default function BatchManager({ session }) {
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Student and financial summary */}
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-[4px] bg-[#FAFAF9] px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-[#787774]">Students</span>
+                    <Pill className="bg-[#E3E2E0] text-[#32302C]">Total {batch.studentCount || 0}</Pill>
+                    <Pill className="bg-[#DBEDDB] text-[#1C3829]">New {batch.newStudentCount || 0}</Pill>
+                    <Pill className="bg-[#FDECC8] text-[#402C1B]">Old {batch.oldStudentCount || 0}</Pill>
+                  </div>
+                  {!isTrainer && (
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                      <span className="text-[#787774]">Fees: <strong className="text-[#37352F]">{formatMoney(batch.financials?.totalFees)}</strong></span>
+                      <span className="text-[#1C8B50]">Paid: <strong>{formatMoney(batch.financials?.totalPaid)}</strong></span>
+                      <span className="text-[#C4554D]">Due: <strong>{formatMoney(batch.financials?.totalBalance)}</strong></span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Tools: completed, ongoing, upcoming, not scheduled */}
