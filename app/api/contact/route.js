@@ -29,6 +29,7 @@ export async function GET(req) {
     const search = searchParams.get("search") || "";
     const course = searchParams.get("course") || "";
     const sort = searchParams.get("sort");
+    const tag = searchParams.get("tag");
     const fromDate = searchParams.get("fromDate");
     const from = searchParams.get("from") || "All";
     const toDate = searchParams.get("toDate");
@@ -96,7 +97,9 @@ if (session.user.role !== "admin") {
     const SOURCE_TYPES = [
       "Direct", "Google", "Facebook", "Instagram", "LinkedIn", "Twitter", "Referral", "GS1"
     ];
-
+if (tag && tag !== "All") {
+  query.tags = tag;
+}
     if (source && source !== "All") {
       if (source === "Referral") {
         const excludedSources = SOURCE_TYPES.filter(s => s !== "Referral");
