@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/authOptions";
 
 export const dynamic = "force-dynamic";
 
@@ -501,6 +503,21 @@ export async function GET(request) {
 // POST: Create/update a student's batch assignment and append dated payments.
 export async function POST(request) {
   try {
+    const session  = await getServerSession(authOptions)
+    const allowedRoles = ["admin", "counsellor", "special"];
+
+if (
+  !session?.user ||
+  !allowedRoles.includes(session.user.role)
+) {
+  return NextResponse.json(
+    {
+      success: false,
+      message: "You don't have permission for this action",
+    },
+    { status: 403 }
+  );
+}
     const body = await request.json();
 
     const studentId = idString(body.studentId);

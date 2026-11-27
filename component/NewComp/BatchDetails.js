@@ -320,12 +320,18 @@ export default function BatchDetails({ batchId, onBack, session }) {
     loadBatch();
   }, [loadBatch]);
 
-  // Select an ongoing session assigned to this trainer when today falls
-  // between the session start and end dates.
+  // Select an ongoing session for attendance.
+  // Trainers are limited to their assigned tools; trainer managers can
+  // access every ongoing tool session in this batch.
   useEffect(() => {
-    if (session?.user?.role !== "trainer" || !data) return;
+    const role = session?.user?.role;
+    if (!data || !["trainer", "trainerManager"].includes(role)) return;
 
-    const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+    const today = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    })();
+
     const trainerId = String(session?.user?.id || "");
     const assignedIds = new Set(
       (data.toolTrainerAssignments || [])
@@ -336,9 +342,11 @@ export default function BatchDetails({ batchId, onBack, session }) {
     const eligible = sessions.filter((item) =>
       item.status === "ongoing" &&
       item.toolId &&
-      assignedIds.has(String(item.toolId)) &&
-      item.date && item.endDate &&
-      today >= item.date && today <= item.endDate
+      item.date &&
+      item.endDate &&
+      today >= item.date &&
+      today <= item.endDate &&
+      (role === "trainerManager" || assignedIds.has(String(item.toolId)))
     );
 
     if (eligible.length) {
@@ -347,17 +355,26 @@ export default function BatchDetails({ batchId, onBack, session }) {
           ? current
           : String(eligible[0].id)
       );
-      setAttendanceDate((current) => current || today);
+      setAttendanceDate((current) =>
+        current && current >= eligible[0].date && current <= eligible[0].endDate
+          ? current
+          : today
+      );
     } else {
       setAttendanceSessionId("");
       setAttendanceRows([]);
+      setAttendanceStats(null);
       setTab((current) => current === "Attendance" ? "Overview" : current);
     }
   }, [data, sessions, session?.user?.role, session?.user?.id]);
 
   // Fetch saved attendance and the students assigned to the selected tool.
   useEffect(() => {
-    if (!attendanceSessionId || !attendanceDate || session?.user?.role !== "trainer") {
+    if (
+      !attendanceSessionId ||
+      !attendanceDate ||
+      !["trainer", "trainerManager"].includes(session?.user?.role)
+    ) {
       setAttendanceRows([]);
       setAttendanceStats(null);
       return;
@@ -524,7 +541,7 @@ export default function BatchDetails({ batchId, onBack, session }) {
   };
 
   const openFeePayment = (student) => {
-    if (!canManage) return;
+    if (!canViewFinancials) return;
 
     setFeePaymentStudent(student);
     setFeePaymentAmount("");
@@ -541,7 +558,7 @@ export default function BatchDetails({ batchId, onBack, session }) {
 
   const submitFeePayment = async (e) => {
     e.preventDefault();
-    if (!feePaymentStudent || !canManage) return;
+    if (!feePaymentStudent || !canViewFinancials) return;
 
     const amount = Number(feePaymentAmount);
     const totalFee = Number(feePaymentStudent.totalFee) || 0;
@@ -618,7 +635,10 @@ export default function BatchDetails({ batchId, onBack, session }) {
       payload.mode = studentForm.mode;
     }
 
-    if (Number(studentForm.totalFee) !== Number(editStudent.totalFee || 0)) {
+    if (
+      canViewFinancials &&
+      Number(studentForm.totalFee) !== Number(editStudent.totalFee || 0)
+    ) {
       payload.totalFee = studentForm.totalFee;
     }
 
@@ -851,8 +871,11 @@ export default function BatchDetails({ batchId, onBack, session }) {
   const completedDemos = demoRequests.filter(
     (item) => item.status?.toLowerCase() === "completed"
   ).length;
-  const isTrainer = session?.user?.role === "trainer";
   const role = session?.user?.role;
+  const isTrainer = role === "trainer";
+  const isTrainerManager = role === "trainerManager";
+  const canViewFinancials = !["trainer", "trainerManager"].includes(role);
+  const canAccessAttendance = ["trainer", "trainerManager"].includes(role);
   const trainerId = String(session?.user?.id || "");
 
   const allTools = data.tools || [];
@@ -875,14 +898,22 @@ export default function BatchDetails({ batchId, onBack, session }) {
     ? sessions.filter((item) => assignedToolIds.has(String(item.toolId)))
     : sessions;
 
-  const todayForAttendance = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
-  const eligibleAttendanceSessions = isTrainer
-    ? visibleSessions.filter((item) =>
+  const todayForAttendance = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+
+  // Trainer managers see every ongoing tool session; trainers only see
+  // sessions for tools assigned to their trainer account.
+  const eligibleAttendanceSessions = canAccessAttendance
+    ? sessions.filter((item) =>
         item.status === "ongoing" &&
         item.toolId &&
-        item.date && item.endDate &&
+        item.date &&
+        item.endDate &&
         todayForAttendance >= item.date &&
-        todayForAttendance <= item.endDate
+        todayForAttendance <= item.endDate &&
+        (isTrainerManager || assignedToolIds.has(String(item.toolId)))
       )
     : [];
 
@@ -946,7 +977,9 @@ export default function BatchDetails({ batchId, onBack, session }) {
         <div className={`mt-8 flex gap-1 overflow-x-auto border-b ${line}`}>
           {[
             ...TABS.filter((item) => !(isTrainer && item === "Trainers")),
-            ...(isTrainer && eligibleAttendanceSessions.length ? ["Attendance"] : []),
+            ...(isTrainerManager || (isTrainer && eligibleAttendanceSessions.length)
+              ? ["Attendance"]
+              : []),
           ].map((item) => {
             const count =
               item === "Students" ? students.length
@@ -990,7 +1023,7 @@ export default function BatchDetails({ batchId, onBack, session }) {
             <>
               <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 <Callout icon={Users} label="Students" value={students.length} />
-                {!isTrainer && (
+                {canViewFinancials && (
                   <>
                     <Callout icon={IndianRupee} label="Total fees" value={money(financials.totalFees)} />
                     <Callout icon={Wallet} label="Collected" value={money(financials.totalPaid)} />
@@ -1039,8 +1072,8 @@ export default function BatchDetails({ batchId, onBack, session }) {
                   students={students.slice(0, 5)}
                   {...studentActions}
                   readOnly={isTrainer}
-                  hideFinancials={isTrainer}
-                  allowFeeActions={canManage}
+                  hideFinancials={!canViewFinancials}
+                  allowFeeActions={canViewFinancials}
                   onAddPayment={openFeePayment}
                   onEditNotes={openStudentNotes}
                   canManageNotes={canManage}
@@ -1056,7 +1089,9 @@ export default function BatchDetails({ batchId, onBack, session }) {
               <section>
                 <SectionTitle
                   title="Students"
-                  hint={isTrainer ? `${students.length} assigned` : `${students.length} assigned · ${money(financials.totalPaid)} collected`}
+                  hint={canViewFinancials
+                    ? `${students.length} assigned · ${money(financials.totalPaid)} collected`
+                    : `${students.length} assigned`}
                   action={
                     canManage && (
                       <Btn variant="primary" onClick={openAssignModal}>
@@ -1070,8 +1105,8 @@ export default function BatchDetails({ batchId, onBack, session }) {
                   students={students}
                   {...studentActions}
                   readOnly={isTrainer}
-                  hideFinancials={isTrainer}
-                  allowFeeActions={canManage}
+                  hideFinancials={!canViewFinancials}
+                  allowFeeActions={canViewFinancials}
                   onAddPayment={openFeePayment}
                   onEditNotes={openStudentNotes}
                   canManageNotes={canManage}
@@ -1287,7 +1322,7 @@ export default function BatchDetails({ batchId, onBack, session }) {
           )}
 
           {/* ---------- Trainer attendance ---------- */}
-          {isTrainer && tab === "Attendance" && (
+          {canAccessAttendance && tab === "Attendance" && (
             <section className="space-y-4">
               <SectionTitle
                 title="Tool Attendance"
@@ -1577,10 +1612,12 @@ export default function BatchDetails({ batchId, onBack, session }) {
               </Field>
             )}
 
-            <Field label="Total course fee">
-              <input type="number" min="0" required className={inputClass} value={studentForm.totalFee}
-                onChange={(e) => setStudentForm({ ...studentForm, totalFee: e.target.value })} />
-            </Field>
+            {canViewFinancials && (
+              <Field label="Total course fee">
+                <input type="number" min="0" required className={inputClass} value={studentForm.totalFee}
+                  onChange={(e) => setStudentForm({ ...studentForm, totalFee: e.target.value })} />
+              </Field>
+            )}
 
             {/* Old student and job guarantee */}
             <div className="space-y-3 rounded-md bg-[#f7f6f3] p-3 text-sm">
@@ -1629,16 +1666,18 @@ export default function BatchDetails({ batchId, onBack, session }) {
               </div>
             </div>
 
-            <div className="rounded-md bg-[#f7f6f3] p-3 text-sm">
-              <div className="flex justify-between">
-                <span className={muted}>Already paid</span>
-                <strong>{money(editStudent.paidFee)}</strong>
+            {canViewFinancials && (
+              <div className="rounded-md bg-[#f7f6f3] p-3 text-sm">
+                <div className="flex justify-between">
+                  <span className={muted}>Already paid</span>
+                  <strong>{money(editStudent.paidFee)}</strong>
+                </div>
+                <div className="mt-1.5 flex justify-between">
+                  <span className={muted}>Current balance</span>
+                  <strong>{money(editStudent.balanceDue)}</strong>
+                </div>
               </div>
-              <div className="mt-1.5 flex justify-between">
-                <span className={muted}>Current balance</span>
-                <strong>{money(editStudent.balanceDue)}</strong>
-              </div>
-            </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-2">
               <Btn type="button" variant="outline" onClick={() => setEditStudent(null)}>Cancel</Btn>
@@ -1787,7 +1826,7 @@ export default function BatchDetails({ batchId, onBack, session }) {
       )}
 
       {/* ---------- Add fee payment ---------- */}
-      {canManage && feePaymentStudent && (() => {
+      {canViewFinancials && feePaymentStudent && (() => {
         const totalFee = Number(feePaymentStudent.totalFee) || 0;
         const paidFee = Number(feePaymentStudent.paidFee) || 0;
         const remaining = Math.max(

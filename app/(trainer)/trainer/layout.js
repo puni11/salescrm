@@ -9,7 +9,7 @@ export default async function ProtectedLayout({children}) {
     redirect('/login')
   } 
   console.log(session)
-  if (session.user.role!=='trainer'){
+  if (session.user.role!=='trainer' && session.user.role!=='trainerManager'){
     return <UnAuthorised />
   }
     return(

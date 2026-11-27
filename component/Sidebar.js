@@ -177,6 +177,7 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
 
   const isAdmin = session?.user?.role === "admin";
   const isTrainer = session?.user?.role === "trainer";
+  const isTrainerManager = session?.user?.role === "trainerManager";
   const isCounsellor = session?.user?.role === "counsellor" || session?.user?.role === "manager";
   const userId = session?.user?.id;
 
@@ -248,13 +249,15 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
 
         {/* Navigation */}
         <nav className="flex-1 py-6 space-y-1.5 overflow-y-auto overflow-x-hidden scrollbar-hide">
-          <NavItem
-            href={`${isTrainer? '/trainer': '/dashboard'}`}
-            icon={LayoutDashboardIcon}
-            label="Dashboard"
-            collapsed={collapsed}
-            active={pathname === `${isTrainer? '/trainer': '/dashboard'}`}
-          />
+         <NavItem
+  href={isTrainer || isTrainerManager ? "/trainer" : "/dashboard"}
+  icon={LayoutDashboardIcon}
+  label="Dashboard"
+  collapsed={collapsed}
+  active={
+    pathname === (isTrainer || isTrainerManager ? "/trainer" : "/dashboard")
+  }
+/>
 
           {/* Leads, now with a submenu */}
           {(isAdmin || isCounsellor) && (<NavItem
@@ -319,10 +322,20 @@ export default function Sidebar({ session, collapsed, setCollapsed }) {
             setCollapsed={setCollapsed}
             active={pathname.includes("/batch")}
            items={[
-  { href: `${isTrainer? '/trainer/batches' : '/batches'}`, label: "Batch", active: pathname === "/batches" },
+  { href: `${isTrainer || isTrainerManager? '/trainer/batches' : '/batches'}`, label: `${isTrainer || isTrainerManager? 'Your Batches' : 'Batches'}`, active: pathname === "/batches" },
+  ...(isTrainerManager
+  ? [
+      {
+        href: "/batches",
+        label: "Batch",
+        active: pathname === "/batches",
+      },
+    ]
+  : []),
 
-  ...((isAdmin || isCounsellor) ? [
+  ...((isAdmin || isCounsellor || isTrainerManager) ? [
     { href: "/students", label: "Students", active: pathname === "/students" },
+    { href: "/batch-planner", label: "Batch Planner", active: pathname === "/batch-planner" },
     { href: "/course", label: "Course", active: pathname === "/course" },
     { href: "/trainers", label: "Trainers", active: pathname === "/trainers" },
     { href: "/categories", label: "Categories", active: pathname === "/categories" },

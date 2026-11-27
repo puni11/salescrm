@@ -286,6 +286,7 @@ function TabButton({ label, count, selected, onClick }) {
 /* ---------- main component ---------- */
 
 export default function BatchManager({ session }) {
+  const isTrainerManager = session?.user?.role === "trainerManager";
   const isTrainer = session?.user?.role === "trainer";
   const trainerId = String(session?.user?.id || "");
   const canManageBatches =
@@ -1280,13 +1281,19 @@ export default function BatchManager({ session }) {
                     <Pill className="bg-[#DBEDDB] text-[#1C3829]">New {batch.newStudentCount || 0}</Pill>
                     <Pill className="bg-[#FDECC8] text-[#402C1B]">Old {batch.oldStudentCount || 0}</Pill>
                   </div>
-                  {!isTrainer && (
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                      <span className="text-[#787774]">Fees: <strong className="text-[#37352F]">{formatMoney(batch.financials?.totalFees)}</strong></span>
-                      <span className="text-[#1C8B50]">Paid: <strong>{formatMoney(batch.financials?.totalPaid)}</strong></span>
-                      <span className="text-[#C4554D]">Due: <strong>{formatMoney(batch.financials?.totalBalance)}</strong></span>
-                    </div>
-                  )}
+                 {!isTrainer && !isTrainerManager && (
+  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+    <span className="text-[#787774]">
+      Fees: <strong className="text-[#37372F]">{formatMoney(batch.financials?.totalFees)}</strong>
+    </span>
+    <span className="text-[#1C8B50]">
+      Paid: <strong>{formatMoney(batch.financials?.totalPaid)}</strong>
+    </span>
+    <span className="text-[#C4554D]">
+      Due: <strong>{formatMoney(batch.financials?.totalBalance)}</strong>
+    </span>
+  </div>
+)}
                 </div>
 
                 {/* Tools: completed, ongoing, upcoming, not scheduled */}

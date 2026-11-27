@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/authOptions";
 
 export const dynamic = "force-dynamic";
 
@@ -140,6 +142,14 @@ async function getDb() {
 
 export async function GET(request, { params }) {
   try {
+    const session  =  await getServerSession(authOptions)
+    if(!session){
+      return NextResponse.json({
+        success: false,
+        message:
+          "Access Denied",
+      }); 
+    }
     const { id } = await params;
     const batchObjectId = toObjectId(id);
 
@@ -504,11 +514,13 @@ export async function GET(request, { params }) {
       demoRequests: formattedDemoRequests,
       demoRequestCount: formattedDemoRequests.length,
 
-      financials: {
-        totalFees,
-        totalPaid,
-        totalBalance,
-      },
+      ...(session?.user?.role === "admin" && {
+    financials: {
+      totalFees,
+      totalPaid,
+      totalBalance,
+    },
+  }),
 
       createdAt: batch.createdAt || null,
       updatedAt: batch.updatedAt || null,

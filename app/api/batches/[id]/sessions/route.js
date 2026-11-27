@@ -81,14 +81,6 @@ function parseFields(body, batch, partial) {
     out.endDate = str(body.endDate);
   }
 
-  // Time
-  if (!partial || body.time !== undefined) {
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(str(body.time))) {
-      return { error: "Invalid session time" };
-    }
-
-    out.time = str(body.time);
-  }
 
   // Tool
   if (body.toolId !== undefined) {

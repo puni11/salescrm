@@ -25,12 +25,20 @@ function validDate(value) {
 async function authorizeTrainer() {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user?.id || session.user.role !== "trainer") {
+  const role = session?.user?.role;
+  const userId = str(session?.user?.id);
+
+  if (
+    !userId ||
+    !["trainer", "trainerManager"].includes(role)
+  ) {
     return { error: fail("Unauthorized", 401) };
   }
 
   return {
-    trainerId: str(session.user.id),
+    trainerId: userId,
+    role,
+    isTrainerManager: role === "trainerManager",
   };
 }
 
