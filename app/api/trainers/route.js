@@ -1,6 +1,7 @@
 
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
+import { hash } from "bcryptjs";
 import clientPromise from "@/lib/mongodb";
 
 const VALID_STATUSES = ["active", "inactive"];
@@ -10,13 +11,37 @@ async function getCollection() {
   return client.db("sales").collection("trainers");
 }
 
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Never expose password or passwordHash
+function safeTrainer(trainer) {
+  if (!trainer) return null;
+
+  const {
+    password,
+    passwordHash,
+    ...safeData
+  } = trainer;
+
+  return safeData;
+}
+
+// Validate trainer profile
 function validateTrainer(body) {
-  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const name =
+    typeof body.name === "string" ? body.name.trim() : "";
+
   const experience = Number(body.experience);
+
   const tools = Array.isArray(body.tools) ? body.tools : null;
+
   const status = body.status ?? "active";
 
-  if (!name) return { error: "Trainer name is required" };
+  if (!name) {
+    return { error: "Trainer name is required" };
+  }
 
   if (
     body.experience === undefined ||
@@ -25,17 +50,26 @@ function validateTrainer(body) {
     !Number.isFinite(experience) ||
     experience < 0
   ) {
-    return { error: "Valid years of experience are required" };
+    return {
+      error: "Valid years of experience are required",
+    };
   }
 
-  if (!tools || !tools.every(
-    (id) => typeof id === "string" && ObjectId.isValid(id)
-  )) {
-    return { error: "Tools must be an array of valid tool IDs" };
+  if (
+    !tools ||
+    !tools.every(
+      (id) => typeof id === "string" && ObjectId.isValid(id)
+    )
+  ) {
+    return {
+      error: "Tools must be an array of valid tool IDs",
+    };
   }
 
   if (!VALID_STATUSES.includes(status)) {
-    return { error: "Status must be active or inactive" };
+    return {
+      error: "Status must be active or inactive",
+    };
   }
 
   return {
@@ -48,39 +82,121 @@ function validateTrainer(body) {
   };
 }
 
+// Validate username
+function validateUsername(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return {
+      error: "Username is required",
+    };
+  }
+
+  const username = value.trim().toLowerCase();
+
+  if (username.length < 3 || username.length > 30) {
+    return {
+      error: "Username must be between 3 and 30 characters",
+    };
+  }
+
+  if (!/^[a-z0-9._-]+$/.test(username)) {
+    return {
+      error:
+        "Username can only contain letters, numbers, dots, underscores and hyphens",
+    };
+  }
+
+  return { data: username };
+}
+
+// Validate password
+function validatePassword(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return {
+      error: "Password is required",
+    };
+  }
+
+  if (value.length < 8) {
+    return {
+      error: "Password must contain at least 8 characters",
+    };
+  }
+
+  if (value.length > 128) {
+    return {
+      error: "Password cannot exceed 128 characters",
+    };
+  }
+
+  return { data: value };
+}
+
+// Check selected tools
+async function validateTools(toolIds) {
+  const client = await clientPromise;
+
+  const toolsCollection = client
+    .db("sales")
+    .collection("tools");
+
+  const ids = toolIds.map((id) => new ObjectId(id));
+
+  const count = await toolsCollection.countDocuments({
+    _id: { $in: ids },
+  });
+
+  return count === ids.length;
+}
+
 // GET /api/trainers
 // GET /api/trainers?status=active
 // GET /api/trainers?id=TRAINER_ID
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
+
     const id = searchParams.get("id");
     const status = searchParams.get("status");
+
     const collection = await getCollection();
 
     if (id) {
       if (!ObjectId.isValid(id)) {
         return NextResponse.json(
-          { success: false, message: "Invalid trainer ID" },
+          {
+            success: false,
+            message: "Invalid trainer ID",
+          },
           { status: 400 }
         );
       }
 
-      const trainer = await collection.findOne({ _id: new ObjectId(id) });
+      const trainer = await collection.findOne({
+        _id: new ObjectId(id),
+      });
 
       if (!trainer) {
         return NextResponse.json(
-          { success: false, message: "Trainer not found" },
+          {
+            success: false,
+            message: "Trainer not found",
+          },
           { status: 404 }
         );
       }
 
-      return NextResponse.json({ success: true, data: trainer });
+      return NextResponse.json({
+        success: true,
+        data: safeTrainer(trainer),
+      });
     }
 
     if (status && !VALID_STATUSES.includes(status)) {
       return NextResponse.json(
-        { success: false, message: "Status must be active or inactive" },
+        {
+          success: false,
+          message: "Status must be active or inactive",
+        },
         { status: 400 }
       );
     }
@@ -93,63 +209,137 @@ export async function GET(request) {
     return NextResponse.json({
       success: true,
       count: trainers.length,
-      data: trainers,
+      data: trainers.map(safeTrainer),
     });
   } catch (error) {
     console.error("Get trainers error:", error);
+
     return NextResponse.json(
-      { success: false, message: "Failed to fetch trainers" },
+      {
+        success: false,
+        message: "Failed to fetch trainers",
+      },
       { status: 500 }
     );
   }
 }
 
 // POST /api/trainers
-// { name, experience, tools: ["TOOL_ID"], status }
+// {
+//   name,
+//   username,
+//   password,
+//   experience,
+//   tools,
+//   status
+// }
 export async function POST(request) {
   try {
     const body = await request.json();
+
     const validation = validateTrainer(body);
 
     if (validation.error) {
       return NextResponse.json(
-        { success: false, message: validation.error },
+        {
+          success: false,
+          message: validation.error,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate username
+    const usernameValidation = validateUsername(body.username);
+
+    if (usernameValidation.error) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: usernameValidation.error,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate password
+    const passwordValidation = validatePassword(body.password);
+
+    if (passwordValidation.error) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: passwordValidation.error,
+        },
         { status: 400 }
       );
     }
 
     const collection = await getCollection();
-    const { name } = validation.data;
 
-    const duplicate = await collection.findOne({
-      name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+    const { name } = validation.data;
+    const username = usernameValidation.data;
+
+    // Check duplicate name
+    const duplicateName = await collection.findOne({
+      name: {
+        $regex: `^${escapeRegex(name)}$`,
+        $options: "i",
+      },
     });
 
-    if (duplicate) {
+    if (duplicateName) {
       return NextResponse.json(
-        { success: false, message: "A trainer with this name already exists" },
+        {
+          success: false,
+          message: "A trainer with this name already exists",
+        },
         { status: 409 }
       );
     }
 
-    // Confirm that every selected tool exists.
-    const client = await clientPromise;
-    const toolsCollection = client.db("sales").collection("tools");
-    const toolIds = validation.data.tools.map((id) => new ObjectId(id));
-    const foundTools = await toolsCollection.countDocuments({
-      _id: { $in: toolIds },
+    // Check duplicate username
+    const duplicateUsername = await collection.findOne({
+      username,
     });
 
-    if (foundTools !== toolIds.length) {
+    if (duplicateUsername) {
       return NextResponse.json(
-        { success: false, message: "One or more selected tools do not exist" },
+        {
+          success: false,
+          message: "This username is already taken",
+        },
+        { status: 409 }
+      );
+    }
+
+    // Validate tools
+    const toolsValid = await validateTools(
+      validation.data.tools
+    );
+
+    if (!toolsValid) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "One or more selected tools do not exist",
+        },
         { status: 400 }
       );
     }
 
+    // Hash password
+    const passwordHash = await hash(
+      passwordValidation.data,
+      12
+    );
+
     const now = new Date();
+
     const trainer = {
       ...validation.data,
+      username,
+      passwordHash,
       createdAt: now,
       updatedAt: now,
     };
@@ -160,14 +350,21 @@ export async function POST(request) {
       {
         success: true,
         message: "Trainer created successfully",
-        data: { _id: result.insertedId, ...trainer },
+        data: safeTrainer({
+          _id: result.insertedId,
+          ...trainer,
+        }),
       },
       { status: 201 }
     );
   } catch (error) {
     console.error("Create trainer error:", error);
+
     return NextResponse.json(
-      { success: false, message: "Failed to create trainer" },
+      {
+        success: false,
+        message: "Failed to create trainer",
+      },
       { status: 500 }
     );
   }
@@ -177,89 +374,184 @@ export async function POST(request) {
 export async function PATCH(request) {
   try {
     const { searchParams } = new URL(request.url);
+
     const id = searchParams.get("id");
 
     if (!id || !ObjectId.isValid(id)) {
       return NextResponse.json(
-        { success: false, message: "A valid trainer ID is required" },
+        {
+          success: false,
+          message: "A valid trainer ID is required",
+        },
         { status: 400 }
       );
     }
 
     const collection = await getCollection();
-    const existing = await collection.findOne({ _id: new ObjectId(id) });
+
+    const objectId = new ObjectId(id);
+
+    const existing = await collection.findOne({
+      _id: objectId,
+    });
 
     if (!existing) {
       return NextResponse.json(
-        { success: false, message: "Trainer not found" },
+        {
+          success: false,
+          message: "Trainer not found",
+        },
         { status: 404 }
       );
     }
 
     const body = await request.json();
+
+    // Merge existing profile with new data
     const merged = {
       name: body.name ?? existing.name,
       experience: body.experience ?? existing.experience,
-      tools: body.tools ?? existing.tools,
-      status: body.status ?? existing.status,
+      tools: body.tools ?? existing.tools ?? [],
+      status: body.status ?? existing.status ?? "active",
     };
 
     const validation = validateTrainer(merged);
 
     if (validation.error) {
       return NextResponse.json(
-        { success: false, message: validation.error },
+        {
+          success: false,
+          message: validation.error,
+        },
         { status: 400 }
       );
     }
 
-    const updates = validation.data;
+    const updates = {
+      ...validation.data,
+    };
 
-    const duplicate = await collection.findOne({
-      _id: { $ne: new ObjectId(id) },
+    // Check duplicate name
+    const duplicateName = await collection.findOne({
+      _id: { $ne: objectId },
       name: {
-        $regex: `^${updates.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        $regex: `^${escapeRegex(updates.name)}$`,
         $options: "i",
       },
     });
 
-    if (duplicate) {
+    if (duplicateName) {
       return NextResponse.json(
-        { success: false, message: "A trainer with this name already exists" },
+        {
+          success: false,
+          message: "A trainer with this name already exists",
+        },
         { status: 409 }
       );
     }
 
-    const client = await clientPromise;
-    const toolsCollection = client.db("sales").collection("tools");
-    const toolIds = updates.tools.map((toolId) => new ObjectId(toolId));
-    const foundTools = await toolsCollection.countDocuments({
-      _id: { $in: toolIds },
-    });
+    // Update username only when supplied
+    if (body.username !== undefined) {
+      const usernameValidation = validateUsername(
+        body.username
+      );
 
-    if (foundTools !== toolIds.length) {
+      if (usernameValidation.error) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: usernameValidation.error,
+          },
+          { status: 400 }
+        );
+      }
+
+      const username = usernameValidation.data;
+
+      const duplicateUsername = await collection.findOne({
+        _id: { $ne: objectId },
+        username,
+      });
+
+      if (duplicateUsername) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "This username is already taken",
+          },
+          { status: 409 }
+        );
+      }
+
+      updates.username = username;
+    }
+
+    // Update password only when a new password is supplied
+    if (
+      body.password !== undefined &&
+      body.password !== ""
+    ) {
+      const passwordValidation = validatePassword(
+        body.password
+      );
+
+      if (passwordValidation.error) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: passwordValidation.error,
+          },
+          { status: 400 }
+        );
+      }
+
+      updates.passwordHash = await hash(
+        passwordValidation.data,
+        12
+      );
+    }
+
+    // Validate tools
+    const toolsValid = await validateTools(
+      updates.tools
+    );
+
+    if (!toolsValid) {
       return NextResponse.json(
-        { success: false, message: "One or more selected tools do not exist" },
+        {
+          success: false,
+          message: "One or more selected tools do not exist",
+        },
         { status: 400 }
       );
     }
 
+    updates.updatedAt = new Date();
+
     await collection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { ...updates, updatedAt: new Date() } }
+      { _id: objectId },
+      {
+        $set: updates,
+      }
     );
 
-    const trainer = await collection.findOne({ _id: new ObjectId(id) });
+    const trainer = await collection.findOne({
+      _id: objectId,
+    });
 
     return NextResponse.json({
       success: true,
       message: "Trainer updated successfully",
-      data: trainer,
+      data: safeTrainer(trainer),
     });
   } catch (error) {
     console.error("Update trainer error:", error);
+
     return NextResponse.json(
-      { success: false, message: "Failed to update trainer" },
+      {
+        success: false,
+        message: "Failed to update trainer",
+      },
       { status: 500 }
     );
   }
@@ -269,21 +561,31 @@ export async function PATCH(request) {
 export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
+
     const id = searchParams.get("id");
 
     if (!id || !ObjectId.isValid(id)) {
       return NextResponse.json(
-        { success: false, message: "A valid trainer ID is required" },
+        {
+          success: false,
+          message: "A valid trainer ID is required",
+        },
         { status: 400 }
       );
     }
 
     const collection = await getCollection();
-    const result = await collection.deleteOne({ _id: new ObjectId(id) });
+
+    const result = await collection.deleteOne({
+      _id: new ObjectId(id),
+    });
 
     if (!result.deletedCount) {
       return NextResponse.json(
-        { success: false, message: "Trainer not found" },
+        {
+          success: false,
+          message: "Trainer not found",
+        },
         { status: 404 }
       );
     }
@@ -294,8 +596,12 @@ export async function DELETE(request) {
     });
   } catch (error) {
     console.error("Delete trainer error:", error);
+
     return NextResponse.json(
-      { success: false, message: "Failed to delete trainer" },
+      {
+        success: false,
+        message: "Failed to delete trainer",
+      },
       { status: 500 }
     );
   }

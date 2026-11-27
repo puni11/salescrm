@@ -382,6 +382,12 @@ export async function GET(request, { params }) {
         tools: assignedTools,
         toolIds: assignedToolIds,
 
+        // Student notes stored on the batch assignment
+        notes:
+          typeof assignment.notes === "string"
+            ? assignment.notes
+            : "",
+
         batchCompleted: completion.batchCompleted,
         batchCompletedAt: completion.batchCompletedAt,
         progress: completion.progress,
@@ -776,6 +782,21 @@ export async function PATCH(request, { params }) {
         update.isOldStudent = body.isOldStudent;
       }
 
+      // Save student notes. Empty string is allowed to clear existing notes.
+      if (body.notes !== undefined) {
+        if (typeof body.notes !== "string") {
+          return fail("Notes must be a string");
+        }
+
+        const notes = body.notes.trim();
+
+        if (notes.length > 2000) {
+          return fail("Notes cannot exceed 2000 characters");
+        }
+
+        update.notes = notes;
+      }
+
       // Save Job Guarantee flag
       if (body.jobGuarantee !== undefined) {
         if (typeof body.jobGuarantee !== "boolean") {
@@ -805,6 +826,7 @@ export async function PATCH(request, { params }) {
         message: "Student assignment updated successfully",
         data: {
           studentId: str(saved.studentId),
+          notes: typeof saved.notes === "string" ? saved.notes : "",
           isOldStudent: Boolean(saved.isOldStudent),
           jobGuarantee: Boolean(saved.jobGuarantee),
           ...paymentSummary(saved),

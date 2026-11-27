@@ -532,7 +532,20 @@ export async function POST(request) {
         { status: 400 }
       );
     }
+const notes =
+  body.notes !== undefined
+    ? String(body.notes).trim()
+    : undefined;
 
+if (notes !== undefined && notes.length > 2000) {
+  return NextResponse.json(
+    {
+      success: false,
+      message: "Notes cannot exceed 2000 characters",
+    },
+    { status: 400 }
+  );
+}
     const db = await getDb();
 
     const studentObjectId = new ObjectId(studentId);
@@ -727,7 +740,11 @@ export async function POST(request) {
       paidFee: paymentInfo.paidFee,
       balanceDue: paymentInfo.balanceDue,
       paymentStatus: paymentInfo.paymentStatus,
-
+  ...(notes !== undefined
+    ? { notes }
+    : existing?.notes !== undefined
+      ? { notes: existing.notes }
+      : {}),
       updatedAt: now,
     };
 
@@ -768,7 +785,7 @@ export async function POST(request) {
         mode,
         toolIds,
         toolTrainerAssignments,
-
+notes: saved?.notes || "",
         payments: normalizePayments(saved?.payments),
 
         ...calculatePayment(

@@ -410,6 +410,7 @@ function LeadBatchAssignmentModal({ lead, onClose, onSuccess }) {
   const [selectedToolIds, setSelectedToolIds] = useState([]);
   const [totalFee, setTotalFee] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("");
+  const [notes, setNotes] = useState("");
   const [paymentDate, setPaymentDate] = useState(
     new Date().toISOString().slice(0, 10)
   );
@@ -506,8 +507,10 @@ function LeadBatchAssignmentModal({ lead, onClose, onSuccess }) {
                 : []
             );
             setTotalFee(String(existing.totalFee ?? firstBatch.fee ?? ""));
+            setNotes(existing.notes || "");
           } else {
             setTotalFee(String(firstBatch.fee ?? ""));
+            setNotes("");
           }
         }
       } catch (err) {
@@ -542,6 +545,7 @@ function LeadBatchAssignmentModal({ lead, onClose, onSuccess }) {
       String(existing?.totalFee ?? selectedBatch.fee ?? "")
     );
     setPaymentAmount("");
+    setNotes(existing?.notes || "");
   }, [selectedBatchId, selectedBatch, existingAssignments]);
 
   const toggleTool = (toolId) => {
@@ -577,6 +581,11 @@ function LeadBatchAssignmentModal({ lead, onClose, onSuccess }) {
     const fee = Number(totalFee);
     const payment = Number(paymentAmount || 0);
 
+    if (typeof notes !== "string" || notes.length > 2000) {
+      setError("Notes cannot exceed 2000 characters.");
+      return;
+    }
+
     if (!Number.isFinite(fee) || fee < 0) {
       setError("Enter a valid total fee.");
       return;
@@ -606,6 +615,7 @@ function LeadBatchAssignmentModal({ lead, onClose, onSuccess }) {
           totalFee: fee,
           paymentAmount: payment,
           paymentDate: paymentDate || new Date().toISOString().slice(0, 10),
+          notes: notes.trim(),
         }),
       });
 
@@ -851,6 +861,28 @@ function LeadBatchAssignmentModal({ lead, onClose, onSuccess }) {
                         onChange={(event) => setPaymentDate(event.target.value)}
                         className="w-full rounded-lg border border-[#E3E2E0] px-3 py-2.5 text-sm outline-none focus:border-[#2383E2]"
                       />
+                    </div>
+
+                    <div>
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <label className="block text-sm font-medium text-[#37352F]">
+                          Student notes
+                        </label>
+                        <span className="text-xs text-[#9B9A97]">
+                          {notes.length}/2000
+                        </span>
+                      </div>
+                      <textarea
+                        value={notes}
+                        onChange={(event) => setNotes(event.target.value)}
+                        maxLength={2000}
+                        rows={3}
+                        placeholder="Add notes about this student's batch assignment..."
+                        className="w-full resize-y rounded-lg border border-[#E3E2E0] px-3 py-2.5 text-sm outline-none focus:border-[#2383E2]"
+                      />
+                      <p className="mt-1 text-xs text-[#9B9A97]">
+                        Notes are saved with this student's selected batch.
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2 rounded-lg bg-[#F7F7F5] p-3">

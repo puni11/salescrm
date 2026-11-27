@@ -1,22 +1,36 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
 import {
-  Plus, X, Loader2, Pencil, Trash2, Search, Wrench,
-  BriefcaseBusiness, Type, CircleDot, Check, Table2,
+  Plus,
+  X,
+  Loader2,
+  Pencil,
+  Trash2,
+  Search,
+  Wrench,
+  BriefcaseBusiness,
+  Type,
+  CircleDot,
+  Check,
+  Table2,
   User2Icon,
+  LockKeyhole,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import Link from "next/link";
 
 const emptyForm = {
   name: "",
+  username: "",
+  password: "",
   experience: "",
   tools: [],
   status: "active",
 };
 
-/* Notion tag palette (background + text) */
+/* Notion tag palette */
 const TAG_COLORS = [
   "bg-[#E3E2E0] text-[#32302C]",
   "bg-[#EEE0DA] text-[#442A1E]",
@@ -31,7 +45,11 @@ const TAG_COLORS = [
 
 const tagColor = (key = "") => {
   let hash = 0;
-  for (const ch of String(key)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+
+  for (const ch of String(key)) {
+    hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  }
+
   return TAG_COLORS[hash % TAG_COLORS.length];
 };
 
@@ -66,6 +84,7 @@ function Property({ icon: Icon, label, children }) {
         <Icon size={15} className="text-[#9B9A97]" />
         {label}
       </div>
+
       <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
@@ -77,13 +96,17 @@ const fieldClass =
 export function TrainerManager() {
   const [trainers, setTrainers] = useState([]);
   const [tools, setTools] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
+
   const [form, setForm] = useState(emptyForm);
   const [search, setSearch] = useState("");
 
+  // Load trainers and tools
   const loadData = async () => {
     try {
       setLoading(true);
@@ -99,11 +122,15 @@ export function TrainerManager() {
       ]);
 
       if (!trainerRes.ok || !trainerData.success) {
-        throw new Error(trainerData.message || "Failed to load trainers");
+        throw new Error(
+          trainerData.message || "Failed to load trainers"
+        );
       }
 
       if (!toolRes.ok || !toolData.success) {
-        throw new Error(toolData.message || "Failed to load tools");
+        throw new Error(
+          toolData.message || "Failed to load tools"
+        );
       }
 
       setTrainers(trainerData.data || []);
@@ -119,32 +146,45 @@ export function TrainerManager() {
     loadData();
   }, []);
 
+  // Close modal with Escape
   useEffect(() => {
     if (!showModal) return;
+
     const onKey = (e) => {
-      if (e.key === "Escape" && !saving) setShowModal(false);
+      if (e.key === "Escape" && !saving) {
+        setShowModal(false);
+      }
     };
+
     window.addEventListener("keydown", onKey);
+
     return () => window.removeEventListener("keydown", onKey);
   }, [showModal, saving]);
 
+  // Open Add Trainer Modal
   const openCreate = () => {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm });
     setShowModal(true);
   };
 
+  // Open Edit Trainer Modal
   const openEdit = (trainer) => {
     setEditingId(trainer._id);
+
     setForm({
       name: trainer.name || "",
+      username: trainer.username || "",
+      password: "",
       experience: String(trainer.experience ?? ""),
       tools: (trainer.tools || []).map(String),
       status: trainer.status || "active",
     });
+
     setShowModal(true);
   };
 
+  // Toggle selected tools
   const toggleTool = (id) => {
     setForm((previous) => ({
       ...previous,
@@ -154,10 +194,21 @@ export function TrainerManager() {
     }));
   };
 
+  // Create / Update Trainer
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!form.name.trim()) return toast.error("Enter trainer name");
+    if (!form.name.trim()) {
+      return toast.error("Enter trainer name");
+    }
+
+    if (!form.username.trim()) {
+      return toast.error("Enter username");
+    }
+
+    if (!editingId && !form.password.trim()) {
+      return toast.error("Enter password");
+    }
 
     if (
       form.experience === "" ||
@@ -170,29 +221,49 @@ export function TrainerManager() {
     try {
       setSaving(true);
 
+      // Do not send blank password during edit
+      const payload = {
+        name: form.name.trim(),
+        username: form.username.trim(),
+        experience: Number(form.experience),
+        tools: form.tools,
+        status: form.status,
+      };
+
+      // Send password only when entered
+      if (form.password.trim()) {
+        payload.password = form.password.trim();
+      }
+
       const res = await fetch(
-        editingId ? `/api/trainers?id=${editingId}` : "/api/trainers",
+        editingId
+          ? `/api/trainers?id=${editingId}`
+          : "/api/trainers",
         {
           method: editingId ? "PATCH" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...form,
-            name: form.name.trim(),
-            experience: Number(form.experience),
-          }),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
         }
       );
 
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.message || "Failed to save trainer");
+        throw new Error(
+          data.message || "Failed to save trainer"
+        );
       }
 
-      toast.success(editingId ? "Trainer updated" : "Trainer created");
+      toast.success(
+        editingId ? "Trainer updated" : "Trainer created"
+      );
+
       setShowModal(false);
       setEditingId(null);
-      setForm(emptyForm);
+      setForm({ ...emptyForm });
+
       await loadData();
     } catch (error) {
       toast.error(error.message || "Failed to save trainer");
@@ -201,25 +272,36 @@ export function TrainerManager() {
     }
   };
 
+  // Toggle trainer status
   const toggleStatus = async (trainer) => {
-    const status = trainer.status === "active" ? "inactive" : "active";
+    const status =
+      trainer.status === "active" ? "inactive" : "active";
 
     try {
-      const res = await fetch(`/api/trainers?id=${trainer._id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
+      const res = await fetch(
+        `/api/trainers?id=${trainer._id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status }),
+        }
+      );
 
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.message || "Failed to update trainer");
+        throw new Error(
+          data.message || "Failed to update trainer"
+        );
       }
 
       setTrainers((previous) =>
         previous.map((item) =>
-          item._id === trainer._id ? { ...item, status } : item
+          item._id === trainer._id
+            ? { ...item, status }
+            : item
         )
       );
 
@@ -229,6 +311,7 @@ export function TrainerManager() {
     }
   };
 
+  // Delete trainer
   const deleteTrainer = async (trainer) => {
     const confirmed = window.confirm(
       `Permanently delete ${trainer.name}?`
@@ -237,18 +320,25 @@ export function TrainerManager() {
     if (!confirmed) return;
 
     try {
-      const res = await fetch(`/api/trainers?id=${trainer._id}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `/api/trainers?id=${trainer._id}`,
+        {
+          method: "DELETE",
+        }
+      );
 
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.message || "Failed to delete trainer");
+        throw new Error(
+          data.message || "Failed to delete trainer"
+        );
       }
 
       setTrainers((previous) =>
-        previous.filter((item) => item._id !== trainer._id)
+        previous.filter(
+          (item) => item._id !== trainer._id
+        )
       );
 
       toast.success("Trainer deleted");
@@ -257,35 +347,51 @@ export function TrainerManager() {
     }
   };
 
+  // Search trainers
   const filteredTrainers = trainers.filter((trainer) =>
     trainer.name?.toLowerCase().includes(search.toLowerCase())
   );
 
+  // Get tool names
   const getToolNames = (ids = []) =>
-    ids.map((id) =>
-      tools.find((tool) => String(tool._id) === String(id))?.name
-    ).filter(Boolean);
+    ids
+      .map(
+        (id) =>
+          tools.find(
+            (tool) => String(tool._id) === String(id)
+          )?.name
+      )
+      .filter(Boolean);
 
-  const activeCount = trainers.filter((t) => t.status === "active").length;
+  const activeCount = trainers.filter(
+    (t) => t.status === "active"
+  ).length;
 
   return (
-    <div
-      className="w-full text-[#37352F]"
-     
-    >
+    <div className="w-full text-[#37352F]">
+
       {/* Page header */}
       <div className="mb-6">
         <h2 className="mt-3 text-[32px] font-bold leading-tight tracking-[-0.01em] sm:text-[40px]">
           Trainers
         </h2>
+
         <p className="mt-1 text-[15px] text-[#787774]">
           Manage trainer profiles, experience and teaching tools.
         </p>
 
         <div className="mt-4 flex flex-wrap items-center gap-2 text-[13px]">
-          <Pill className="bg-[#E3E2E0] text-[#32302C]">{trainers.length} total</Pill>
-          <Pill className="bg-[#DBEDDB] text-[#1C3829]">{activeCount} active</Pill>
-          <Pill className="bg-[#D3E5EF] text-[#183347]">{tools.length} tools</Pill>
+          <Pill className="bg-[#E3E2E0] text-[#32302C]">
+            {trainers.length} total
+          </Pill>
+
+          <Pill className="bg-[#DBEDDB] text-[#1C3829]">
+            {activeCount} active
+          </Pill>
+
+          <Pill className="bg-[#D3E5EF] text-[#183347]">
+            {tools.length} tools
+          </Pill>
         </div>
       </div>
 
@@ -302,6 +408,7 @@ export function TrainerManager() {
               size={14}
               className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[#9B9A97]"
             />
+
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -309,11 +416,13 @@ export function TrainerManager() {
               className="h-7 w-32 rounded-[4px] bg-transparent pl-7 pr-2 text-sm outline-none transition-all placeholder:text-[#9B9A97] hover:bg-[rgba(55,53,47,0.06)] focus:w-52 focus:bg-white focus:ring-2 focus:ring-[#2383E2]/40"
             />
           </div>
+
           <button
             onClick={openCreate}
             className="ml-1 inline-flex h-7 items-center gap-1 rounded-[4px] bg-[#2383E2] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0077D4]"
           >
-            <Plus size={15} /> New
+            <Plus size={15} />
+            New
           </button>
         </div>
       </div>
@@ -321,9 +430,12 @@ export function TrainerManager() {
       {/* Table */}
       <div className="overflow-x-auto">
         <div className="min-w-[860px]">
+
           <div className={`${GRID} border-b border-[#E9E9E7]`}>
             <HeaderCell icon={Type}>Name</HeaderCell>
-            <HeaderCell icon={BriefcaseBusiness}>Experience</HeaderCell>
+            <HeaderCell icon={BriefcaseBusiness}>
+              Experience
+            </HeaderCell>
             <HeaderCell icon={Wrench}>Tools</HeaderCell>
             <HeaderCell icon={CircleDot}>Status</HeaderCell>
             <div />
@@ -331,13 +443,17 @@ export function TrainerManager() {
 
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-16 text-sm text-[#9B9A97]">
-              <Loader2 size={16} className="animate-spin" /> Loading trainers
+              <Loader2 size={16} className="animate-spin" />
+              Loading trainers
             </div>
           ) : filteredTrainers.length === 0 ? (
             <div className="py-14 text-center">
               <p className="text-sm text-[#787774]">
-                {search ? "No trainers match your search." : "No trainers yet."}
+                {search
+                  ? "No trainers match your search."
+                  : "No trainers yet."}
               </p>
+
               {!search && (
                 <button
                   onClick={openCreate}
@@ -350,7 +466,8 @@ export function TrainerManager() {
           ) : (
             filteredTrainers.map((trainer) => {
               const trainerTools = getToolNames(trainer.tools);
-              const active = (trainer.status || "active") === "active";
+              const active =
+                (trainer.status || "active") === "active";
 
               return (
                 <div
@@ -361,7 +478,10 @@ export function TrainerManager() {
                     href={`/trainers/${trainer._id}`}
                     className="flex min-w-0 items-center gap-2 px-2 py-2.5 text-left"
                   >
-                    <span className="shrink-0 text-base"><User2Icon size={16}/></span>
+                    <span className="shrink-0 text-base">
+                      <User2Icon size={16} />
+                    </span>
+
                     <span className="truncate text-sm font-medium underline decoration-[#E3E2E0] decoration-1 underline-offset-[3px] group-hover:decoration-[#9B9A97]">
                       {trainer.name}
                     </span>
@@ -369,25 +489,36 @@ export function TrainerManager() {
 
                   <div className="px-2 py-2.5 text-sm tabular-nums">
                     {trainer.experience}
-                    <span className="text-[#9B9A97]"> yrs</span>
+                    <span className="text-[#9B9A97]">
+                      {" "}yrs
+                    </span>
                   </div>
 
                   <div className="flex min-w-0 flex-wrap gap-1 px-2 py-2.5">
                     {trainerTools.length ? (
                       trainerTools.map((name) => (
-                        <Pill key={name} className={tagColor(name)}>
+                        <Pill
+                          key={name}
+                          className={tagColor(name)}
+                        >
                           {name}
                         </Pill>
                       ))
                     ) : (
-                      <span className="text-sm text-[#C7C6C3]">Empty</span>
+                      <span className="text-sm text-[#C7C6C3]">
+                        Empty
+                      </span>
                     )}
                   </div>
 
                   <div className="px-2 py-2.5">
                     <button
                       onClick={() => toggleStatus(trainer)}
-                      title={active ? "Click to deactivate" : "Click to activate"}
+                      title={
+                        active
+                          ? "Click to deactivate"
+                          : "Click to activate"
+                      }
                       className="rounded-[3px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2383E2]/40"
                     >
                       <Pill
@@ -399,9 +530,12 @@ export function TrainerManager() {
                       >
                         <span
                           className={`mr-1.5 h-1.5 w-1.5 rounded-full ${
-                            active ? "bg-[#4DAB9A]" : "bg-[#9B9A97]"
+                            active
+                              ? "bg-[#4DAB9A]"
+                              : "bg-[#9B9A97]"
                           }`}
                         />
+
                         {active ? "Active" : "Inactive"}
                       </Pill>
                     </button>
@@ -415,6 +549,7 @@ export function TrainerManager() {
                     >
                       <Pencil size={14} />
                     </button>
+
                     <button
                       onClick={() => deleteTrainer(trainer)}
                       aria-label={`Delete ${trainer.name}`}
@@ -433,18 +568,22 @@ export function TrainerManager() {
               onClick={openCreate}
               className={`flex w-full items-center gap-2 px-2 py-2 text-left text-sm text-[#9B9A97] transition-colors ${hoverBg}`}
             >
-              <Plus size={15} /> New trainer
+              <Plus size={15} />
+              New trainer
             </button>
           )}
         </div>
       </div>
 
-      {/* Modal / page peek */}
+      {/* Add / Edit Modal */}
       {showModal && (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgba(15,15,15,0.6)] p-4 sm:py-16"
           onMouseDown={(e) => {
-            if (e.target === e.currentTarget && !saving) {
+            if (
+              e.target === e.currentTarget &&
+              !saving
+            ) {
               setShowModal(false);
             }
           }}
@@ -457,10 +596,13 @@ export function TrainerManager() {
             }}
           >
             <form onSubmit={handleSubmit}>
+
+              {/* Modal header */}
               <div className="flex items-center justify-between px-4 pt-3">
                 <span className="text-xs text-[#9B9A97]">
                   {editingId ? "Edit trainer" : "New trainer"}
                 </span>
+
                 <button
                   type="button"
                   disabled={saving}
@@ -472,20 +614,82 @@ export function TrainerManager() {
                 </button>
               </div>
 
+              {/* Modal content */}
               <div className="max-h-[70vh] overflow-y-auto px-6 pb-6 pt-2 sm:px-10">
+
                 <input
                   required
                   autoFocus
                   value={form.name}
                   onChange={(e) =>
-                    setForm((p) => ({ ...p, name: e.target.value }))
+                    setForm((p) => ({
+                      ...p,
+                      name: e.target.value,
+                    }))
                   }
                   placeholder="Untitled"
                   className="w-full bg-transparent text-[32px] font-bold leading-tight tracking-[-0.01em] text-[#37352F] outline-none placeholder:text-[#D3D1CB]"
                 />
 
                 <div className="mt-4 space-y-0.5 border-b border-[#E9E9E7] pb-4">
-                  <Property icon={BriefcaseBusiness} label="Experience (years)">
+
+                  {/* Username */}
+                  <Property
+                    icon={User2Icon}
+                    label="Username"
+                  >
+                    <input
+                      required
+                      type="text"
+                      autoComplete="username"
+                      value={form.username}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          username: e.target.value,
+                        }))
+                      }
+                      placeholder="Enter username"
+                      className={fieldClass}
+                    />
+                  </Property>
+
+                  {/* Password */}
+                  <Property
+                    icon={LockKeyhole}
+                    label="Password"
+                  >
+                    <input
+                      required={!editingId}
+                      type="password"
+                      autoComplete="new-password"
+                      value={form.password}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          password: e.target.value,
+                        }))
+                      }
+                      placeholder={
+                        editingId
+                          ? "Leave blank to keep existing password"
+                          : "Enter password"
+                      }
+                      className={fieldClass}
+                    />
+
+                    {editingId && (
+                      <p className="px-2 pt-1 text-xs text-[#9B9A97]">
+                        Leave blank if you don't want to change the password.
+                      </p>
+                    )}
+                  </Property>
+
+                  {/* Experience */}
+                  <Property
+                    icon={BriefcaseBusiness}
+                    label="Experience (years)"
+                  >
                     <input
                       required
                       type="number"
@@ -493,18 +697,28 @@ export function TrainerManager() {
                       step="0.5"
                       value={form.experience}
                       onChange={(e) =>
-                        setForm((p) => ({ ...p, experience: e.target.value }))
+                        setForm((p) => ({
+                          ...p,
+                          experience: e.target.value,
+                        }))
                       }
                       placeholder="Empty"
                       className={fieldClass}
                     />
                   </Property>
 
-                  <Property icon={CircleDot} label="Status">
+                  {/* Status */}
+                  <Property
+                    icon={CircleDot}
+                    label="Status"
+                  >
                     <select
                       value={form.status}
                       onChange={(e) =>
-                        setForm((p) => ({ ...p, status: e.target.value }))
+                        setForm((p) => ({
+                          ...p,
+                          status: e.target.value,
+                        }))
                       }
                       className={fieldClass}
                     >
@@ -513,7 +727,11 @@ export function TrainerManager() {
                     </select>
                   </Property>
 
-                  <Property icon={Wrench} label="Tools they teach">
+                  {/* Tools */}
+                  <Property
+                    icon={Wrench}
+                    label="Tools they teach"
+                  >
                     {tools.length === 0 ? (
                       <p className="mx-1 rounded-[4px] bg-[#FDECC8] px-2.5 py-2 text-[13px] text-[#402C1B]">
                         No active tools found. Add tools using your Tools manager.
@@ -522,7 +740,8 @@ export function TrainerManager() {
                       <div className="flex flex-wrap gap-1.5 px-1 py-1">
                         {tools.map((tool) => {
                           const id = String(tool._id);
-                          const selected = form.tools.includes(id);
+                          const selected =
+                            form.tools.includes(id);
 
                           return (
                             <button
@@ -536,7 +755,9 @@ export function TrainerManager() {
                                   : "border border-dashed border-[#D3D1CB] text-[#787774] hover:bg-[rgba(55,53,47,0.06)]"
                               }`}
                             >
-                              {selected && <Check size={13} />}
+                              {selected && (
+                                <Check size={13} />
+                              )}
                               {tool.name}
                             </button>
                           );
@@ -547,6 +768,7 @@ export function TrainerManager() {
                 </div>
               </div>
 
+              {/* Modal footer */}
               <div className="flex justify-end gap-2 border-t border-[#E9E9E7] px-4 py-3">
                 <button
                   type="button"
@@ -556,12 +778,19 @@ export function TrainerManager() {
                 >
                   Cancel
                 </button>
+
                 <button
                   type="submit"
                   disabled={saving}
                   className="inline-flex h-8 items-center gap-2 rounded-[4px] bg-[#2383E2] px-3.5 text-sm font-medium text-white transition-colors hover:bg-[#0077D4] disabled:opacity-50"
                 >
-                  {saving && <Loader2 size={14} className="animate-spin" />}
+                  {saving && (
+                    <Loader2
+                      size={14}
+                      className="animate-spin"
+                    />
+                  )}
+
                   {saving
                     ? "Saving..."
                     : editingId

@@ -21,6 +21,8 @@ import {
   Layers3,
   ListChecks,
   IndianRupee,
+  FileText,
+  Pencil,
 } from "lucide-react";
 
 import toast from "react-hot-toast";
@@ -112,7 +114,7 @@ const tagColor = (key = "") => {
 };
 
 const GRID =
-  "grid grid-cols-[minmax(210px,1.35fr)_minmax(190px,1.2fr)_125px_minmax(150px,1fr)_125px_minmax(180px,1.2fr)_120px_minmax(220px,1.3fr)_135px_minmax(145px,0.9fr)_minmax(145px,0.9fr)_minmax(145px,0.9fr)_125px_76px]";
+  "grid grid-cols-[minmax(210px,1.35fr)_minmax(190px,1.2fr)_125px_minmax(150px,1fr)_125px_minmax(180px,1.2fr)_minmax(220px,1.4fr)_120px_minmax(220px,1.3fr)_135px_minmax(145px,0.9fr)_minmax(145px,0.9fr)_minmax(145px,0.9fr)_125px_76px]";
 
 const hoverBg = "hover:bg-[rgba(55,53,47,0.06)]";
 
@@ -217,7 +219,20 @@ export default function StudentBatchAssignmentsPage() {
   const [totalFee, setTotalFee] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(todayLocal);
+  const [assignmentNotes, setAssignmentNotes] = useState("");
   const [removingId, setRemovingId] = useState(null);
+
+  /* Edit notes for an already assigned student/batch (separate API to be added). */
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [notesStudent, setNotesStudent] = useState(null);
+  const [notesAssignment, setNotesAssignment] = useState(null);
+  const [editAssignmentNotes, setEditAssignmentNotes] = useState("");
+  const [savingNotes, setSavingNotes] = useState(false);
+
+  /* Change student name modal (API will be connected in the next step) */
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameStudent, setRenameStudent] = useState(null);
+  const [newStudentName, setNewStudentName] = useState("");
 
   /* ---------------------------- Data loading ---------------------------- */
   const loadData = useCallback(async () => {
@@ -346,6 +361,7 @@ export default function StudentBatchAssignmentsPage() {
     setTotalFee("");
     setPaymentAmount("");
     setPaymentDate(todayLocal());
+    setAssignmentNotes("");
     setShowModal(true);
   };
 
@@ -360,6 +376,7 @@ export default function StudentBatchAssignmentsPage() {
     setTotalFee("");
     setPaymentAmount("");
     setPaymentDate("");
+    setAssignmentNotes("");
   };
 
   useEffect(() => {
@@ -383,10 +400,12 @@ export default function StudentBatchAssignmentsPage() {
       setMode(existingAssignment.mode === "selected_tools" ? "selected_tools" : "full_course");
       setSelectedTools(existingAssignment.toolIds?.map(String) || []);
       setTotalFee(existingAssignment.totalFee != null ? String(existingAssignment.totalFee) : "");
+      setAssignmentNotes(existingAssignment.notes || "");
     } else {
       setMode("full_course");
       setSelectedTools(batch?.tools?.map((tool) => tool.id) || []);
       setTotalFee(batch?.fee != null ? String(batch.fee) : "");
+      setAssignmentNotes("");
     }
 
     // A new installment is entered separately; existing payments remain in history.
@@ -450,6 +469,7 @@ export default function StudentBatchAssignmentsPage() {
           totalFee: totalFeeNum,
           paymentAmount: paymentAmountNum,
           paymentDate,
+          notes: assignmentNotes.trim(),
         }),
       });
 
@@ -474,6 +494,152 @@ export default function StudentBatchAssignmentsPage() {
       setSaving(false);
     }
   };
+
+  const openRenameModal = (student) => {
+    setRenameStudent(student);
+    setNewStudentName(student?.name || "");
+    setShowRenameModal(true);
+  };
+
+  const closeRenameModal = () => {
+    setShowRenameModal(false);
+    setRenameStudent(null);
+    setNewStudentName("");
+  };
+
+  const openNotesModal = (student, assignment) => {
+    setNotesStudent(student);
+    setNotesAssignment(assignment);
+    setEditAssignmentNotes(assignment?.notes || "");
+    setShowNotesModal(true);
+  };
+
+  const closeNotesModal = () => {
+    setShowNotesModal(false);
+    setNotesStudent(null);
+    setNotesAssignment(null);
+    setEditAssignmentNotes("");
+  };
+
+  const submitAssignmentNotes = async (event) => {
+    event.preventDefault();
+
+    if (!notesStudent?.id || !notesAssignment?.batchId) {
+      toast.error("Student or batch assignment not found");
+      return;
+    }
+
+    const notes = editAssignmentNotes.trim();
+
+    if (notes.length > 2000) {
+      toast.error("Notes cannot exceed 2000 characters");
+      return;
+    }
+
+    try {
+      setSavingNotes(true);
+
+      const response = await fetch(`${API}/notes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          studentId: notesStudent.id,
+          batchId: notesAssignment.batchId,
+          notes,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Failed to save assignment notes");
+      }
+
+      // Update the visible row immediately while the fresh data is loading.
+      setStudents((previous) =>
+        previous.map((student) =>
+          student.id === notesStudent.id
+            ? {
+                ...student,
+                batchAssignments: (student.batchAssignments || []).map((assignment) =>
+                  String(assignment.batchId) === String(notesAssignment.batchId)
+                    ? { ...assignment, notes: result.data?.notes ?? notes }
+                    : assignment
+                ),
+              }
+            : student
+        )
+      );
+
+      toast.success("Assignment notes saved successfully");
+      closeNotesModal();
+      await loadData();
+    } catch (error) {
+      console.error("SAVE ASSIGNMENT NOTES ERROR:", error);
+      toast.error(error.message || "Failed to save assignment notes");
+    } finally {
+      setSavingNotes(false);
+    }
+  };
+
+
+const submitRenameStudent = async (event) => {
+  event.preventDefault();
+
+  const name = newStudentName.trim();
+
+  if (!name) {
+    toast.error("Enter the student name");
+    return;
+  }
+
+  if (!renameStudent?.id) {
+    toast.error("Student ID not found");
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `/api/contact/${renameStudent.id}/change-name`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name }),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || "Failed to update student name");
+    }
+
+    // Update the student name in the current table immediately
+    setStudents((prev) =>
+      prev.map((student) =>
+        student.id === renameStudent.id
+          ? { ...student, name }
+          : student
+      )
+    );
+
+    toast.success("Student name updated successfully");
+
+    closeRenameModal();
+
+    // Refresh data from database
+    await loadData();
+
+  } catch (error) {
+    console.error("RENAME STUDENT ERROR:", error);
+    toast.error(error.message || "Failed to update student name");
+  }
+};
+
 
   const removeAssignment = async (student, assignment) => {
     if (!assignment?.batchId) return;
@@ -664,6 +830,7 @@ export default function StudentBatchAssignmentsPage() {
             <HeadCell icon={BookOpen}>Course</HeadCell>
             <HeadCell icon={CircleDot}>Status</HeadCell>
             <HeadCell icon={Layers3}>Batch</HeadCell>
+            <HeadCell icon={FileText}>Notes</HeadCell>
             <HeadCell icon={ListChecks}>Plan</HeadCell>
             <HeadCell icon={Wrench}>Assigned tools</HeadCell>
             <HeadCell icon={CalendarDays}>Registered</HeadCell>
@@ -716,7 +883,16 @@ export default function StudentBatchAssignmentsPage() {
                 >
                   <Cell>
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#E3E2E0]"><UserRound size={12} className="text-[#787774]" /></span>
-                    <span className="truncate font-medium">{student.name || "Unnamed student"}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{student.name || "Unnamed student"}</span>
+                    <button
+                      type="button"
+                      onClick={() => openRenameModal(student)}
+                      title="Change student name"
+                      aria-label={`Change name for ${student.name || "student"}`}
+                      className={`shrink-0 rounded-[4px] p-1 text-[#9B9A97] opacity-0 transition-opacity hover:bg-[rgba(55,53,47,0.08)] hover:text-[#2383E2] focus:opacity-100 group-hover:opacity-100`}
+                    >
+                      <Pencil size={13} />
+                    </button>
                   </Cell>
                   <Cell><span className="truncate text-[#787774]">{student.email || "No email"}</span></Cell>
                   <Cell><span className="truncate tabular-nums text-[#787774]">{student.phone || "No phone"}</span></Cell>
@@ -731,10 +907,33 @@ export default function StudentBatchAssignmentsPage() {
                   <Cell>
                     <div className="flex flex-wrap gap-1">
                       {assignments.length ? assignments.map((a) => (
-                        <button key={a.batchId} type="button" onClick={() => openAssignModal(student)} title="Manage batch" className="max-w-full">
+                        <button key={a.batchId} type="button" onClick={() => openAssignModal(student)} title="Manage batch" className="max-w-full rounded-[4px] text-left">
                           <Tagged className={tagColor(a.batchName || a.batch?.name)}>{a.batchName || a.batch?.name || "Batch"}</Tagged>
                         </button>
                       )) : <button type="button" onClick={() => openAssignModal(student)} className={`inline-flex items-center gap-1 rounded-[4px] px-1.5 py-0.5 text-sm text-[#9B9A97] ${hoverBg}`}><Plus size={14} /> Assign batch</button>}
+                    </div>
+                  </Cell>
+                  <Cell>
+                    <div className="flex min-w-0 flex-col gap-1 py-1">
+                      {assignments.length ? assignments.map((a) => (
+                        <button
+                          key={`${a.batchId}-notes`}
+                          type="button"
+                          onClick={() => openNotesModal(student, a)}
+                          title={a.notes || "Click to add notes for this batch"}
+                          className="block max-w-full truncate rounded px-1 py-0.5 text-left text-xs hover:bg-[#F0F7FD] hover:text-[#185FA5]"
+                        >
+                          {a.notes?.trim() ? (
+                            <span className="whitespace-pre-wrap text-[#37352F]">
+                              {a.notes}
+                            </span>
+                          ) : (
+                            <span className="italic text-[#9B9A97]">
+                              Add notes
+                            </span>
+                          )}
+                        </button>
+                      )) : <span className="text-[#C7C6C3]">—</span>}
                     </div>
                   </Cell>
                   <Cell>
@@ -971,6 +1170,20 @@ export default function StudentBatchAssignmentsPage() {
                             <CalendarDays size={14} className="text-[#9B9A97]" />
                             Starts {formatDate(selectedBatch.startingDate)}
                           </span>
+                        </div>
+                      </Property>
+
+                      <Property icon={FileText} label="Assignment notes">
+                        <textarea
+                          value={assignmentNotes}
+                          onChange={(event) => setAssignmentNotes(event.target.value)}
+                          rows={3}
+                          maxLength={2000}
+                          placeholder="Add notes related to this student's batch assignment..."
+                          className={`${fieldClass} resize-y`}
+                        />
+                        <div className="mt-1 text-right text-xs text-[#9B9A97]">
+                          {assignmentNotes.length}/2000
                         </div>
                       </Property>
 
@@ -1216,6 +1429,167 @@ export default function StudentBatchAssignmentsPage() {
                 >
                   {saving && <Loader2 size={14} className="animate-spin" />}
                   {saving ? "Saving..." : "Save assignment"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Edit notes modal for existing student-batch assignments */}
+      {showNotesModal && notesStudent && notesAssignment && (
+        <div
+          className="fixed inset-0 z-[65] flex items-center justify-center bg-[rgba(15,15,15,0.6)] p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !savingNotes) {
+              closeNotesModal();
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-[520px] overflow-hidden rounded-[6px] bg-white"
+            style={{
+              boxShadow:
+                "rgba(15,15,15,0.05) 0 0 0 1px, rgba(15,15,15,0.1) 0 5px 10px, rgba(15,15,15,0.2) 0 15px 40px",
+            }}
+          >
+            <form onSubmit={submitAssignmentNotes}>
+              <div className="flex items-center justify-between border-b border-[#E9E9E7] px-4 py-3">
+                <div>
+                  <h2 className="text-base font-semibold">Edit assignment notes</h2>
+                  <p className="mt-0.5 text-xs text-[#9B9A97]">
+                    {notesStudent.name} · {notesAssignment.batchName || notesAssignment.batch?.name || "Assigned batch"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeNotesModal}
+                  disabled={savingNotes}
+                  aria-label="Close"
+                  className={`rounded-[4px] p-1.5 text-[#787774] ${hoverBg}`}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="px-4 py-5">
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-medium">Notes</span>
+                  <textarea
+                    autoFocus
+                    value={editAssignmentNotes}
+                    onChange={(event) => setEditAssignmentNotes(event.target.value)}
+                    rows={6}
+                    maxLength={2000}
+                    placeholder="Add or update notes for this student's batch assignment..."
+                    className={`${fieldClass} resize-y`}
+                  />
+                </label>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="text-xs text-[#9B9A97]">
+                    These notes belong to this batch assignment only.
+                  </span>
+                  <span className="shrink-0 text-xs text-[#9B9A97]">
+                    {editAssignmentNotes.length}/2000
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-[#E9E9E7] px-4 py-3">
+                <button
+                  type="button"
+                  onClick={closeNotesModal}
+                  disabled={savingNotes}
+                  className="h-8 rounded-[4px] border border-[#E3E2E0] bg-white px-3 text-sm text-[#37352F] transition-colors hover:bg-[rgba(55,53,47,0.06)] disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingNotes}
+                  className="inline-flex h-8 items-center gap-2 rounded-[4px] bg-[#2383E2] px-3.5 text-sm font-medium text-white transition-colors hover:bg-[#0077D4] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {savingNotes ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Check size={14} />
+                  )}
+                  {savingNotes ? "Saving..." : "Save notes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Change student name modal — API integration will be added next */}
+      {showRenameModal && renameStudent && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(15,15,15,0.6)] p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeRenameModal();
+          }}
+        >
+          <div
+            className="w-full max-w-[440px] overflow-hidden rounded-[6px] bg-white"
+            style={{
+              boxShadow:
+                "rgba(15,15,15,0.05) 0 0 0 1px, rgba(15,15,15,0.1) 0 5px 10px, rgba(15,15,15,0.2) 0 15px 40px",
+            }}
+          >
+            <form onSubmit={submitRenameStudent}>
+              <div className="flex items-center justify-between border-b border-[#E9E9E7] px-4 py-3">
+                <div>
+                  <h2 className="text-base font-semibold">Change student name</h2>
+                  <p className="mt-0.5 text-xs text-[#9B9A97]">
+                    Update the name associated with this student.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeRenameModal}
+                  aria-label="Close"
+                  className={`rounded-[4px] p-1.5 text-[#787774] ${hoverBg}`}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-3 px-4 py-5">
+                <div className="rounded-[4px] bg-[#F7F6F3] px-3 py-2 text-sm">
+                  <span className="text-[#9B9A97]">Current name: </span>
+                  <span className="font-medium">{renameStudent.name || "Unnamed student"}</span>
+                </div>
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-medium">New student name</span>
+                  <input
+                    autoFocus
+                    required
+                    type="text"
+                    maxLength={120}
+                    value={newStudentName}
+                    onChange={(event) => setNewStudentName(event.target.value)}
+                    placeholder="Enter new student name"
+                    className={fieldClass}
+                  />
+                </label>
+                <p className="text-xs text-[#9B9A97]">
+                  The name-change API will be connected after the UI is finalized.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-[#E9E9E7] px-4 py-3">
+                <button
+                  type="button"
+                  onClick={closeRenameModal}
+                  className="h-8 rounded-[4px] border border-[#E3E2E0] bg-white px-3 text-sm text-[#37352F] hover:bg-[rgba(55,53,47,0.06)]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="h-8 rounded-[4px] bg-[#2383E2] px-3.5 text-sm font-medium text-white hover:bg-[#0077D4]"
+                >
+                  Save name
                 </button>
               </div>
             </form>

@@ -271,6 +271,9 @@ export default function BatchDetails({ batchId, onBack, session }) {
 
   const [editBatch, setEditBatch] = useState(false);
   const [editStudent, setEditStudent] = useState(null);
+  const [notesStudent, setNotesStudent] = useState(null);
+  const [studentNotes, setStudentNotes] = useState("");
+  const [notesSaving, setNotesSaving] = useState(false);
   const [sessionModal, setSessionModal] = useState(null); // null | {id?}
   const [batchForm, setBatchForm] = useState({});
   const [studentForm, setStudentForm] = useState({});
@@ -445,6 +448,47 @@ export default function BatchDetails({ batchId, onBack, session }) {
       jobGuarantee: student.jobGuarantee ?? false,
     });
     setEditStudent(student);
+  };
+
+  const openStudentNotes = (student) => {
+    if (!canManage) return;
+    setNotesStudent(student);
+    setStudentNotes(student.notes || "");
+  };
+
+  const closeStudentNotes = () => {
+    if (notesSaving) return;
+    setNotesStudent(null);
+    setStudentNotes("");
+  };
+
+  const submitStudentNotes = async (e) => {
+    e.preventDefault();
+    if (!notesStudent?.studentId || !canManage) return;
+
+    if (studentNotes.length > 2000) {
+      window.alert("Notes cannot exceed 2000 characters.");
+      return;
+    }
+
+    setNotesSaving(true);
+    setNotice("");
+    try {
+      const result = await request(endpoint, "PATCH", {
+        action: "update_student",
+        studentId: notesStudent.studentId,
+        notes: studentNotes.trim(),
+      });
+
+      setNotice(result.message || "Student notes saved successfully");
+      setNotesStudent(null);
+      setStudentNotes("");
+      await loadBatch();
+    } catch (err) {
+      window.alert(err.message || "Could not save student notes");
+    } finally {
+      setNotesSaving(false);
+    }
   };
 
   const openSessionEditor = (session) => {
@@ -998,6 +1042,8 @@ export default function BatchDetails({ batchId, onBack, session }) {
                   hideFinancials={isTrainer}
                   allowFeeActions={canManage}
                   onAddPayment={openFeePayment}
+                  onEditNotes={openStudentNotes}
+                  canManageNotes={canManage}
                 />
               </section>
             </>
@@ -1027,6 +1073,8 @@ export default function BatchDetails({ batchId, onBack, session }) {
                   hideFinancials={isTrainer}
                   allowFeeActions={canManage}
                   onAddPayment={openFeePayment}
+                  onEditNotes={openStudentNotes}
+                  canManageNotes={canManage}
                 />
               </section>
 
@@ -1699,6 +1747,45 @@ export default function BatchDetails({ batchId, onBack, session }) {
         </Modal>
       )}
 
+      {/* ---------- Student notes ---------- */}
+      {canManage && notesStudent && (
+        <Modal
+          title={`${notesStudent.notes?.trim() ? "Edit" : "Add"} notes - ${notesStudent.name || "Student"}`}
+          onClose={closeStudentNotes}
+          width="max-w-xl"
+        >
+          <form onSubmit={submitStudentNotes} className="space-y-4">
+            <div>
+              <p className={`text-xs ${muted}`}>Student</p>
+              <p className="mt-1 text-sm font-medium">{notesStudent.name || "Unnamed student"}</p>
+            </div>
+
+            <Field label="Student notes">
+              <textarea
+                rows={6}
+                maxLength={2000}
+                className={inputClass}
+                placeholder="Add notes about this student..."
+                value={studentNotes}
+                onChange={(e) => setStudentNotes(e.target.value)}
+              />
+            </Field>
+            <p className={`-mt-2 text-right text-xs ${muted}`}>
+              {studentNotes.length}/2000 characters
+            </p>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Btn type="button" variant="outline" disabled={notesSaving} onClick={closeStudentNotes}>
+                Cancel
+              </Btn>
+              <Btn type="submit" variant="primary" disabled={notesSaving}>
+                {notesSaving ? "Saving..." : "Save notes"}
+              </Btn>
+            </div>
+          </form>
+        </Modal>
+      )}
+
       {/* ---------- Add fee payment ---------- */}
       {canManage && feePaymentStudent && (() => {
         const totalFee = Number(feePaymentStudent.totalFee) || 0;
@@ -2124,6 +2211,8 @@ function StudentTable({
   readOnly = false,
   hideFinancials = false,
   allowFeeActions = false,
+  onEditNotes,
+  canManageNotes = false,
 }) {
   if (!students.length) return <Empty text="No students assigned to this batch" />;
 
@@ -2135,6 +2224,7 @@ function StudentTable({
             <th className="px-3 py-2 font-normal">Student</th>
             <th className="px-3 py-2 font-normal">Learning</th>
             <th className="px-3 py-2 font-normal">Tools</th>
+            <th className="px-3 py-2 font-normal">Notes</th>
             {!hideFinancials && (
               <>
                 <th className="px-3 py-2 font-normal">Total</th>
@@ -2189,6 +2279,29 @@ function StudentTable({
                     {student.tools?.length ? student.tools.map((tool) => (
                       <Tag key={tool.id} color="gray">{tool.name}</Tag>
                     )) : "—"}
+                  </div>
+                </td>
+                <td className="min-w-56 max-w-sm px-3 py-2.5">
+                  <div className="flex items-start gap-2">
+                    <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-xs text-[#37352f]">
+                      {student.notes?.trim() ? (
+                        student.notes
+                      ) : (
+                        <span className={`italic ${muted}`}>No notes added</span>
+                      )}
+                    </div>
+                    {canManageNotes && (
+                      <Btn
+                        type="button"
+                        variant="ghost"
+                        className="shrink-0 whitespace-nowrap text-xs"
+                        onClick={() => onEditNotes?.(student)}
+                        title={student.notes?.trim() ? "Edit student notes" : "Add student notes"}
+                      >
+                        <Pencil size={12} />
+                        {student.notes?.trim() ? "Edit" : "Add notes"}
+                      </Btn>
+                    )}
                   </div>
                 </td>
                 {!hideFinancials && (
